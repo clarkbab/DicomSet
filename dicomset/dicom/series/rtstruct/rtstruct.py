@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Literal, Tuple, TYPE_CHECKING
 from .... import config as ds_config
 from ....regions_map import RegionsMap
 from ....typing import BatchLabelImage3D, FilePath, LandmarkID, Landmarks3D, Points3D, RegionID, SeriesID, Voxels
-from ....utils.args import arg_to_list
+from ....utils.args import alias_kwargs, arg_to_list
 from ....utils.conversion import to_numpy
 from ....utils.geometry import to_image_coords
 from ....utils.python import filter_lists
@@ -157,6 +157,9 @@ class DicomRtStructSeries(DicomSeries):
     # 1. Should return only regions when landmark_regexp is None, load regexp from config or default.
     # 2. Should return landmarks also when use_landmark_regexp is False.
 
+    @alias_kwargs([
+        ('r', 'region_id'),
+    ])
     def list_regions(
         self,
         filter_landmarks: bool = True,
@@ -166,132 +169,71 @@ class DicomRtStructSeries(DicomSeries):
         return_unmapped: bool = False,
         use_mapping: bool = True,
         ) -> List[RegionID] | Tuple[List[RegionID], List[RegionID]] | Tuple[List[RegionID], List[int]] | Tuple[List[RegionID], List[RegionID], List[int]] | List[int]:
-        # Get the landmark regexp - used to filter out landmarks.
         if filter_landmarks and landmark_regexp is None:
             landmark_regexp = self.landmark_regexp
-
-        # If not 'region-map.csv' exists, set 'use_mapping=False'.
         if self.__regions_map is None:
             use_mapping = False
 
-        # Get unmapped region names.
+        # Get disk regions.
         rtstruct_dicom = self.dicom
-        ids = RtStructConverter.get_roi_names(rtstruct_dicom)
+        true_disk_regions = RtStructConverter.get_roi_names(rtstruct_dicom)
         if return_numbers:
             nums = RtStructConverter.get_roi_numbers(rtstruct_dicom)
 
         # Filter regions on those for which data can be obtained, e.g. some may not have
         # 'ContourData' and shouldn't be included.
         if return_numbers:
-            ids, nums = filter_lists([ids, nums], lambda i: RtStructConverter.has_roi_data(rtstruct_dicom, i[0]))
+            true_disk_regions, nums = filter_lists([true_disk_regions, nums], lambda i: RtStructConverter.has_roi_data(rtstruct_dicom, i[0]))
         else:
-            ids = list(filter(lambda i: RtStructConverter.has_roi_data(rtstruct_dicom, i), ids))
-
-        # Map regions using 'region-map.csv'.
-        if use_mapping:
-            mapped_ids = []
-            unmapped_ids = []   # We need to return these so 'regions_data' can load from rtstruct.
-            if return_numbers:
-                numbers = []    # We might need to return roi numbers for dose calculation or other applications that require rtstruct access.
-            for i, id in enumerate(ids):
-                mapped_id = self.__regions_map.map_region(id)
-
-                if mapped_id == id:  # No mapping occurred.
-                    mapped_ids.append(id)
-                    unmapped_ids.append(id)
-                    if return_numbers:
-                        numbers.append(nums[i])
-                elif mapped_id in ids: # Mapped region would clash with an existing region in the rtstruct.
-                    logging.warning(f"Mapped region '{mapped_id}' (mapped from '{id}') already found in unmapped regions for '{self}'. Skipping.")
-                    continue
-                # # Don't map regions that are already present in 'new_regions'.
-                # elif mapped_id in mapped_ids:
-                #     raise ValueError(f"Mapped region '{mapped_id}' (mapped from '{i}') already found in mapped regions for '{self}'. Set 'priority' in region map.")
-                # Allow multiple regions to be mapped to the same region (e.g. Chestwall_L/R -> Chestwall)
-                # and combine these regions into one super-region.
-                elif mapped_id in mapped_ids:   # A value has already been mapped to this region.
-                    # Add this to the existing list of unmapped ids for this mapped_id.
-                    idx = mapped_ids.index(mapped_id)
-                    new_ids = arg_to_list(unmapped_ids[idx], RegionID) + [id]
-                    unmapped_ids[idx] = new_ids
-                    if return_numbers:
-                        new_nums = arg_to_list(numbers[idx], int) + [nums[i]]
-                        numbers[idx] = new_nums
-                else:
-                    # Mapping without issues and tissues.
-                    mapped_ids.append(mapped_id)
-                    unmapped_ids.append(id)
-                    if return_numbers:
-                        numbers.append(nums[i])
-        else:
-            unmapped_ids = ids
-            if return_numbers:
-                numbers = nums
-
-        # Filter on 'region'. If region mapping is used (i.e. mapped_regions != None),
-        # this will try to match mapped names, otherwise it will map unmapped names.
-        if region != 'all':
-            regions = regions_to_list(region)
+            true_disk_regions = list(filter(lambda i: RtStructConverter.has_roi_data(rtstruct_dicom, i), true_disk_regions))
+        
+        # Map disk regions back to API regions.
+        if region_id == 'all':
             if use_mapping:
-                if return_numbers:
-                    mapped_ids, unmapped_ids, numbers = filter_lists([mapped_ids, unmapped_ids, numbers], lambda i: i[0] in regions)
-                else:
-                    mapped_ids, unmapped_ids = filter_lists([mapped_ids, unmapped_ids], lambda i: i[0] in regions)
+                # Map back to the API region names.
+                api_regions = [self.__regions_map.unmap_region(r) for r in true_disk_regions]
+                api_regions = [r for rs in api_regions for r in (rs if isinstance(rs, list) else [rs])]
+                print('all, mapped: ', api_regions)
             else:
-                unmapped_ids = [r for r in unmapped_ids if r in regions]
-
-        # Filter out landmarks based on 'landmark_regexp'.
-        if filter_landmarks and landmark_regexp is not None:
-            if use_mapping:
-                if return_numbers:
-                    mapped_ids, unmapped_ids, numbers = filter_lists([mapped_ids, unmapped_ids, numbers], lambda i: not re.match(landmark_regexp, i[0]))
-                else:
-                    mapped_ids, unmapped_ids = filter_lists([mapped_ids, unmapped_ids], lambda i: not re.match(landmark_regexp, i[0]))
-            else:
-                unmapped_ids = [r for r in unmapped_ids if not re.match(landmark_regexp, r)]
-
-        # Sort regions.
-        if use_mapping:
-            if return_numbers:
-                mapped_ids, unmapped_ids, numbers = sort_lists([mapped_ids, unmapped_ids, numbers], lambda i: i[0])
-            else:
-                mapped_ids, unmapped_ids = sort_lists([mapped_ids, unmapped_ids], lambda i: i[0])
+                api_regions = true_disk_regions
+                print('all, unmapped: ', api_regions)
         else:
-            unmapped_ids = list(sorted(unmapped_ids))
+            region_ids = arg_to_list(region_id, str)
+            api_regions = []
+            for r in region_ids:
+                # Only keep regions that map to a one or more disk regions.
+                if use_mapping:
+                    disk_regions = self.__regions_map.map_region(r)
+                    if len(np.intersect1d(disk_regions, true_disk_regions)) > 0:
+                        api_regions.append(r)
+                else:
+                    if r in true_disk_regions:
+                        api_regions.append(r)
 
-        # Choose return type when using mapping.
-        if use_mapping:
-            if return_unmapped:
-                return (mapped_ids, unmapped_ids, numbers) if return_numbers else (mapped_ids, unmapped_ids)
-            else:
-                return (mapped_ids, numbers) if return_numbers else mapped_ids
-        elif return_numbers:
-            return unmapped_ids, numbers
-        else:
-            return unmapped_ids
+        return list(sorted(api_regions))
         
     @property
     def ref_ct(self) -> DicomCtSeries:
         return self.__ref_ct
 
+    @alias_kwargs([
+        ('r', 'region_id'),
+    ])
     def regions_data(
         self,
-        region: RegionID = 'all',
-        regions_ignore_missing: bool = False,
+        region_id: RegionID | List[RegionID] | Literal['all'] = 'all',
         use_mapping: bool = True,
         **kwargs,
         ) -> BatchLabelImage3D:
-
-        # If not 'region-map.csv' exists, set 'use_mapping=False'.
         if self.__regions_map is None:
             use_mapping = False
 
         # Get patient regions. If 'use_mapping=True', return unmapped region names too - we'll
         # need these to load regions from RTSTRUCT dicom.
         if use_mapping:
-            mapped_ids, unmapped_ids = self.list_regions(region=region, return_unmapped=True)
+            region_ids, disk_ids = self.list_regions(region_id=region_id, return_unmapped=True, use_mapping=use_mapping, **kwargs)
         else:
-            unmapped_ids = self.list_regions(region=region, use_mapping=False)
+            region_ids = self.list_regions(region_id=region_id, use_mapping=False)
 
         # Load data from dicom.
         rtstruct_dicom = self.dicom

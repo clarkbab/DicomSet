@@ -195,11 +195,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
             self._index_errors = pd.DataFrame(columns=ERROR_INDEX_COLS.keys())
 
         # Load region map.
-        filepath = os.path.join(self._path, 'region-map.yaml')
-        if os.path.exists(filepath):
-            self.__regions_map = RegionsMap(load_yaml(filepath))
-        else:
-            self.__regions_map = None
+        self.__regions_map = RegionsMap.load(self._path)
 
     @Dataset.ensure_loaded
     def patient(

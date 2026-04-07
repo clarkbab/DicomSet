@@ -11,7 +11,7 @@ from ..mixins import IndexMixin
 from ..regions_map import RegionsMap
 from ..typing import DatasetID, GroupID, PatientID, RegionID
 from ..utils.args import arg_to_list, resolve_id
-from ..utils.io import load_csv, load_yaml
+from ..utils.io import load_csv
 from .patient import NiftiPatient
 
 class NiftiDataset(IndexMixin, Dataset):
@@ -222,11 +222,7 @@ class NiftiDataset(IndexMixin, Dataset):
             self.__group_index = None
 
         # Load region map.
-        filepath = os.path.join(self._path, 'region-map.yaml')
-        if os.path.exists(filepath):
-            self.__regions_map = RegionsMap(load_yaml(filepath))
-        else:
-            self.__regions_map = None
+        self.__regions_map = RegionsMap.load(self._path)
 
     # Copied from 'mymi/reports/dataset/nift.py' to avoid circular dependency.
     def __load_patient_regions_report(

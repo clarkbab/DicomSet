@@ -4,7 +4,7 @@ import numpy as np
 import seaborn as sns
 from typing import List, Literal
 
-from ..typing import AffineMatrix3D, BatchLabelImage2D, BatchLabelImage3D, Image2D, Image3D, LabelImage3D, Orientation, Points3D, Size3D, View
+from ..typing import AffineMatrix3D, BatchLabelImage2D, BatchLabelImage3D, Image2D, Image3D, LabelImage3D, Orientation, Point3D, Points3D, Size3D, View
 from .args import arg_to_list
 from .geometry import affine_origin, affine_spacing, com, foreground_fov_centre, to_image_coords
 from .logging import logger
@@ -34,7 +34,7 @@ def _get_view_idx(
     size: Size3D,
     affine: np.ndarray | None = None,
     centre_method: Literal['com', 'fov'] = 'com',
-    idx: int | float | str | None = None,
+    idx: int | float | str | Point3D | None = None,
     labels: np.ndarray | None = None,
     label_names: List[str] | None = None,
     points: np.ndarray | None = None,
@@ -43,7 +43,16 @@ def _get_view_idx(
     if idx is None:
         idx = 'p:0.5'
 
-    # World coords.
+    # Point3D - a 3D world coordinate (tuple, list, or np.ndarray).
+    if isinstance(idx, (tuple, list, np.ndarray)) and not isinstance(idx, bool):
+        idx = np.asarray(idx).flatten()
+        if len(idx) != 3:
+            raise ValueError(f"Expected a 3-element point for idx but got {len(idx)} elements.")
+        if affine is not None:
+            idx = to_image_coords(idx, affine)
+        return int(np.clip(np.round(idx[view]), 0, size[view] - 1))
+
+    # Scalar world coords.
     if isinstance(idx, (int, float)) and not isinstance(idx, bool):
         if affine is not None:
             idx = to_image_coords(idx, affine)
@@ -51,7 +60,7 @@ def _get_view_idx(
 
     # String prefixes.
     if not isinstance(idx, str):
-        raise ValueError(f"Invalid idx: {idx}. Expected int, float, str, or None.")
+        raise ValueError(f"Invalid idx: {idx}. Expected int, float, str, Point3D, or None.")
 
     source, value = idx.split(':')
 
@@ -204,7 +213,7 @@ def plot_volume(
     dose_cmap: str = 'turbo',
     dose_cmap_trunc: float = 0.15,
     figsize: tuple[float, float] = (16, 6),
-    idx: int | float | str | None = None,
+    idx: int | float | str | Point3D | None = None,
     labels: LabelImage3D | BatchLabelImage3D | None = None,
     label_names: str | List[str] | None = None,
     centre_method: Literal['com', 'fov'] = 'com',
