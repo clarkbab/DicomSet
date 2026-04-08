@@ -1,5 +1,5 @@
 import cv2 as cv
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 import numpy as np
 import pydicom as dcm

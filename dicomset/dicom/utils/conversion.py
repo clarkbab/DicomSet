@@ -10,7 +10,7 @@ from time import time
 from tqdm import tqdm
 from typing import Callable, List, Literal, TYPE_CHECKING
 
-from ...nifti.dataset import create as create_nifti
+from ...nifti.utils.save import create_dataset as create_nifti
 from ...typing import GroupID, LandmarkID, PatientID, RegionID
 from ...utils.io import load_csv, save_csv, save_nifti
 from ...utils.logging import logger

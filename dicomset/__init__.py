@@ -2,13 +2,13 @@ from typing import List
 
 from .dataset import Dataset
 from .dicom import DicomDataset
-from .dicom.utils.get import list_datasets as list_dicom_datasets
+from .dicom.utils.load import list_datasets as list_dicom_datasets
 from .nifti import NiftiDataset
-from .nifti.utils.get import list_datasets as list_nifti_datasets
+from .nifti.utils.load import list_datasets as list_nifti_datasets
 from .raw import RawDataset
-from .raw.utils.get import list_datasets as list_raw_datasets
+from .raw.utils.load import list_datasets as list_raw_datasets
 from .training import TrainingDataset
-from .training.utils.get import list_datasets as list_training_datasets
+from .training.utils.load import list_datasets as list_training_datasets
 from .typing import DatasetID, DatasetType
 
 def get(
