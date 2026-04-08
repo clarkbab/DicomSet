@@ -9,8 +9,8 @@ import skimage as ski
 from typing import Dict, List, Sequence, Tuple
 
 from ....typing import LabelImage3D, LandmarkID, Point2D, Point3D, Points3D, RegionID, Size2D, Size3D, Spacing2D, Spacing3D
-from ....utils.dicom import DICOM_DATE_FORMAT, DICOM_TIME_FORMAT
 from ....utils.logging import logger
+from ...utils.dicom import DICOM_DATE_FORMAT, DICOM_TIME_FORMAT
 
 CONTOUR_FORMATS = ['POINT', 'CLOSED_PLANAR']
 CONTOUR_METHOD = 'SKIMAGE'

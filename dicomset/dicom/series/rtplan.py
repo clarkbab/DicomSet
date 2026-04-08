@@ -13,6 +13,8 @@ if TYPE_CHECKING:
     from ..study import DicomStudy
 from .series import DicomSeries
 
+DICOM_RTPLAN_REF_RTSTRUCT_KEY = 'RefRTSTRUCTSOPInstanceUID'
+
 class DicomRtPlanSeries(DicomSeries):
     def __init__(
         self,

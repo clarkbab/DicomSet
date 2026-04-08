@@ -5,7 +5,9 @@ import pandas as pd
 from typing import Callable, TYPE_CHECKING
 
 from .... import config
-from ....dicom import DicomDataset, DicomMrSeries
+from ....dicom import DicomDataset
+if TYPE_CHECKING:
+    from ....dicom import DicomMrSeries
 from ....typing import Image3D, Point3D, SeriesID, Size3D, Spacing3D
 from ....utils.io import load_nifti, load_nrrd
 from ....utils.python import has_private_attr

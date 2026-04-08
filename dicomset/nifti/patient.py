@@ -7,7 +7,8 @@ from typing import List, Literal, TYPE_CHECKING
 
 from .. import config
 from ..dicom.dataset import DicomDataset
-from ..dicom.patient import DicomPatient
+if TYPE_CHECKING:
+    from ..dicom.patient import DicomPatient
 from ..mixins import IndexMixin
 from ..patient import Patient
 from ..regions_map import RegionsMap

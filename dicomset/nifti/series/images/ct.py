@@ -6,7 +6,8 @@ from typing import Callable, TYPE_CHECKING
 
 from .... import config
 from ....dicom import DicomDataset
-from ....dicom.series import DicomCtSeries
+if TYPE_CHECKING:
+    from ....dicom.series import DicomCtSeries
 from ....typing import AffineMatrix3D, Box3D, Image3D, Point3D, SeriesID, Size3D, Spacing3D
 from ....utils.geometry import affine_origin, affine_spacing, fov
 from ....utils.io import load_nifti, load_nrrd

@@ -1,4 +1,5 @@
 import ast
+from collections.abc import Sequence as CSequence
 import inspect
 import sys
 import textwrap

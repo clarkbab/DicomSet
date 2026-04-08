@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections import Counter
 from datetime import datetime
 import numpy as np
@@ -5,15 +7,11 @@ import os
 import pydicom as dcm
 from typing import Any, Dict, List, Tuple
 
-from ..typing import AffineMatrix3D, DirPath, FilePath, Image2D, Image3D, PatientID, SeriesID, StudyID
-from ..utils.geometry import affine_origin, affine_spacing
-from ..utils.maths import round
-from .geometry import create_affine
+from ...typing import AffineMatrix3D, DirPath, FilePath, Image2D, Image3D, PatientID, SeriesID, StudyID
+from ...utils.geometry import affine_origin, affine_spacing, create_affine
+from ...utils.maths import round
 
 DICOM_DATE_FORMAT = '%Y%m%d'
-DICOM_RTDOSE_REF_RTPLAN_KEY = 'RefRTPLANSOPInstanceUID'
-DICOM_RTPLAN_REF_RTSTRUCT_KEY = 'RefRTSTRUCTSOPInstanceUID'
-DICOM_RTSTRUCT_REF_CT_KEY = 'RefCTSeriesInstanceUID'
 DICOM_TIME_FORMAT = '%H%M%S'
 
 def from_ct_dicom(
@@ -108,7 +106,7 @@ def from_rtdose_dicom(
     # Create affine.
     spacing_xy = rtdose.PixelSpacing 
     z_diffs = np.diff(rtdose.GridFrameOffsetVector)
-    z_diffs = round(z_diffs, tol=TOLERANCE_MM)
+    z_diffs = round(z_diffs, tol=1e-6)
     z_diffs = np.unique(z_diffs)
     if len(z_diffs) != 1:
         raise ValueError(f"Slice z spacings for RtDoseDicom not equal: {z_diffs}.")

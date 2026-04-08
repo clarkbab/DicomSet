@@ -2,13 +2,13 @@ from typing import List
 
 from .dataset import Dataset
 from .dicom import DicomDataset
-from .dicom import list as list_dicom
+from .dicom.utils.get import list_datasets as list_dicom_datasets
 from .nifti import NiftiDataset
-from .nifti import list as list_nifti
+from .nifti.utils.get import list_datasets as list_nifti_datasets
 from .raw import RawDataset
-from .raw import list as list_raw
+from .raw.utils.get import list_datasets as list_raw_datasets
 from .training import TrainingDataset
-from .training import list as list_training
+from .training.utils.get import list_datasets as list_training_datasets
 from .typing import DatasetID, DatasetType
 
 def get(
@@ -31,12 +31,12 @@ def list(
     type: DatasetType,
     ) -> List[DatasetID]:
     if type == 'dicom':
-        return list_dicom()
+        return list_dicom_datasets()
     elif type == 'nifti':
-        return list_nifti()
+        return list_nifti_datasets()
     elif type == 'raw':
-        return list_raw()
+        return list_raw_datasets()
     elif type == 'training':
-        return list_training()
+        return list_training_datasets()
     else:
         raise ValueError(f"Dataset type '{type}' not found.")

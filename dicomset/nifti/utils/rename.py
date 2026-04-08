@@ -4,6 +4,7 @@ from typing import Callable, List, Literal
 from ...typing import DatasetID, PatientID
 from ...utils.io import load_csv, save_csv
 from ...utils.logging import logger
+from ..dataset import NiftiDataset
 
 def rename_patients(
     dataset: DatasetID,

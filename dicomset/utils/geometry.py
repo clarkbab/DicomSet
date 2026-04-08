@@ -27,7 +27,7 @@ def affine_spacing(
 
     return spacing
 
-def com(
+def centre_of_mass(
     data: Image,
     affine: AffineMatrix | None = None,
     ) -> Point | Pixel | Voxel:
@@ -170,7 +170,7 @@ def to_image_coords(
     ) -> Pixel | Voxel:
     spacing = affine_spacing(affine)
     origin = affine_origin(affine)
-    point_im = np.round((point - origin) / spacing).astype(np.int32)
+    point_im = np.round((np.array(point) - origin) / spacing).astype(np.int32)
     return point_im
 
 def to_world_coords(
@@ -179,5 +179,5 @@ def to_world_coords(
     ) -> Point:
     spacing = affine_spacing(affine)
     origin = affine_origin(affine)
-    point_w = point * spacing + origin
+    point_w = np.array(point) * spacing + origin
     return point_w

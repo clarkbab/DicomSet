@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 import os
 import pandas as pd
@@ -6,7 +8,7 @@ import re
 import shutil
 from time import time
 from tqdm import tqdm
-from typing import Callable, List, Literal
+from typing import Callable, List, Literal, TYPE_CHECKING
 
 from ...nifti.dataset import create as create_nifti
 from ...typing import GroupID, LandmarkID, PatientID, RegionID
@@ -14,7 +16,8 @@ from ...utils.io import load_csv, save_csv, save_nifti
 from ...utils.logging import logger
 from ...utils.pandas import append_row
 from ..dataset import CT_FROM_REGEXP, DicomDataset
-from ..study import DicomStudy
+if TYPE_CHECKING:
+    from ..study import DicomStudy
 
 def convert_to_nifti(
     dataset: str,

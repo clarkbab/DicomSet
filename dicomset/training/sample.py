@@ -6,7 +6,7 @@ from typing import Callable, List, Literal, Tuple, TYPE_CHECKING
 
 from ..typing import LabelImage3D, LandmarkID, Point3D, RegionID, SampleID, Size3D, Spacing3D
 from ..utils.args import arg_to_list
-from ..utils.io import load_numpy
+from ..utils.io import load_csv, load_numpy
 from ..utils.python import has_private_attr
 from ..utils.regions import regions_to_list
 if TYPE_CHECKING:
@@ -120,7 +120,7 @@ class TrainingSample:
         elif label_type == 'landmarks':
             # Load landmarks dataframe.
             filepath = os.path.join(self.split.path, 'labels', f'{label_id}.csv')
-            label = load_files_csv(filepath)
+            label = load_csv(filepath)
             if landmark_id != 'all':
                 # Filter on requested landmarks.
                 landmark_ids = arg_to_list(landmark_id, str, literals={ 'all': self.split.dataset.list_landmarks })

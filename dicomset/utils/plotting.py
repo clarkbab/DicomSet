@@ -6,7 +6,7 @@ from typing import List, Literal
 
 from ..typing import AffineMatrix3D, BatchLabelImage2D, BatchLabelImage3D, Image2D, Image3D, LabelImage3D, Orientation, Point3D, Points3D, Size3D, View
 from .args import arg_to_list
-from .geometry import affine_origin, affine_spacing, com, foreground_fov_centre, to_image_coords
+from .geometry import affine_origin, affine_spacing, centre_of_mass, foreground_fov_centre, to_image_coords
 from .logging import logger
 
 VIEWS = ['Sagittal', 'Coronal', 'Axial']
@@ -89,7 +89,7 @@ def _get_view_idx(
             label_idx = label_names.index(value)
 
         if centre_method == 'com':
-            centre = com(labels[label_idx], affine=affine)
+            centre = centre_of_mass(labels[label_idx], affine=affine)
         elif centre_method == 'fov':
             centre = foreground_fov_centre(labels[label_idx], affine=affine)
         else:

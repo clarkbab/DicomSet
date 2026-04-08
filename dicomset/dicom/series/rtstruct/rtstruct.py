@@ -20,11 +20,12 @@ if TYPE_CHECKING:
     from ...dataset import DicomDataset
     from ...patient import DicomPatient
     from ...study import DicomStudy
-from ..ct import DicomCtSeries
+    from ..ct import DicomCtSeries
 from ..series import DicomSeries
 from .rtstruct_converter import RtStructConverter
 
 DEFAULT_LANDMARK_REGEXP = r'^Marker \d+$'
+DICOM_RTSTRUCT_REF_CT_KEY = 'RefCTSeriesInstanceUID'
 
 class DicomRtStructSeries(DicomSeries):
     def __init__(
@@ -193,10 +194,8 @@ class DicomRtStructSeries(DicomSeries):
                 # Map back to the API region names.
                 api_regions = [self.__regions_map.unmap_region(r) for r in true_disk_regions]
                 api_regions = [r for rs in api_regions for r in (rs if isinstance(rs, list) else [rs])]
-                print('all, mapped: ', api_regions)
             else:
                 api_regions = true_disk_regions
-                print('all, unmapped: ', api_regions)
         else:
             region_ids = arg_to_list(region_id, str)
             api_regions = []

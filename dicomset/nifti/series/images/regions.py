@@ -6,7 +6,9 @@ import pandas as pd
 from typing import List, Literal, Tuple, TYPE_CHECKING
 
 from .... import config
-from ....dicom import DicomDataset, DicomRtStructSeries
+from ....dicom import DicomDataset
+if TYPE_CHECKING:
+    from ....dicom import DicomRtStructSeries
 from ....regions_map import RegionsMap
 from ....typing import BatchLabelImage3D, FilePath, RegionID, SeriesID
 from ....utils.args import alias_kwargs, arg_to_list
@@ -79,8 +81,6 @@ class NiftiRegionsSeries(NiftiImageSeries):
             # Add to main tensor.
             if regions_data is None:
                 regions_data = np.zeros((len(region_ids), *reg_data.shape), dtype=bool)
-            print(type(regions_data))
-            print(type(reg_data))
             regions_data[i] = reg_data
 
         if return_regions:
@@ -139,7 +139,6 @@ class NiftiRegionsSeries(NiftiImageSeries):
             use_mapping = False
 
         true_disk_regions = self.__load_disk_regions()
-        print('true: ', true_disk_regions)
         
         # Map disk regions back to API regions.
         if region_id == 'all':
@@ -147,10 +146,8 @@ class NiftiRegionsSeries(NiftiImageSeries):
                 # Map back to the API region names.
                 api_regions = [self.__regions_map.unmap_region(r) for r in true_disk_regions]
                 api_regions = [r for rs in api_regions for r in (rs if isinstance(rs, list) else [rs])]
-                print('all, mapped: ', api_regions)
             else:
                 api_regions = true_disk_regions
-                print('all, unmapped: ', api_regions)
         else:
             region_ids = arg_to_list(region_id, str)
             api_regions = []

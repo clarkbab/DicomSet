@@ -1,2 +1,2 @@
-from .rtstruct import DicomRtStructSeries
+from .rtstruct import DICOM_RTSTRUCT_REF_CT_KEY, DicomRtStructSeries
 from .rtstruct_converter import RtStructConverter

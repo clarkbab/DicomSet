@@ -1,25 +1,30 @@
+from __future__ import annotations
+
 import numpy as np
 import os
 import pandas as pd
-from typing import List, Literal
+from typing import List, Literal, TYPE_CHECKING
 
 from ... import config
 from ...dataset import Dataset
-from ...dicom import DicomDataset, DicomRtStructSeries
+from ...dicom import DicomDataset
+if TYPE_CHECKING:
+    from ...dicom import DicomRtStructSeries
 from ...patient import Patient
 from ...study import Study
 from ...typing import LandmarkID, Landmarks3D, SeriesID
 from ...utils.args import arg_to_list
 from ...utils.io import load_csv
-from .images import NiftiCtSeries, NiftiDoseSeries
+if TYPE_CHECKING:
+    from .images import NiftiCtSeries, NiftiDoseSeries
 from .series import NiftiSeries
 
 class NiftiLandmarksSeries(NiftiSeries):
     def __init__(
         self,
-        dataset: 'Dataset',
-        patient: 'Patient',
-        study: 'Study',
+        dataset: Dataset,
+        patient: Patient,
+        study: Study,
         id: SeriesID,
         index: pd.DataFrame | None = None,
         ref_ct: NiftiCtSeries | None = None,

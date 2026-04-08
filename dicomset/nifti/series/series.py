@@ -1,5 +1,10 @@
 
-from ...dicom.series import DicomSeries
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ...dicom.series import DicomSeries
 from ...mixins import IndexMixin
 from ...series import Series
 from ...typing import NiftiModality

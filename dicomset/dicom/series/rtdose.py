@@ -7,14 +7,16 @@ from typing import Any, Callable, Dict, TYPE_CHECKING
 
 from ... import config
 from ...typing import Box3D, Image3D, Point3D, SeriesID, Size3D, Spacing3D
-from ...utils.dicom import from_rtdose_dicom
 from ...utils.geometry import fov
 from ...utils.python import has_private_attr
 if TYPE_CHECKING:
     from ..dataset import DicomDataset
     from ..patient import DicomPatient
     from ..study import DicomStudy
+from ..utils.dicom import from_rtdose_dicom
 from .series import DicomSeries
+
+DICOM_RTDOSE_REF_RTPLAN_KEY = 'RefRTPLANSOPInstanceUID'
 
 class DicomRtDoseSeries(DicomSeries):
     def __init__(

@@ -1,7 +1,9 @@
 import os
 import pandas as pd
+import shutil
 import SimpleITK as sitk
 
+from ... import config
 from ...typing import AffineMatrix3D, DatasetID, Image3D, LabelImage3D, Landmarks3D, ModelID, NiftiModality, PatientID, RegionID, SeriesID, StudyID
 from ...utils.io import save_csv, save_nifti, save_transform
 from ..dataset import NiftiDataset
@@ -17,6 +19,17 @@ def create_ct(
     set = NiftiDataset(dataset)
     filepath = os.path.join(set.path, 'data', 'patients', patient_id, study_id, 'ct', f'{series_id}.nii.gz')
     save_nifti(data, affine, filepath)
+
+def create_dataset(
+    dataset_id: DatasetID,
+    recreate: bool = False,
+    ) -> NiftiDataset:
+    ds_path = os.path.join(config.directories.datasets, 'nifti', dataset_id)
+    if os.path.exists(ds_path):
+        if recreate:
+            shutil.rmtree(ds_path)
+    os.makedirs(ds_path, exist_ok=True)
+    return NiftiDataset(dataset_id)
 
 def create_index(
     dataset: DatasetID,

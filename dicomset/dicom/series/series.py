@@ -3,6 +3,7 @@ from datetime import datetime as dt
 from ...mixins import IndexMixin
 from ...series import Series
 from ...typing import DicomModality
+from ..utils.dicom import DICOM_DATE_FORMAT, DICOM_TIME_FORMAT
 
 # Abstract class.
 class DicomSeries(IndexMixin, Series):

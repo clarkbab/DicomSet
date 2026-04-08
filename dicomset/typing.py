@@ -4,21 +4,36 @@ import pandas as pd
 import pydicom as dcm
 from typing import Literal, Tuple
 
-# Basic types.
+# First-order types (composed of basic types).
+# Splitting by 'order' allows for easier managing of type dependencies.
 AffineMatrix2D = Float[np.ndarray, "3 3"]
 AffineMatrix3D = Float[np.ndarray, "4 4"]
-BatchLabelImage3D = Bool[np.ndarray, "B X Y Z"]
+BatchImage2D = Float[np.ndarray, "B X Y"]
+BatchImage3D = Float[np.ndarray, "B X Y Z"]
+BatchChannelImage2D = Float[np.ndarray, "B C X Y"]
+BatchChannelImage3D = Float[np.ndarray, "B C X Y Z"]
+BatchChannelLabelImage2D = Bool[np.ndarray, "B C X Y"]
+BatchChannelLabelImage3D = Bool[np.ndarray, "B C X Y Z"]
 Box2D = Float[np.ndarray, "2 2"]
 Box3D = Float[np.ndarray, "2 3"]
+BatchLabelImage2D = Bool[np.ndarray, "B X Y"]
+BatchLabelImage3D = Bool[np.ndarray, "B X Y Z"]
+ChannelImage2D = Float[np.ndarray, "C X Y"]
+ChannelImage3D = Float[np.ndarray, "C X Y Z"]
+ChannelLabelImage2D = Bool[np.ndarray, "C X Y"]
+ChannelLabelImage3D = Bool[np.ndarray, "C X Y Z"]
 CtDicom = dcm.dataset.FileDataset
 DatasetID = str
 DatasetType = Literal['dicom', 'nifti', 'raw', 'training']
 DicomModality = Literal['ct', 'mr', 'rtdose', 'rtplan', 'rtstruct']
 DirPath = str
+SpatialDim = Literal[2, 3]
 FilePath = str
 GroupID = int   # For patient groups, for now.
 Image2D = Float[np.ndarray, "X Y"]
 Image3D = Float[np.ndarray, "X Y Z"]
+Indices2D = Int[np.ndarray, "N 2"]
+Indices3D = Int[np.ndarray, "N 3"]
 LabelImage2D = Bool[np.ndarray, "X Y"]
 LabelImage3D = Bool[np.ndarray, "X Y Z"]
 Landmarks2D = Float[np.ndarray, "N 2"] | pd.DataFrame
@@ -27,31 +42,39 @@ LandmarkID = str
 ModelID = str
 NiftiModality = Literal['ct', 'dose', 'landmarks', 'mr', 'plan', 'regions']
 Number = int | float
+Orientation = Literal['LAI', 'LAS', 'LPI', 'LPS', 'RAI', 'RAS', 'RPI', 'RPS']
 PatientID = str
-Pixel = Tuple[int, int]
-Pixels = Int[np.ndarray, "N 2"]
-Point2D = Tuple[Number, Number] | Float[np.ndarray, "2"]
-Point3D = Tuple[Number, Number, Number] | Float[np.ndarray, "3"]
+Point2D = Tuple[float, float] | Float[np.ndarray, "2"]
+Point3D = Tuple[float, float, float] | Float[np.ndarray, "3"]
 Points2D = Float[np.ndarray, "N 2"]
 Points3D = Float[np.ndarray, "N 3"]
+Pixel = Tuple[int, int] | Int[np.ndarray, "2"]
+Pixels = Int[np.ndarray, "N 2"]
 RegionID = str
 SampleID = int
 SeriesID = str
+Voxel = Tuple[int, int, int] | Int[np.ndarray, "3"]
+Voxels = Int[np.ndarray, "N 3"]
 Size2D = Tuple[int, int] | Int[np.ndarray, "2"]
 Size3D = Tuple[int, int, int] | Int[np.ndarray, "3"]
-Spacing2D = Tuple[Number, Number] | Float[np.ndarray, "2"]
-Spacing3D = Tuple[Number, Number, Number] | Float[np.ndarray, "3"]
-SpatialDim = Literal[2, 3]
+Spacing2D = Tuple[float, float] | Float[np.ndarray, "2"]
+Spacing3D = Tuple[float, float, float] | Float[np.ndarray, "3"]
 SplitID = int
 StudyID = str
-Voxel = Tuple[int, int, int]
-Voxels = Int[np.ndarray, "N 3"]
+View = Literal[0, 1, 2]
 
-# First-order types.
+# Second-order types (composed of first-order types).
 AffineMatrix = AffineMatrix2D | AffineMatrix3D
+BatchChannelImage = BatchChannelImage2D | BatchChannelImage3D
+BatchChannelLabelImage = BatchChannelLabelImage2D | BatchChannelLabelImage3D
+BatchImage = BatchImage2D | BatchImage3D
+BatchLabelImage = BatchLabelImage2D | BatchLabelImage3D
 Box = Box2D | Box3D
+ChannelImage = ChannelImage2D | ChannelImage3D
 Image = Image2D | Image3D
-LabelImage = LabelImage2D | LabelImage3D 
+Indices = Indices2D | Indices3D
+LabelImage = LabelImage2D | LabelImage3D
 Point = Point2D | Point3D
+Points = Points2D | Points3D
 Size = Size2D | Size3D
 Spacing = Spacing2D | Spacing3D
