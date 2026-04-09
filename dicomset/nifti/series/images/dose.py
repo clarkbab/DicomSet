@@ -6,16 +6,15 @@ from typing import Callable, TYPE_CHECKING
 
 from .... import config
 from ....dicom.dataset import DicomDataset
-if TYPE_CHECKING:
-    from ....dicom.series import DicomRtDoseSeries
 from ....typing import Box3D, Image3D, Point3D, SeriesID, Size3D, Spacing3D
 from ....utils.io import load_nifti, load_nrrd
 from ....utils.python import has_private_attr
+from .image import NiftiImageSeries
 if TYPE_CHECKING:
+    from ....dicom.series import DicomRtDoseSeries
     from ...dataset import NiftiDataset
     from ...patient import NiftiPatient
     from ...study import NiftiStudy
-from .image import NiftiImageSeries
 
 class NiftiDoseSeries(NiftiImageSeries):
     def __init__(

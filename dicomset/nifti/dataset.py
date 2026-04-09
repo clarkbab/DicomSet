@@ -10,6 +10,7 @@ from ..dicom import DicomDataset
 from ..mixins import IndexMixin
 from ..regions_map import RegionsMap
 from ..typing import DatasetID, GroupID, PatientID, RegionID
+from ..utils import logging
 from ..utils.args import arg_to_list, resolve_id
 from ..utils.io import load_csv
 from .patient import NiftiPatient

@@ -10,20 +10,14 @@ from ...utils.args import arg_to_list
 from ...utils.io import load_csv, load_nifti
 from ..dataset import NiftiDataset
 
-def exists_dataset(dataset_id: DatasetID) -> bool:
+def dataset_exists(dataset_id: DatasetID) -> bool:
     ds_path = os.path.join(config.directories.datasets, 'nifti', dataset_id)
     return os.path.exists(ds_path)
 
-def get_dataset(dataset_id: DatasetID) -> NiftiDataset:
-    ds_path = os.path.join(config.directories.datasets, 'nifti', dataset_id)
-    if not os.path.exists(ds_path):
-        raise FileNotFoundError(f"Nifti dataset '{id}' not found at {ds_path}.")
-    return NiftiDataset(dataset_id)
-    
 def list_datasets() -> List[DatasetID]:
     path = os.path.join(config.directories.datasets, 'nifti')
     return list(sorted(os.listdir(path))) if os.path.exists(path) else []
-
+    
 def load_ct(
     dataset: DatasetID,
     patient_id: PatientID,
@@ -33,6 +27,12 @@ def load_ct(
     set = NiftiDataset(dataset)
     filepath = os.path.join(set.path, 'data', 'patients', patient_id, study_id, 'ct', f'{series_id}.nii.gz')
     return load_nifti(filepath)
+
+def load_dataset(dataset_id: DatasetID) -> NiftiDataset:
+    ds_path = os.path.join(config.directories.datasets, 'nifti', dataset_id)
+    if not os.path.exists(ds_path):
+        raise FileNotFoundError(f"Nifti dataset '{id}' not found at {ds_path}.")
+    return NiftiDataset(dataset_id)
 
 def load_index(
     dataset: DatasetID,
@@ -86,8 +86,8 @@ def load_registration_moved_landmarks(
 def load_registration_moved_regions(
     dataset: DatasetID,
     fixed_patient_id: PatientID,
-    region_id: RegionID | List[RegionID],
     model: ModelID,
+    region_id: RegionID | List[RegionID],
     fixed_series_id: SeriesID = 'series_0',
     fixed_study_id: StudyID = 'study_1',
     moving_patient_id: PatientID | None = None,

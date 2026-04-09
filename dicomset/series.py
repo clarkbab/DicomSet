@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any, Dict
 
 from .dataset import Dataset
@@ -8,9 +10,9 @@ from .typing import SeriesID
 class Series:
     def __init__(
         self,
-        dataset: 'Dataset',
-        pat: 'Patient',
-        study: 'Study',
+        dataset: Dataset,
+        pat: Patient,
+        study: Study,
         id: SeriesID,
         config: Dict[str, Any] | None = None,
         ) -> None:
@@ -21,7 +23,7 @@ class Series:
         self._id = str(id)
 
     @property
-    def dataset(self) -> 'Dataset':
+    def dataset(self) -> Dataset:
         return self._dataset
 
     @property
@@ -29,7 +31,7 @@ class Series:
         return self._id
 
     @property
-    def pat(self) -> 'Patient':
+    def pat(self) -> Patient:
         return self._pat
 
     def __repr__(self) -> str:
@@ -48,5 +50,5 @@ class Series:
         return f"{class_name}({', '.join([f'{k}={v}' for k, v in params.items()])})"
 
     @property
-    def study(self) -> 'Study':
+    def study(self) -> Study:
         return self._study

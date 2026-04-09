@@ -1,4 +1,6 @@
-from typing import Any, Dict, Literal
+from __future__ import annotations
+
+from typing import Any, Dict
 
 from .dataset import Dataset
 from .patient import Patient
@@ -8,11 +10,11 @@ from .typing import StudyID
 class Study:
     def __init__(
         self,
-        dataset: 'Dataset',
-        pat: 'Patient',
+        dataset: Dataset,
+        pat: Patient,
         id: StudyID,
         config: Dict[str, Any] | None = None,
-        ct_from: Literal['Study'] | None = None,
+        ct_from: Study | None = None,
         regions_map: RegionsMap | None = None,
         ) -> None:
         self._dataset = dataset
@@ -23,11 +25,11 @@ class Study:
         self._regions_map = regions_map
 
     @property
-    def ct_from(self) -> Literal['Study'] | None:
+    def ct_from(self) -> Study | None:
         return self._ct_from
 
     @property
-    def dataset(self) -> 'Dataset':
+    def dataset(self) -> Dataset:
         return self._dataset
 
     @property
@@ -35,7 +37,7 @@ class Study:
         return self._id
 
     @property
-    def pat(self) -> 'Patient':
+    def pat(self) -> Patient:
         return self._pat
 
     @property

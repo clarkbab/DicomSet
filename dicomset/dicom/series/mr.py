@@ -10,11 +10,11 @@ from ... import config
 from ...typing import Box3D, Image3D, Point3D, SeriesID, Size3D, Spacing3D
 from ...utils.geometry import fov
 from ...utils.python import has_private_attr
+from .series import DicomSeries
 if TYPE_CHECKING:
     from ..dataset import DicomDataset
     from ..patient import DicomPatient
     from ..study import DicomStudy
-from .series import DicomSeries
 
 class DicomMrSeries(DicomSeries):
     def __init__(

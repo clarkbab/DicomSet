@@ -6,15 +6,15 @@ from tqdm import tqdm
 from typing import List, Literal
 
 from .. import config
-from ..dataset import CT_FROM_REGEXP, Dataset, DatasetID
+from ..dataset import CT_FROM_REGEXP, Dataset
 from ..mixins import IndexWithErrorsMixin
 from ..regions_map import RegionsMap
-from ..typing import GroupID, PatientID, RegionID
+from ..typing import DatasetID, GroupID, PatientID, RegionID
 from ..utils.args import arg_to_list, resolve_id
 from ..utils.io import load_csv, load_yaml
 from ..utils.logging import logger
 from ..utils.regions import regions_to_list
-from .index import ERROR_INDEX_COLS, INDEX_COLS, build_index as build_index_base, exists as index_exists
+from .index import ERROR_INDEX_COLS, INDEX_COLS, build_index as build_index_base, index_exists
 from .patient import DicomPatient
 
 class DicomDataset(Dataset, IndexWithErrorsMixin):

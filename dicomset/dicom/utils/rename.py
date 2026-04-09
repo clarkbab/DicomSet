@@ -3,8 +3,11 @@ import os
 import pydicom as dcm
 import shutil
 from tqdm import tqdm
+from typing import Callable, Dict, Optional, Union
 
-from ..dataset import DatasetID, DicomDataset, Dict, PatientID, filepath, load_csv, match, re
+from ...typing import DatasetID, FilePath, PatientID
+from ...utils.io import assert_writeable, load_csv, save_csv
+from ..dataset import DicomDataset
 
 def get_new_pat_id(
     old_patient_id: PatientID,

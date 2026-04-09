@@ -182,7 +182,7 @@ def plot_slice(
     # Add histogram.
     if show_hist:
         axs[1].hist(data.flatten(), bins=50, color='gray')
-        axs[1].ticklabel_format(axis='y', style='scientific', scilimits=(0, 0))
+        axs[1].ticklabel_format(axis='y', scilimits=(0, 0), style='scientific')
 
     # Hide axis spines and ticks.
     for p in ['right', 'top', 'bottom', 'left']:
@@ -251,7 +251,7 @@ def plot_volume(
     axs = axs[0]
 
     for col_ax, v in zip(axs, views):
-        resolved_idx = _get_view_idx(v, data.shape, affine=affine, centre_method=centre_method, idx=idx, labels=labels, label_names=label_names, points=points)
+        resolved_idx = _get_view_idx(v, data.shape, affine=affine, centre_method=centre_method, idx=idx, label_names=label_names, labels=labels, points=points)
         image = _get_view_slice(v, data, resolved_idx)
         aspect = _get_view_aspect(v, affine)
         origin_x, origin_y = _get_view_origin(v, orientation=orientation)
@@ -287,7 +287,7 @@ def plot_volume(
             # Add legend on first view only.
             if label_names_list is not None and v == views[0]:
                 handles = [mpl.patches.Patch(facecolor=palette[j], label=label_names_list[j]) for j in range(len(labels)) if j < len(label_names_list)]
-                col_ax.legend(handles=handles, loc='upper right', fontsize='small', framealpha=0.7)
+                col_ax.legend(fontsize='small', framealpha=0.7, handles=handles, loc='upper right')
 
         # Point overlays.
         if points is not None:

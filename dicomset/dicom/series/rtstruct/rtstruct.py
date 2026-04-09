@@ -8,7 +8,7 @@ import pydicom as dcm
 import re
 from typing import Any, Dict, List, Literal, Tuple, TYPE_CHECKING
 
-from .... import config as ds_config
+from .... import config as conf
 from ....regions_map import RegionsMap
 from ....typing import BatchLabelImage3D, FilePath, LandmarkID, Landmarks3D, Points3D, RegionID, SeriesID, Voxels
 from ....utils.args import alias_kwargs, arg_to_list
@@ -16,13 +16,13 @@ from ....utils.conversion import to_numpy
 from ....utils.geometry import to_image_coords
 from ....utils.python import filter_lists
 from ....utils.regions import regions_to_list
+from ..series import DicomSeries
+from .rtstruct_converter import RtStructConverter
 if TYPE_CHECKING:
     from ...dataset import DicomDataset
     from ...patient import DicomPatient
     from ...study import DicomStudy
     from ..ct import DicomCtSeries
-from ..series import DicomSeries
-from .rtstruct_converter import RtStructConverter
 
 DEFAULT_LANDMARK_REGEXP = r'^Marker \d+$'
 DICOM_RTSTRUCT_REF_CT_KEY = 'RefCTSeriesInstanceUID'
@@ -41,7 +41,7 @@ class DicomRtStructSeries(DicomSeries):
         regions_map: RegionsMap | None = None,
         ) -> None:
         super().__init__('rtstruct', dataset, patient, study, id, config=config)
-        self.__filepath = os.path.join(ds_config.directories.datasets, 'dicom', dataset.id, 'data', 'patients', index['filepath'])
+        self.__filepath = os.path.join(conf.directories.datasets, 'dicom', dataset.id, 'data', 'patients', index['filepath'])
         self.__modality = 'rtstruct'
         self.__ref_ct = ref_ct
         self.__regions_map = regions_map

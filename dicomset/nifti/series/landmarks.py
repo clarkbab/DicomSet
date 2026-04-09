@@ -8,16 +8,16 @@ from typing import List, Literal, TYPE_CHECKING
 from ... import config
 from ...dataset import Dataset
 from ...dicom import DicomDataset
-if TYPE_CHECKING:
-    from ...dicom import DicomRtStructSeries
 from ...patient import Patient
 from ...study import Study
+from ...training import sample
 from ...typing import LandmarkID, Landmarks3D, SeriesID
 from ...utils.args import arg_to_list
 from ...utils.io import load_csv
-if TYPE_CHECKING:
-    from .images import NiftiCtSeries, NiftiDoseSeries
 from .series import NiftiSeries
+if TYPE_CHECKING:
+    from ...dicom import DicomRtStructSeries
+    from .images import NiftiCtSeries, NiftiDoseSeries
 
 class NiftiLandmarksSeries(NiftiSeries):
     def __init__(

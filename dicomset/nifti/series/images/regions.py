@@ -7,17 +7,16 @@ from typing import List, Literal, Tuple, TYPE_CHECKING
 
 from .... import config
 from ....dicom import DicomDataset
-if TYPE_CHECKING:
-    from ....dicom import DicomRtStructSeries
 from ....regions_map import RegionsMap
 from ....typing import BatchLabelImage3D, FilePath, RegionID, SeriesID
 from ....utils.args import alias_kwargs, arg_to_list
 from ....utils.io import load_nifti, load_nrrd
+from .image import NiftiImageSeries
 if TYPE_CHECKING:
+    from ....dicom import DicomRtStructSeries
     from ...dataset import NiftiDataset
     from ...patient import NiftiPatient
     from ...study import NiftiStudy
-from .image import NiftiImageSeries
 
 class NiftiRegionsSeries(NiftiImageSeries):
     def __init__(

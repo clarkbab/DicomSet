@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime as dt
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, TYPE_CHECKING
 
 from ..dataset import Dataset
 from ..mixins import IndexWithErrorsMixin
@@ -13,9 +13,11 @@ from ..study import Study
 from ..typing import DicomModality, SeriesID, StudyID
 from ..utils.args import alias_kwargs, arg_to_list, resolve_id
 from ..utils.logging import logger
-from .series import DICOM_RTSTRUCT_REF_CT_KEY, DicomSeries
+from .series import DICOM_RTSTRUCT_REF_CT_KEY
 from .series import DicomCtSeries, DicomMrSeries, DicomRtDoseSeries, DicomRtPlanSeries, DicomRtStructSeries
 from .utils.dicom import DICOM_DATE_FORMAT, DICOM_TIME_FORMAT
+if TYPE_CHECKING:
+    from .series import DicomSeries
 
 class DicomStudy(IndexWithErrorsMixin, Study):
     def __init__(
@@ -27,7 +29,7 @@ class DicomStudy(IndexWithErrorsMixin, Study):
         index_policy: Dict[str, Any],
         index_errors: pd.DataFrame,
         config: Dict[str, Any] | None = None,
-        ct_from: Literal['DicomStudy'] | None = None,
+        ct_from: DicomStudy | None = None,
         regions_map: RegionsMap | None = None,
         ) -> None:
         super().__init__(dataset, patient, id, config=config, ct_from=ct_from, regions_map=regions_map)

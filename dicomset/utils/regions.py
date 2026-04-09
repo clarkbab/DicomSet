@@ -1,8 +1,9 @@
 import os
 from typing import List
 
-from ..typing import RegionID, pd
-from .args import arg_to_list, config
+from .. import config
+from ..typing import RegionID
+from .args import arg_to_list
 
 # Behaves like 'arg_to_list', but also handles special 'rl:<region list>' format.
 def regions_to_list(

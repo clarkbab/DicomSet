@@ -7,23 +7,22 @@ from typing import List, Literal, TYPE_CHECKING
 
 from .. import config
 from ..dicom.dataset import DicomDataset
-if TYPE_CHECKING:
-    from ..dicom.patient import DicomPatient
 from ..mixins import IndexMixin
 from ..patient import Patient
 from ..regions_map import RegionsMap
 from ..typing import PatientID, StudyID
 from ..utils.args import arg_to_list, resolve_id
-if TYPE_CHECKING:
-    from .dataset import NiftiDataset
 from .study import NiftiStudy
+if TYPE_CHECKING:
+    from ..dicom.patient import DicomPatient
+    from .dataset import NiftiDataset
 
 class NiftiPatient(IndexMixin, Patient):
     def __init__(
         self,
         dataset: NiftiDataset,
         id: PatientID,
-        ct_from: Literal['NiftiPatient'] | None = None,
+        ct_from: NiftiPatient | None = None,
         index: pd.DataFrame | None = None,
         excluded_labels: List[str] | None = None,
         regions_map: RegionsMap | None = None,

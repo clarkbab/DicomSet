@@ -9,12 +9,12 @@ from ... import config
 from ...typing import AffineMatrix3D, Box3D, Image3D, Point3D, SeriesID, Size3D, Spacing3D
 from ...utils.geometry import affine_origin, affine_spacing, fov
 from ...utils.python import has_private_attr
+from ..utils.dicom import from_ct_dicom
+from .series import DicomSeries
 if TYPE_CHECKING:
     from ..dataset import DicomDataset
     from ..patient import DicomPatient
     from ..study import DicomStudy
-from ..utils.dicom import from_ct_dicom
-from .series import DicomSeries
 
 class DicomCtSeries(DicomSeries):
     def __init__(

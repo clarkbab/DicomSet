@@ -106,16 +106,6 @@ def delegates_to(*inner_fns: Callable) -> Callable:
 
     return change_outer_fn_sig
 
-def get_inner_args(
-    outer_fn: Callable,
-    inner_fn: Callable,
-    ) -> Tuple[List[str], List[str]]:
-    source = textwrap.dedent(inspect.getsource(outer_fn))
-    tree = ast.parse(source)
-    visitor = CallVisitor(inner_fn)
-    visitor.visit(tree)
-    return visitor.args, visitor.kwargs
-
 def filter_lists(
     lists: List[List[Any]],
     filt_fn: Callable,
@@ -128,6 +118,16 @@ def filter_lists(
     if len(lists) == 0:
         return [[],] * n_elements
     return lists
+
+def get_inner_args(
+    outer_fn: Callable,
+    inner_fn: Callable,
+    ) -> Tuple[List[str], List[str]]:
+    source = textwrap.dedent(inspect.getsource(outer_fn))
+    tree = ast.parse(source)
+    visitor = CallVisitor(inner_fn)
+    visitor.visit(tree)
+    return visitor.args, visitor.kwargs
 
 def has_private_attr(obj, attr_name):
     attr_name = f"_{obj.__class__.__name__}{attr_name}"

@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import os
 import pandas as pd
-from typing import Any, Callable, Dict, List, Literal
+from typing import Any, Callable, Dict, List
 
 from .typing import DatasetID, DirPath, GroupID
 from .utils.io import load_yaml
@@ -11,7 +13,7 @@ class Dataset:
     def __init__(
         self,
         id: DatasetID,
-        ct_from: Literal['Dataset'] | None = None,
+        ct_from: Dataset | None = None,
         ) -> None:
         self._id = str(id)
         self._ct_from = ct_from

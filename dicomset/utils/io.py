@@ -1,4 +1,5 @@
 import ast
+import json
 import nibabel as nib
 import nrrd
 import numpy as np
@@ -101,6 +102,22 @@ def load_yaml(filepath: FilePath) -> Any:
     with open(filepath, 'r') as f:
         return yaml.safe_load(f)
 
+def make_serialisable(
+    data: Any,
+    ) -> Any:
+    if isinstance(data, dict):
+        return {k: make_serialisable(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [make_serialisable(v) for v in data]
+    elif isinstance(data, tuple):
+        return tuple(make_serialisable(v) for v in data)
+    elif isinstance(data, np.ndarray):
+        return data.tolist()
+    elif isinstance(data, (np.integer, np.floating, np.bool_)):
+        return data.item()
+    else:
+        return data
+
 def save_csv(
     data: pd.DataFrame,
     filepath: FilePath,
@@ -112,6 +129,19 @@ def save_csv(
         raise ValueError(f"File '{filepath}' already exists, use overwrite=True.")
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     data.to_csv(filepath, index=index)
+
+def save_json(
+    data: Any,
+    filepath: FilePath,
+    overwrite: bool = True,
+    ) -> None:
+    filepath = resolve_filepath(filepath)
+    if os.path.exists(filepath) and not overwrite:
+        raise ValueError(f"File '{filepath}' already exists, use overwrite=True.")
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    data = make_serialisable(data)
+    with open(filepath, 'w') as f:
+        json.dump(data, f, indent=4)
 
 def save_nifti(
     data: Image3D,

@@ -10,12 +10,12 @@ from time import time
 from tqdm import tqdm
 from typing import Callable, List, Literal, TYPE_CHECKING
 
-from ...nifti.utils.save import create_dataset as create_nifti
+from ...dataset import CT_FROM_REGEXP
 from ...typing import GroupID, LandmarkID, PatientID, RegionID
 from ...utils.io import load_csv, save_csv, save_nifti
 from ...utils.logging import logger
 from ...utils.pandas import append_row
-from ..dataset import CT_FROM_REGEXP, DicomDataset
+from ..dataset import DicomDataset
 if TYPE_CHECKING:
     from ..study import DicomStudy
 
@@ -186,7 +186,7 @@ def convert_to_nifti(
                     # a 'recreate' tag, which will remove existing patient data.
                     filepath = os.path.join(nifti_set.path, 'data', 'patients', ap, nifti_study, 'ct', f'{nifti_series}.nii.gz')
                     if convert_ct and not os.path.exists(filepath):
-                        save_nifti(series.data, filepath, spacing=series.spacing, origin=series.origin)
+                        save_nifti(series.data, filepath, origin=series.origin, spacing=series.spacing)
 
                     # Add index entry.
                     data = {
@@ -219,7 +219,7 @@ def convert_to_nifti(
                     # Create Nifti MR.
                     filepath = os.path.join(nifti_set.path, 'data', 'patients', ap, nifti_study, 'mr', f'{nifti_series}.nii.gz')
                     if convert_mr and not os.path.exists(filepath):
-                        save_nifti(series.data, filepath, spacing=series.spacing, origin=series.origin)
+                        save_nifti(series.data, filepath, origin=series.origin, spacing=series.spacing)
 
                     # Add index entry.
                     data = {
@@ -256,7 +256,7 @@ def convert_to_nifti(
                     for r, data in zip(regions_ids, regions_data):
                         filepath = os.path.join(nifti_set.path, 'data', 'patients', ap, nifti_study, 'regions', nifti_series, f'{r}.nii.gz')
                         if not os.path.exists(filepath):
-                            save_nifti(data, filepath, spacing=ref_ct.spacing, origin=ref_ct.origin)
+                            save_nifti(data, filepath, origin=ref_ct.origin, spacing=ref_ct.spacing)
 
                     # Add index entry.
                     data = {
@@ -312,7 +312,7 @@ def convert_to_nifti(
                 # Create RTDOSE NIFTI.
                 filepath = os.path.join(nifti_set.path, 'data', 'patients', ap, nifti_study, 'dose', f'{nifti_series}.nii.gz')
                 if convert_dose and not os.path.exists(filepath):
-                    save_nifti(series.data, filepath, spacing=series.spacing, origin=series.origin)
+                    save_nifti(series.data, filepath, origin=series.origin, spacing=series.spacing)
 
                 # Add index entry.
                 data = {

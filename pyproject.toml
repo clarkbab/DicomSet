@@ -25,6 +25,12 @@ dev = [
     "build",
     "twine",
 ]
+pred-seg = [
+    "totalsegmentator",
+]
+pred-reg = [
+    "unigradicon",
+]
 
 [tool.setuptools.packages.find]
 include = ["dicomset*"]

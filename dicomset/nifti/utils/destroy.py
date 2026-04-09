@@ -3,6 +3,7 @@ import shutil
 
 from ... import config
 from ...typing import DatasetID
+from ...utils.misc import with_makeitso
 
 def destroy(
     dataset_id: DatasetID,

@@ -10,9 +10,9 @@ from tqdm import tqdm
 from typing import Any, Dict, get_args
 
 from ... import config
-from ...dataset import CT_FROM_REGEXP, load_yaml
+from ...dataset import CT_FROM_REGEXP
 from ...typing import DatasetID, DicomModality
-from ...utils.io import assert_writeable, load_csv, save_csv, save_yaml
+from ...utils.io import assert_writeable, load_csv, load_yaml, save_csv, save_yaml
 from ...utils.logging import logger
 from ...utils.pandas import append_row, concat_dataframes
 from ...utils.python import deep_merge
@@ -441,7 +441,7 @@ def build_index(
     filepath = os.path.join(dataset_path, f'__INDEXING_COMPLETE_{mins}_MINS__')
     Path(filepath).touch()
 
-def exists(dataset: DatasetID) -> bool:
+def index_exists(dataset: DatasetID) -> bool:
     dataset_path = os.path.join(config.directories.datasets, 'dicom', dataset) 
     files = os.listdir(dataset_path)
     for f in files:

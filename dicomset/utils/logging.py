@@ -24,7 +24,7 @@ def arg_log(
     message = action + ' with ' + ', '.join([f"{arg_name}={arg_val}" for arg_name, arg_val in zip(arg_names, arg_vals)]) + '.'
     info(message)
 
-def config(level: str) -> None:
+def configure(level: str) -> None:
     global logger
 
     # Create logger and set level.
@@ -97,4 +97,4 @@ def warning(*args, **kwargs):
     return logger.warning(*args, **kwargs)
 
 # Default config.
-config('info')
+configure('info')

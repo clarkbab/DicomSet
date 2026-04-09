@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import re
 from typing import Dict, List
@@ -38,11 +40,11 @@ class RegionsMap:
     def load(
         cls,
         dirpath
-        ) -> 'RegionsMap':
+        ) -> RegionsMap | None:
         files = os.listdir(dirpath)
         rm_files = [f for f in files if re.match(RM_FILE_REGEXP, f)]
         if not rm_files:
-            raise ValueError(f"No regions map files found in '{dirpath}'.")
+            return None
         data = load_yaml(os.path.join(dirpath, rm_files[0]))
         return cls(data)
 

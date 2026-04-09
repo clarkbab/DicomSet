@@ -1,10 +1,10 @@
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Union
+from typing import Dict, List
 
 def append_row(
     df: pd.DataFrame,
-    data: Dict[str, Union[int, float, str]],
+    data: Dict[str, int | float | str],
     index: int | str | List[int | str] | None = None,
     ) -> pd.DataFrame:
     # Create new index if necessary.
@@ -12,7 +12,7 @@ def append_row(
         # Create row index.
         if type(index) == list or type(index) == tuple:
             # Handle multi-indexes.
-            index = pd.MultiIndex(levels=[[i] for i in index], codes=[[0] for i in index], names=df.index.names)
+            index = pd.MultiIndex(codes=[[0] for i in index], levels=[[i] for i in index], names=df.index.names)
         else:
             index = pd.Index(data=[index], name=df.index.name)
     else:

@@ -6,19 +6,17 @@ from typing import Dict, List, Literal, TYPE_CHECKING
 
 from .. import config
 from ..dicom.dataset import DicomDataset
-if TYPE_CHECKING:
-    from ..dicom.study import DicomStudy
 from ..mixins import IndexMixin
 from ..regions_map import RegionsMap
 from ..study import Study
 from ..typing import NiftiModality, SeriesID, StudyID
 from ..utils.args import arg_to_list, resolve_id
 from ..utils.logging import logger
-if TYPE_CHECKING:
-    from .dataset import NiftiDataset
-    from .patient import NiftiPatient
 from .series import NiftiCtSeries, NiftiDoseSeries, NiftiLandmarksSeries, NiftiMrSeries, NiftiRegionsSeries, NiftiSeries
 if TYPE_CHECKING:
+    from ..dicom.study import DicomStudy
+    from .dataset import NiftiDataset
+    from .patient import NiftiPatient
     from .series import NiftiImageSeries
 
 class NiftiStudy(IndexMixin, Study):
@@ -27,7 +25,7 @@ class NiftiStudy(IndexMixin, Study):
         dataset: NiftiDataset,
         pat: NiftiPatient,
         id: StudyID,
-        ct_from: Literal['NiftiStudy'] | None = None,
+        ct_from: NiftiStudy | None = None,
         index: pd.DataFrame | None = None,
         regions_map: RegionsMap | None = None,
         ) -> None:

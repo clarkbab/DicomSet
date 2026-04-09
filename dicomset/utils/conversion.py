@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import numpy as np
-import torch
-from typing import List, Tuple
+from typing import List, Tuple, TYPE_CHECKING
+if TYPE_CHECKING:
+    import torch
 
 from ..typing import Number
 from .python import delegates_to
@@ -47,6 +50,43 @@ def to_list(
     if data is None:
         return None 
     return to_numpy(data, **kwargs).tolist()
+
+def to_tensor(
+    data: bool | Number | str | List[bool | Number | str] | np.ndarray | torch.Tensor | torch.Size,
+    broadcast: int | None = None,
+    device: torch.device | None = None,
+    dtype: torch.dtype | None = None,
+    return_type: bool = False,
+    ) -> torch.Tensor | Tuple[torch.Tensor | None, type] | None:
+    try:
+        import torch
+    except ImportError:
+        raise ImportError("torch is required for to_tensor(). Install with: pip install torch")
+
+    # Record input type.
+    if return_type:
+        input_type = type(data)
+
+    # Convert to tensor.
+    if isinstance(data, (bool, float, int, str)):
+        device = torch.device('cpu') if device is None else device  
+        data = torch.tensor([data], device=device, dtype=dtype)
+    elif isinstance(data, (list, tuple, np.ndarray, torch.Size)):
+        device = torch.device('cpu') if device is None else device  
+        data = torch.tensor(data, device=device, dtype=dtype)
+    elif isinstance(data, torch.Tensor):
+        device = data.device if device is None else device
+        dtype = data.dtype if dtype is None else dtype
+        data = data.to(device=device, dtype=dtype)
+
+    # Broadcast if required.
+    if broadcast is not None and len(data) == 1:
+        data = data.repeat(broadcast)
+
+    if return_type:
+        return data, input_type
+    else:
+        return data
 
 @delegates_to(to_numpy)
 def to_tuple(

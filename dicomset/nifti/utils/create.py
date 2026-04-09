@@ -10,7 +10,7 @@ from ...utils.args import arg_to_list
 from ...utils.io import save_csv, save_nifti, save_transform
 from ..dataset import NiftiDataset
 
-def save_ct(
+def create_ct(
     dataset: DatasetID,
     patient_id: PatientID,
     study_id: StudyID,
@@ -33,7 +33,7 @@ def create_dataset(
     os.makedirs(ds_path, exist_ok=True)
     return NiftiDataset(dataset_id)
 
-def save_index(
+def create_index(
     dataset: DatasetID,
     index: pd.DataFrame,
     ) -> None:
@@ -41,7 +41,7 @@ def save_index(
     filepath = os.path.join(set.path, 'index.csv')
     save_csv(index, filepath)
 
-def save_region(
+def create_region(
     dataset: DatasetID,
     patient_id: PatientID,
     study_id: StudyID,
@@ -54,7 +54,7 @@ def save_region(
     filepath = os.path.join(set.path, 'data', 'patients', patient_id, study_id, 'regions', series_id, f'{region_id}.nii.gz')
     save_nifti(data, affine, filepath)
 
-def save_registration_moved_image(
+def create_registration_moved_image(
     dataset: DatasetID,
     fixed_patient_id: PatientID,
     model: ModelID,
@@ -72,7 +72,7 @@ def save_registration_moved_image(
     filepath = os.path.join(set.path, 'data', 'predictions', 'registration', 'patients', fixed_patient_id, fixed_study_id, fixed_series_id, moving_patient_id, moving_study_id, moving_series_id, modality, f'{model}.nii.gz')
     save_nifti(data, affine, filepath)
 
-def save_registration_moved_landmarks(
+def create_registration_moved_landmarks(
     dataset: DatasetID,
     fixed_patient_id: PatientID,
     model: ModelID,
@@ -88,7 +88,7 @@ def save_registration_moved_landmarks(
     filepath = os.path.join(set.path, 'data', 'predictions', 'registration', 'patients', fixed_patient_id, fixed_study_id, fixed_series_id, moving_patient_id, moving_study_id, moving_series_id, 'landmarks', f'{model}.csv')
     save_csv(data, filepath)
 
-def save_registration_moved_regions(
+def create_registration_moved_regions(
     dataset: DatasetID,
     fixed_patient_id: PatientID,
     model: ModelID,
@@ -111,7 +111,7 @@ def save_registration_moved_regions(
         filepath = os.path.join(set.path, 'data', 'predictions', 'registration', 'patients', fixed_patient_id, fixed_study_id, fixed_series_id, moving_patient_id, moving_study_id, moving_series_id, 'regions', r, f'{model}.nii.gz')
         save_nifti(d, affine, filepath)
 
-def save_registration_transform(
+def create_registration_transform(
     dataset: DatasetID,
     fixed_patient_id: PatientID,
     model: ModelID,
