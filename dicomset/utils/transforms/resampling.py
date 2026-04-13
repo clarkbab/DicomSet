@@ -39,7 +39,6 @@ def __spatial_resample(
     origin = affine_origin(affine) 
 
     # Get output size/affine.
-    data_type = type(data)
     if output_image is not None:
         assert output_size is None, "Output size can't be provided when output image is provided."
         assert output_affine is None, "Output affine can't be provided when output image is provided."

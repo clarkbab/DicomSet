@@ -94,7 +94,7 @@ def load_registration_moved_regions(
     moving_series_id: SeriesID = 'series_0',
     moving_study_id: StudyID = 'study_0',
     ) -> Tuple[LabelImage3D | BatchLabelImage3D, AffineMatrix3D]:
-    region_ids = arg_to_list(region_id, str)
+    region_ids, region_id_was_single = arg_to_list(region_id, str, return_expanded=True)
     set = NiftiDataset(dataset)
     moving_patient_id = fixed_patient_id if moving_patient_id is None else moving_patient_id
     data_list = []
@@ -104,7 +104,7 @@ def load_registration_moved_regions(
         d, a = load_nifti(filepath)
         data_list.append(d)
         affine = a
-    data = np.stack(data_list) if len(data_list) > 1 else data_list[0]
+    data = data_list[0] if region_id_was_single else np.stack(data_list, axis=0)
     return data, affine
 
 def load_registration_transform(

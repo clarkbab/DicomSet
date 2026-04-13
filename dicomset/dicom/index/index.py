@@ -17,6 +17,7 @@ from ...utils.logging import logger
 from ...utils.pandas import append_row, concat_dataframes
 from ...utils.python import deep_merge
 from ..series import DICOM_RTDOSE_REF_RTPLAN_KEY, DICOM_RTPLAN_REF_RTSTRUCT_KEY, DICOM_RTSTRUCT_REF_CT_KEY
+from ..utils.io import load_dicom
 
 filepath = os.path.join(os.path.dirname(__file__), 'default-policy.yaml')
 DEFAULT_POLICY = load_yaml(filepath)
@@ -159,7 +160,7 @@ def build_index(
 
                 # Check if valid dicom file.
                 try:
-                    dicom = dcm.dcmread(filepath, force=force_dicom_read, stop_before_pixels=True)
+                    dicom = load_dicom(filepath, force=force_dicom_read, stop_before_pixels=True)
                 except dcm.errors.InvalidDicomError:
                     continue
 

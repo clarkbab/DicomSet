@@ -4,12 +4,14 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .geometry import affine_origin, affine_spacing, centre_of_mass, create_affine, foreground_fov, foreground_fov_centre, fov, fov_centre
+    from .logging import logger
     from .metrics import centroid_error, dice, distances
     from .plotting import plot_slice, plot_volume
     from .transforms import resample, spatial_transpose
 
 __all__ = [
     'affine_origin', 'affine_spacing', 'centre_of_mass', 'create_affine',
+    'logger',
     'foreground_fov', 'foreground_fov_centre', 'fov', 'fov_centre',
     'centroid_error', 'distances', 'dice',
     'plot_slice', 'plot_volume',
@@ -20,6 +22,7 @@ GEOMETRY_IMPORTS = [
     'affine_origin', 'affine_spacing', 'centre_of_mass', 'create_affine',
     'foreground_fov', 'foreground_fov_centre', 'fov', 'fov_centre',
 ]
+LOGGING_IMPORTS = ['logger']
 METRICS_IMPORTS = ['centroid_error', 'distances', 'dice']
 PLOTTING_IMPORTS = ['plot_slice', 'plot_volume']
 TRANSFORMS_IMPORTS = ['resample', 'spatial_transpose']
@@ -28,6 +31,9 @@ def __getattr__(name):
     if name in GEOMETRY_IMPORTS:
         from . import geometry
         return getattr(geometry, name)
+    if name in LOGGING_IMPORTS:
+        from . import logging
+        return getattr(logging, name) 
     if name in METRICS_IMPORTS:
         from . import metrics
         return getattr(metrics, name)

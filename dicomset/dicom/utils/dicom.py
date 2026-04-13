@@ -1,18 +1,99 @@
 from __future__ import annotations
 
 from collections import Counter
+import cv2 as cv
 from datetime import datetime
 import numpy as np
 import os
 import pydicom as dcm
-from typing import Any, Dict, List, Tuple
+import seaborn as sns
+import skimage as ski
+from typing import Any, Dict, List, Literal, Tuple
 
-from ...typing import AffineMatrix3D, DirPath, FilePath, Image2D, Image3D, PatientID, SeriesID, StudyID
+from ...typing import AffineMatrix3D, BatchLabelImage3D, DirPath, FilePath, Image2D, Image3D, LabelImage3D, PatientID, Point2D, Points2D, RegionID, Size3D, Spacing2D, StudyID
+from ...utils.args import arg_to_list
 from ...utils.geometry import affine_origin, affine_spacing, create_affine
+from ...utils.logging import logger
 from ...utils.maths import round
+from ..utils.io import load_dicom
 
+CONTOUR_FORMATS = ['POINT', 'CLOSED_PLANAR']
+CONTOUR_METHOD = 'SKIMAGE'
 DICOM_DATE_FORMAT = '%Y%m%d'
 DICOM_TIME_FORMAT = '%H%M%S'
+
+def __add_slice_contours(
+    roi_contour: dcm.dataset.Dataset,
+    data: Image2D,
+    ref_ct: dcm.dataset.Dataset,
+    idx: int,
+    ) -> None:
+    # Convert types. 
+    data = data.astype('uint8')
+
+    # Get contour coordinates.
+    if CONTOUR_METHOD == 'OPENCV':
+        # contours_coords, _ = cv.findContours(slice_data, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+        # 'CHAIN_APPROX_SIMPLE' tries to replace straight line boundaries with two end points, instead
+        # of using many points along the line - however it was producing only two points for some small
+        # structures which Velocity doesn't like.
+        contours_coords, _ = cv.findContours(data, cv.RETR_TREE, cv.CHAIN_APPROX_NONE)
+
+        # Process results.
+        # Each slice can have multiple contours - separate foreground regions in the image.
+        for i, c in enumerate(contours_coords):
+            # OpenCV adds intermediate dimension - for some reason?
+            c = c.squeeze(1)
+
+            # Change in v4.11?
+            # # OpenCV returns (y, x) points, so flip.
+            c = np.flip(c, axis=1)
+            contours_coords[i] = c
+
+    elif CONTOUR_METHOD == 'SKIMAGE':
+        contours_coords = ski.measure.find_contours(data)
+        # Skimage needs no post-processing, as it returns (x, y) along the same
+        # axes as the passed 'slice_data'. Also no strange intermediate dimensions.
+    else:
+        raise ValueError(f"CONTOUR_METHOD={CONTOUR_METHOD} not recognised.")
+
+    contours_coords = list(contours_coords)
+
+    # Velocity has an issue with loading contours that contain less than 3 points.
+    for i, c in enumerate(contours_coords):
+        if len(c) < 3:
+            raise ValueError(f"Contour {i} of slice {idx} contains only 3 points: {contours_coords}. Velocity will not like this.")
+
+    # 'contours_coords' is a list of contour coordinates, i.e. multiple contours are possible per slice,
+    # - rtstruct masks can be disjoint in space.
+    for coords in contours_coords:
+        # Translate to world coordinates.
+        origin = ref_ct.ImagePositionPatient
+        spacing = ref_ct.PixelSpacing
+        coords = np.array(coords) * spacing + origin[:-1]
+
+        # Add z-index.
+        z_indices = np.ones((len(coords), 1)) * ref_ct.ImagePositionPatient[2]
+        coords = np.concatenate((coords, z_indices), axis=1)
+        coords = list(coords.flatten())        
+
+        # Create contour.
+        contour = dcm.dataset.Dataset()
+        contour.ContourData = coords
+        contour.ContourGeometricType = 'CLOSED_PLANAR'
+        contour.NumberOfContourPoints = len(coords) // 3
+
+        # Add contour images.
+        image = dcm.dataset.Dataset()
+        image.ReferencedSOPClassUID = ref_ct.file_meta.MediaStorageSOPClassUID
+        image.ReferencedSOPInstanceUID = ref_ct.file_meta.MediaStorageSOPInstanceUID
+
+        # Append to contour.
+        contour.ContourImageSequence = dcm.sequence.Sequence()
+        contour.ContourImageSequence.append(image)
+
+        # Append contour to ROI contour.
+        roi_contour.ContourSequence.append(contour)
 
 def from_ct_dicom(
     # DirPath | List[CtDicom] -> (CtVolume, Affine), FilePath -> CtSlice.
@@ -25,10 +106,10 @@ def from_ct_dicom(
     if isinstance(cts, str):
         if os.path.isfile(cts):
             # Load single CT slice.
-            ct = dcm.dcmread(cts, force=False) 
+            cts = [load_dicom(cts, force=False)]
         else:
             # Load multiple CT slices.
-            cts = [dcm.dcmread(os.path.join(cts, f), force=False) for f in os.listdir(cts) if f.endswith('.dcm')]
+            cts = [load_dicom(os.path.join(cts, f), force=False) for f in os.listdir(cts) if f.endswith('.dcm')]
 
     # Check that standard orientation is used.
     # TODO: Handle non-standard orientation.
@@ -99,7 +180,7 @@ def from_rtdose_dicom(
     ) -> Tuple[Image3D, AffineMatrix3D]:
     # Load data.
     if isinstance(rtdose, str):
-        rtdose = dcm.dcmread(rtdose)
+        rtdose = load_dicom(rtdose)
     data = np.transpose(rtdose.pixel_array)
     data = rtdose.DoseGridScaling * data
 
@@ -121,7 +202,7 @@ def from_rtplan_dicom(
     rtplan: FilePath | dcm.dataset.FileDataset,
     ) -> Dict[str, Any]:
     if isinstance(rtplan, str):
-        rtplan = dcm.dcmread(rtplan, force=False)
+        rtplan = load_dicom(rtplan)
 
     # Get info.
     info = {}
@@ -134,17 +215,114 @@ def from_rtplan_dicom(
 
     return info
 
+def from_rtstruct_dicom(
+    rtstruct: FilePath | dcm.dataset.FileDataset,
+    ct_size: Size3D,
+    ct_affine: AffineMatrix3D, 
+    region_id: RegionID | List[RegionID] | Literal['all'] = 'all',    
+    return_regions: bool = False,
+    ) -> BatchLabelImage3D:
+    if isinstance(rtstruct, str):
+        rtstruct = load_dicom(rtstruct)
+    ct_spacing = affine_spacing(ct_affine)
+    ct_origin = affine_origin(ct_affine)
+
+    # Determine regions to load. 
+    rois = rtstruct.StructureSetROISequence
+    all_region_ids = [r.ROIName for r in rois]
+    all_contours = rtstruct.ROIContourSequence
+    if len(all_contours) != len(all_region_ids):
+        raise ValueError(f"Length of 'StructureSetROISequence' and 'ROIContourSequence' must be the same, got '{len(all_region_ids)}' and '{len(all_contours)}' respectively.")
+    if region_id == 'all':
+        region_ids = all_region_ids
+        contours = all_contours
+    else:
+        region_ids = arg_to_list(region_id, str)
+        contours = [] 
+        for r in region_ids:
+            if r not in all_region_ids:
+                raise ValueError(f"RTSTRUCT doesn't contain region '{r}'.")
+            idx = all_region_ids.index(r)                   
+            contours.append(all_contours[idx])
+
+    # Filter regions with missing data.
+    tmp_len = len(region_ids)
+    region_ids = [r for r, c in zip(region_ids, contours) if getattr(c, 'ContourSequence', None) is not None]    
+    if len(region_ids) < tmp_len:
+        logger.warn(f"Some regions ({tmp_len - len(region_ids)}) don't have contour data and will be skipped.") 
+
+    # Create label placeholder.
+    regions_data = np.zeros((len(region_ids), *ct_size), dtype=bool)
+
+    # Add regions data.
+    for r, c in zip(region_ids, contours):
+        # Filter contours without data.
+        z_contours = filter(lambda ci: hasattr(ci, 'ContourData'), c)
+        z_contours = sorted(z_contours, key=lambda c: c.ContourData[2])  # Sort by z position.
+
+        # Convert from boundary point cloud into binary mask. 
+        for i, contour in enumerate(z_contours):
+            contour_data = np.array(contour.ContourData)
+            if not contour.ContourGeometricType in CONTOUR_FORMATS:
+                raise ValueError(f"Expected one of '{CONTOUR_FORMATS}' ContourGeometricTypes, got '{contour.ContourGeometricType}' for contour '{i}', region '{r}'.")
+
+            # Coords are stored in flat array.
+            if contour_data.size % 3 != 0:
+                raise ValueError(f"Size of 'contour_data' (array of points in 3D) should be divisible by 3.")
+            points = np.array(contour_data).reshape(-1, 3)
+
+            # Convert contour data to voxels.
+            points_2D = points[:, :2]
+            size_2D, spacing_2D, origin_2D = list(ct_size)[:2], list(ct_spacing)[:2], list(ct_origin)[:2]
+            slice_data = __get_slice_mask(points_2D, size_2D, spacing_2D, origin_2D)
+
+            # Get z index of slice.
+            z_idx = int((points[0, 2] - ct_origin[2]) / ct_spacing[2])
+
+            # Filter slices that are outside of the CT FOV.
+            if z_idx < 0 or z_idx > ct_size[2] - 1: 
+                # Happened with 'PMCC-COMP:PMCC_AI_GYN_011' - Kidney_L...
+                continue
+
+            # Write slice data to label, using XOR.
+            regions_data[:, :, z_idx][slice_data == True] = np.invert(regions_data[:, :, z_idx][slice_data == True])
+
+    if return_regions:
+        return regions_data, region_ids
+    else: 
+        return regions_data
+
+def __get_slice_mask(
+    points: Points2D,
+    spacing: Spacing2D,
+    origin: Point2D,
+    ) -> np.ndarray:
+    # Convert from physical coordinates to array indices.
+    x_indices = (points[:, 0] - origin[0]) / spacing[0]
+    y_indices = (points[:, 1] - origin[1]) / spacing[1]
+    x_indices = np.around(x_indices)                    # Round to avoid truncation errors.
+    y_indices = np.around(y_indices)
+
+    # Convert to 'cv2' format.
+    indices = np.stack((y_indices, x_indices), axis=1)  # (y, x) as 'cv.fillPoly' expects rows, then columns.
+    indices = indices.astype('int32')                   # 'cv.fillPoly' expects 'int32' input points.
+    pts = [np.expand_dims(indices, axis=0)]
+
+    # Get all voxels on the boundary and interior described by the indices.
+    slice_data = np.zeros(dtype='uint8')   # 'cv.fillPoly' expects to write to 'uint8' mask.shape=size, dtype='uint8')   # 'cv.fillPoly' expects to write to 'uint8' mask.
+    cv.fillPoly(color=1, img=slice_data, pts=pts)
+    slice_data = slice_data.astype(bool)
+
+    return slice_data
+
 def to_ct_dicom(
     data: Image3D, 
     affine: AffineMatrix3D,
-    patient_id: PatientID,
-    study_id: StudyID,
+    patient_id: PatientID = 'pat_0',
+    study_id: StudyID = 'study_0',
     patient_name: str | None = None,
-    series_id: SeriesID | None = None,
+    series_desc: str | None = None,
     ) -> List[dcm.dataset.FileDataset]:
-    patient_name = patient_id if patient_name is None else patient_name
-    series_id = f'CT ({study_id})' if series_id is None else series_id
-
     # Data settings.
     if data.min() < -1024:
         raise ValueError(f"Min CT value {data.min()} is less than -1024. Cannot use unsigned 16-bit values for DICOM.")
@@ -185,7 +363,7 @@ def to_ct_dicom(
         file_meta.FileMetaInformationGroupLength = 204
         file_meta.FileMetaInformationVersion = b'\x00\x01'
         file_meta.ImplementationClassUID = dcm.uid.PYDICOM_IMPLEMENTATION_UID
-        file_meta.MediaStorageSOPClassUID = dcm.uid.CtImageArraytorage
+        file_meta.MediaStorageSOPClassUID = dcm.uid.CTImageStorage
         file_meta.MediaStorageSOPInstanceUID = dcm.uid.generate_uid()
         file_meta.TransferSyntaxUID = dcm.uid.ImplicitVRLittleEndian
 
@@ -208,7 +386,7 @@ def to_ct_dicom(
 
         # Add patient info.
         ct_dicom.PatientID = patient_id
-        ct_dicom.PatientName = patient_name
+        ct_dicom.PatientName = patient_id if patient_name is None else patient_name
 
         # Add study info.
         ct_dicom.StudyDate = dt.strftime(DICOM_DATE_FORMAT)
@@ -219,7 +397,7 @@ def to_ct_dicom(
 
         # Add series info.
         ct_dicom.SeriesDate = dt.strftime(DICOM_DATE_FORMAT)
-        ct_dicom.SeriesDescription = series_id
+        ct_dicom.SeriesDescription = f'CT ({study_id})' if series_desc is None else series_desc
         ct_dicom.SeriesInstanceUID = series_uid
         ct_dicom.SeriesNumber = 0
         ct_dicom.SeriesTime = dt.strftime(DICOM_TIME_FORMAT)
@@ -257,19 +435,19 @@ def to_rtdose_dicom(
     grid_scaling: float = 1e-3,
     ref_ct: FilePath | dcm.dataset.FileDataset | None = None,
     rtdose_template: FilePath | dcm.dataset.FileDataset | None = None,
-    series_description: str | None = None,
+    series_desc: str | None = None,
     ) -> dcm.dataset.FileDataset:
     if rtdose_template is not None:
         # Start from the template.
         if isinstance(rtdose_template, str):
-            rtdose_template = dcm.dcmread(rtdose_template)
-        rtdose_dicom = rtdose_template.copy()
+            rtdose_template = load_dicom(rtdose_template)
+        rtdose = rtdose_template.copy()
 
         # Overwrite sop ID.
-        file_meta = rtdose_dicom.file_meta.copy()
+        file_meta = rtdose.file_meta.copy()
         file_meta.MediaStorageSOPInstanceUID = dcm.uid.generate_uid()
-        rtdose_dicom.file_meta = file_meta
-        rtdose_dicom.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
+        rtdose.file_meta = file_meta
+        rtdose.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
     else:
         # Create rtdose from scratch.
         file_meta = dcm.dataset.Dataset()
@@ -280,29 +458,29 @@ def to_rtdose_dicom(
         file_meta.MediaStorageSOPInstanceUID = dcm.uid.generate_uid()
         file_meta.TransferSyntaxUID = dcm.uid.ImplicitVRLittleEndian
 
-        rtdose_dicom = dcm.dataset.FileDataset('filename', {}, file_meta=file_meta, preamble=b'\0' * 128)
-        rtdose_dicom.BitsAllocated = 32
-        rtdose_dicom.BitsStored = 32
-        rtdose_dicom.DoseGridScaling = grid_scaling
-        rtdose_dicom.DoseSummationType = 'PLAN'
-        rtdose_dicom.DoseType = 'PHYSICAL'
-        rtdose_dicom.DoseUnits = 'GY'
-        rtdose_dicom.HighBit = 31
-        rtdose_dicom.Modality = 'RTDOSE'
-        rtdose_dicom.PhotometricInterpretation = 'MONOCHROME2'
-        rtdose_dicom.PixelRepresentation = 0
-        rtdose_dicom.SamplesPerPixel = 1
-        rtdose_dicom.SOPClassUID = file_meta.MediaStorageSOPClassUID
-        rtdose_dicom.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
+        rtdose = dcm.dataset.FileDataset('filename', {}, file_meta=file_meta, preamble=b'\0' * 128)
+        rtdose.BitsAllocated = 32
+        rtdose.BitsStored = 32
+        rtdose.DoseGridScaling = grid_scaling
+        rtdose.DoseSummationType = 'PLAN'
+        rtdose.DoseType = 'PHYSICAL'
+        rtdose.DoseUnits = 'GY'
+        rtdose.HighBit = 31
+        rtdose.Modality = 'RTDOSE'
+        rtdose.PhotometricInterpretation = 'MONOCHROME2'
+        rtdose.PixelRepresentation = 0
+        rtdose.SamplesPerPixel = 1
+        rtdose.SOPClassUID = file_meta.MediaStorageSOPClassUID
+        rtdose.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
 
     # Set custom attributes.
-    rtdose_dicom.DeviceSerialNumber = ''
-    rtdose_dicom.InstitutionAddress = ''
-    rtdose_dicom.InstitutionName = 'PMCC'
-    rtdose_dicom.InstitutionalDepartmentName = 'PMCC-AI'
-    rtdose_dicom.Manufacturer = 'PMCC-AI'
-    rtdose_dicom.ManufacturerModelName = 'PMCC-AI'
-    rtdose_dicom.SoftwareVersions = ''
+    rtdose.DeviceSerialNumber = ''
+    rtdose.InstitutionAddress = ''
+    rtdose.InstitutionName = 'PMCC'
+    rtdose.InstitutionalDepartmentName = 'PMCC-AI'
+    rtdose.Manufacturer = 'PMCC-AI'
+    rtdose.ManufacturerModelName = 'PMCC-AI'
+    rtdose.SoftwareVersions = ''
     
     # Copy atributes from reference ct/rtdose dicom.
     assert rtdose_template is not None or ref_ct is not None
@@ -322,13 +500,12 @@ def to_rtdose_dicom(
     ]
     for a in attrs:
         if hasattr(ref_dicom, a):
-            setattr(rtdose_dicom, a, getattr(ref_dicom, a))
+            setattr(rtdose, a, getattr(ref_dicom, a))
 
     # Add series info.
-    series_description = rtdose_dicom.StudyID if series_description is None else series_description
-    rtdose_dicom.SeriesDescription = f'RTDOSE ({series_description})'
-    rtdose_dicom.SeriesInstanceUID = dcm.uid.generate_uid()
-    rtdose_dicom.SeriesNumber = 1
+    rtdose.SeriesDescription = f'RTDOSE ({rtdose.study_id})' if series_desc is None else series_desc
+    rtdose.SeriesInstanceUID = dcm.uid.generate_uid()
+    rtdose.SeriesNumber = 1
 
     # Remove some attributes that might be set from the template.
     remove_attrs = [
@@ -337,26 +514,26 @@ def to_rtdose_dicom(
     ]
     if rtdose_template is not None:
         for a in remove_attrs:
-            if hasattr(rtdose_dicom, a):
-                delattr(rtdose_dicom, a)
+            if hasattr(rtdose, a):
+                delattr(rtdose, a)
 
     # Set image properties.
     spacing = affine_spacing(affine)
     origin = affine_origin(affine)
-    rtdose_dicom.Columns = data.shape[0]
-    rtdose_dicom.FrameIncrementPointer = dcm.datadict.tag_for_keyword('GridFrameOffsetVector')
-    rtdose_dicom.GridFrameOffsetVector = [i * spacing[2] for i in range(data.shape[2])]
-    rtdose_dicom.ImageOrientationPatient = [1, 0, 0, 0, 1, 0]
-    rtdose_dicom.ImagePositionPatient = list(origin)
-    rtdose_dicom.ImageType = ['DERIVED', 'SECONDARY', 'AXIAL']
-    rtdose_dicom.NumberOfFrames = data.shape[2]
-    rtdose_dicom.PixelSpacing = [spacing[0], spacing[1]]    # Uses (x, y) spacing.
-    rtdose_dicom.Rows = data.shape[1]
-    rtdose_dicom.SliceThickness = spacing[2]
+    rtdose.Columns = data.shape[0]
+    rtdose.FrameIncrementPointer = dcm.datadict.tag_for_keyword('GridFrameOffsetVector')
+    rtdose.GridFrameOffsetVector = [i * spacing[2] for i in range(data.shape[2])]
+    rtdose.ImageOrientationPatient = [1, 0, 0, 0, 1, 0]
+    rtdose.ImagePositionPatient = list(origin)
+    rtdose.ImageType = ['DERIVED', 'SECONDARY', 'AXIAL']
+    rtdose.NumberOfFrames = data.shape[2]
+    rtdose.PixelSpacing = [spacing[0], spacing[1]]    # Uses (x, y) spacing.
+    rtdose.Rows = data.shape[1]
+    rtdose.SliceThickness = spacing[2]
 
     # Get grid scaling and data type.
-    grid_scaling = rtdose_dicom.DoseGridScaling
-    n_bits = rtdose_dicom.BitsAllocated
+    grid_scaling = rtdose.DoseGridScaling
+    n_bits = rtdose.BitsAllocated
     if n_bits == 16:
         data_type = np.uint16
     elif n_bits == 32:
@@ -366,15 +543,158 @@ def to_rtdose_dicom(
 
     # Add dose data. 
     data = (data / grid_scaling).astype(data_type)
-    rtdose_dicom.PixelData = np.transpose(data).tobytes()     # Uses (z, y, x) format.
+    rtdose.PixelData = np.transpose(data).tobytes()     # Uses (z, y, x) format.
 
     # Set timestamps.
     dt = datetime.now()
-    rtdose_dicom.ContentDate = dt.strftime(DICOM_DATE_FORMAT)
-    rtdose_dicom.ContentTime = dt.strftime(DICOM_TIME_FORMAT)
-    rtdose_dicom.InstanceCreationDate = dt.strftime(DICOM_DATE_FORMAT)
-    rtdose_dicom.InstanceCreationTime = dt.strftime(DICOM_TIME_FORMAT)
-    rtdose_dicom.SeriesDate = dt.strftime(DICOM_DATE_FORMAT)
-    rtdose_dicom.SeriesTime = dt.strftime(DICOM_TIME_FORMAT)
+    rtdose.ContentDate = dt.strftime(DICOM_DATE_FORMAT)
+    rtdose.ContentTime = dt.strftime(DICOM_TIME_FORMAT)
+    rtdose.InstanceCreationDate = dt.strftime(DICOM_DATE_FORMAT)
+    rtdose.InstanceCreationTime = dt.strftime(DICOM_TIME_FORMAT)
+    rtdose.SeriesDate = dt.strftime(DICOM_DATE_FORMAT)
+    rtdose.SeriesTime = dt.strftime(DICOM_TIME_FORMAT)
 
-    return rtdose_dicom
+    return rtdose
+
+def to_rtstruct_dicom(
+    data: BatchLabelImage3D | LabelImage3D,
+    region_id: RegionID | List[RegionID], 
+    ref_cts: DirPath | List[dcm.dataset.FileDataset],
+    generation_algorithm: str | None = None,
+    institution: str | None = None, 
+    label: str = 'RTSTRUCT',
+    series_desc: str | None = None,
+    series_id: str | None = None,
+    ) -> dcm.dataset.FileDataset:
+    if data.ndim == 3:
+        data = np.expand_dims(data, axis=0)    
+    region_ids = arg_to_list(region_id, str)
+    assert len(data) == len(region_ids), f"Length of 'data' and 'region_id' must be the same, got {len(data)} and {len(region_ids)} respectively."
+    if isinstance(ref_cts, str):
+        ref_cts = [load_dicom(os.path.join(ref_cts, f), force=False) for f in os.listdir(ref_cts) if f.endswith('.dcm')]
+
+    # Create metadata.
+    metadata = dcm.dataset.FileMetaDataset()
+    metadata.FileMetaInformationGroupLength = 204
+    metadata.FileMetaInformationVersion = b'\x00\x01'
+    metadata.MediaStorageSOPClassUID = dcm.uid.RTStructureSetStorage
+    metadata.MediaStorageSOPInstanceUID = dcm.uid.generate_uid()
+    metadata.TransferSyntaxUID = dcm.uid.ImplicitVRLittleEndian
+    metadata.ImplementationClassUID = dcm.uid.PYDICOM_IMPLEMENTATION_UID
+
+    # Create rtstruct.
+    rtstruct = dcm.dataset.FileDataset('filename', {}, file_meta=metadata, preamble=b'\0' * 128)
+    rtstruct.StructureSetROISequence = dcm.sequence.Sequence()
+    rtstruct.ROIContourSequence = dcm.sequence.Sequence()
+    rtstruct.RTROIObservationsSequence = dcm.sequence.Sequence()
+
+    # Set transfer syntax.
+    rtstruct.is_little_endian = True
+    rtstruct.is_implicit_VR = True
+
+    # Set values from metadata.
+    rtstruct.SOPClassUID = metadata.MediaStorageSOPClassUID
+    rtstruct.SOPInstanceUID = metadata.MediaStorageSOPInstanceUID
+
+    # Set date/time.
+    dt = datetime.now()
+    date = dt.strftime(DICOM_DATE_FORMAT)
+    time = dt.strftime(DICOM_TIME_FORMAT)
+
+    # Set other required fields.
+    rtstruct.ApprovalStatus = 'UNAPPROVED'
+    rtstruct.ContentDate = date
+    rtstruct.ContentTime = time
+    rtstruct.InstanceCreationDate = date
+    rtstruct.InstanceCreationTime = time
+    if institution is not None:
+        rtstruct.InstitutionName = institution
+    rtstruct.Modality = 'RTSTRUCT'
+    rtstruct.SpecificCharacterSet = 'ISO_IR 100'
+    rtstruct.StructureSetDate = date
+    rtstruct.StructureSetLabel = label
+    rtstruct.StructureSetTime = time
+
+    # Add patient info.
+    rtstruct.PatientAge = getattr(ref_cts[0], 'PatientAge', '')
+    rtstruct.PatientBirthDate = getattr(ref_cts[0], 'PatientBirthDate', '')
+    rtstruct.PatientID = getattr(ref_cts[0], 'PatientID', '')
+    rtstruct.PatientName = getattr(ref_cts[0], 'PatientName', '')
+    rtstruct.PatientSex = getattr(ref_cts[0], 'PatientSex', '')
+    rtstruct.PatientSize = getattr(ref_cts[0], 'PatientSize', '')
+    rtstruct.PatientWeight = getattr(ref_cts[0], 'PatientWeight', '')
+
+    # Add study info.
+    rtstruct.StudyDate = ref_cts[0].StudyDate
+    rtstruct.StudyDescription = getattr(ref_cts[0], 'StudyDescription', '')
+    rtstruct.StudyInstanceUID = ref_cts[0].StudyInstanceUID
+    rtstruct.StudyID = ref_cts[0].StudyID
+    rtstruct.StudyTime = ref_cts[0].StudyTime
+
+    # Add series info.
+    rtstruct.SeriesDate = date
+    rtstruct.SeriesTime = time
+    rtstruct.SeriesInstanceUID = dcm.uid.generate_uid() if series_id is None else series_id
+    rtstruct.SeriesDescription = f'RTSTRUCT ({rtstruct.StudyID})' if series_desc is None else series_desc
+    rtstruct.SeriesNumber = 0
+
+    # Add frame of reference.
+    ref_frame = dcm.dataset.Dataset()
+    ref_frame.FrameOfReferenceUID = ref_cts[0].FrameOfReferenceUID
+
+    # Add referenced series.
+    series = dcm.dataset.Dataset()
+    series.SeriesInstanceUID = ref_cts[0].SeriesInstanceUID
+
+    # Add contour image sequence.
+    series.ContourImageSequence = dcm.sequence.Sequence()
+    for c in ref_cts:
+        contour_image = dcm.dataset.Dataset()
+        contour_image.ReferencedSOPClassUID = c.file_meta.MediaStorageSOPClassUID
+        contour_image.ReferencedSOPInstanceUID = c.file_meta.MediaStorageSOPInstanceUID
+        series.ContourImageSequence.append(contour_image)
+
+    # Add series to the frame of reference.
+    ref_frame.RTReferencedSeriesSequence = dcm.sequence.Sequence()
+    ref_frame.RTReferencedSeriesSequence.append(series)
+
+    # Add frame of reference to RTSTRUCT.
+    rtstruct.ReferencedFrameOfReferenceSequence = dcm.sequence.Sequence()
+    rtstruct.ReferencedFrameOfReferenceSequence.append(ref_frame)
+
+    # Add regions data.
+    palette = sns.color_palette('colorblind', len(region_ids))
+    for i, r in enumerate(region_ids):
+        # Create ROI contour.        
+        roi_contour = dcm.dataset.Dataset()
+        roi_contour.ROIDisplayColor = list(np.array(palette[i]) * 255)   # To 8-bit colours.
+        roi_contour.ReferencedROINumber = str(i)
+
+        # Add structure set ROIs.
+        structure_set_roi = dcm.dataset.Dataset()
+        structure_set_roi.ROINumber = str(i)
+        structure_set_roi.ReferencedFrameOfReferenceUID = rtstruct.ReferencedFrameOfReferenceSequence[0].FrameOfReferenceUID
+        structure_set_roi.ROIName = r
+        if generation_algorithm is not None:
+            structure_set_roi.ROIGenerationAlgorithm = generation_algorithm
+        rtstruct.StructureSetROISequence.append(structure_set_roi)
+
+        # Add point cloud contours.
+        roi_contour.ContourSequence = dcm.sequence.Sequence()
+        for j, c in enumerate(ref_cts):
+            slice_data = data[i, :, :, j]
+            if slice_data.sum() == 0:
+                continue
+            __add_slice_contours(roi_contour, slice_data, c, j)
+        rtstruct.ROIContourSequence.append(roi_contour)
+
+        # Add RT ROI observations - I don't know what these are.
+        observation = dcm.dataset.Dataset()
+        observation.ObservationNumber = str(i)
+        observation.ReferencedROINumber = str(i)
+        observation.RTROIInterpretedType = ''
+        observation.ROIInterpreter = ''
+        rtstruct.RTROIObservationsSequence.append(observation)
+
+    return rtstruct
+    

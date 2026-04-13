@@ -10,6 +10,7 @@ from ... import config
 from ...typing import Box3D, Image3D, Point3D, SeriesID, Size3D, Spacing3D
 from ...utils.geometry import fov
 from ...utils.python import has_private_attr
+from ..utils.io import load_dicom
 from .series import DicomSeries
 if TYPE_CHECKING:
     from ..dataset import DicomDataset
@@ -48,7 +49,7 @@ class DicomMrSeries(DicomSeries):
     @property
     def dicoms(self) -> List[dcm.dataset.FileDataset]:
         # Sort MRs by z position, smallest first.
-        mr_dicoms = [dcm.dcmread(f, force=False) for f in self.__filepaths]
+        mr_dicoms = [load_dicom(f, force=False) for f in self.__filepaths]
         mr_dicoms = list(sorted(mr_dicoms, key=lambda m: m.ImagePositionPatient[2]))
         return mr_dicoms
 

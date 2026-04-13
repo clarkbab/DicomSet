@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import collections
 import numpy as np
 import os
 import pandas as pd
@@ -16,6 +15,8 @@ from ....utils.conversion import to_numpy
 from ....utils.geometry import to_image_coords
 from ....utils.python import filter_lists
 from ....utils.regions import regions_to_list
+from ...utils.dicom import from_rtstruct_dicom
+from ...utils.io import load_dicom
 from ..series import DicomSeries
 from .rtstruct_converter import RtStructConverter
 if TYPE_CHECKING:
@@ -48,7 +49,7 @@ class DicomRtStructSeries(DicomSeries):
 
     @property
     def dicom(self) -> dcm.dataset.FileDataset:
-        return dcm.dcmread(self.__filepath)
+        return load_dicom(self.__filepath)
 
     @property
     def filepath(self) -> FilePath:
@@ -221,6 +222,7 @@ class DicomRtStructSeries(DicomSeries):
     def regions_data(
         self,
         region_id: RegionID | List[RegionID] | Literal['all'] = 'all',
+        return_regions: bool = False,
         use_mapping: bool = True,
         **kwargs,
         ) -> BatchLabelImage3D:
@@ -236,28 +238,20 @@ class DicomRtStructSeries(DicomSeries):
 
         # Load data from dicom.
         rtstruct_dicom = self.dicom
-        data = {}
+        regions_data = None    # We don't know the shape yet.
         if use_mapping:
-            # Load region using unmapped name, store using mapped name.
-            for m, u in zip(mapped_ids, unmapped_ids):
-                # Multiple regions could be mapped to the same region, e.g. Chestwall_L/R -> Chestwall.
-                combine_ids = arg_to_list(u, str)
-                labels = []
-                for c in combine_ids:
-                    rdata = RtStructConverter.get_regions_data(rtstruct_dicom, c, self.ref_ct.size, self.ref_ct.spacing, self.ref_ct.origin)
-                    labels.append(rdata)
-                label = np.maximum(*labels) if len(labels) > 1 else labels[0]
-                data[m] = label
+            # Regions could be grouped, e.g. Chestwall_L/R -> Chestwall.
+            for i, d in enumerate(disk_ids):
+                labels = from_rtstruct_dicom(rtstruct_dicom, self.ref_ct.size, self.ref_ct.affine, region_id=d)
+                regions_data[i] = np.maximum(labels, axis=0)
         else:
             # Load and store region using unmapped name.
-            for u in unmapped_ids:
-                rdata = RtStructConverter.get_regions_data(rtstruct_dicom, u, self.ref_ct.size, self.ref_ct.spacing, self.ref_ct.origin)
-                data[u] = rdata
+            regions_data = from_rtstruct_dicom(rtstruct_dicom, self.ref_ct.size, self.ref_ct.affine, region_id=region_ids)
 
-        # Sort dict keys.
-        data = collections.OrderedDict((n, data[n]) for n in sorted(data.keys())) 
-
-        return data
+        if return_regions:
+            return regions_data, region_ids 
+        else: 
+            return regions_data
 
     def __str__(self) -> str:
         return super().__str__(self.__class__.__name__)

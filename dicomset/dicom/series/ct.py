@@ -10,6 +10,7 @@ from ...typing import AffineMatrix3D, Box3D, Image3D, Point3D, SeriesID, Size3D,
 from ...utils.geometry import affine_origin, affine_spacing, fov
 from ...utils.python import has_private_attr
 from ..utils.dicom import from_ct_dicom
+from ..utils.io import load_dicom
 from .series import DicomSeries
 if TYPE_CHECKING:
     from ..dataset import DicomDataset
@@ -53,7 +54,7 @@ class DicomCtSeries(DicomSeries):
     @property
     def dicoms(self) -> List[dcm.dataset.FileDataset]:
         # Sort CTs by z position, smallest first.
-        ct_dicoms = [dcm.dcmread(f, force=False) for f in self.__filepaths]
+        ct_dicoms = [load_dicom(f, force=False) for f in self.__filepaths]
         ct_dicoms = list(sorted(ct_dicoms, key=lambda c: c.ImagePositionPatient[2]))
         return ct_dicoms
 

@@ -9,7 +9,7 @@ import SimpleITK as sitk
 from typing import Any, Dict, List, Tuple
 import yaml
 
-from ..typing import AffineMatrix3D, FilePath, Image3D
+from ..typing import AffineMatrix3D, DirPath, FilePath, Image3D
 from .args import arg_to_list, resolve_filepath
 from .geometry import create_eye
 
@@ -22,6 +22,18 @@ def assert_writeable(filepath: FilePath | List[FilePath]) -> None:
                 open(f, 'a')
             except (OSError, IOError):
                 raise PermissionError(f"File '{f}' is open or read-only, cannot overwrite.")
+
+def is_dir(
+    path: DirPath | FilePath,
+    ) -> bool:
+    return not is_file(path)
+
+def is_file(
+    path: DirPath | FilePath,
+    ) -> bool:
+    path = resolve_filepath(path)
+    _, ext = os.path.splitext(path)
+    return bool(ext)
 
 def load_csv(
     filepath: FilePath,

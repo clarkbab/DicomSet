@@ -10,6 +10,7 @@ from ...typing import Box3D, Image3D, Point3D, SeriesID, Size3D, Spacing3D
 from ...utils.geometry import fov
 from ...utils.python import has_private_attr
 from ..utils.dicom import from_rtdose_dicom
+from ..utils.io import load_dicom
 from .series import DicomSeries
 if TYPE_CHECKING:
     from ..dataset import DicomDataset
@@ -47,7 +48,7 @@ class DicomRtDoseSeries(DicomSeries):
 
     @property
     def dicom(self) -> dcm.dataset.FileDataset:
-        return dcm.dcmread(self.__filepath)
+        return load_dicom(self.__filepath)
 
     @ensure_loaded
     def fov(

@@ -1,6 +1,5 @@
 from mymi import logging
 import os
-import pydicom as dcm
 import shutil
 from tqdm import tqdm
 from typing import Callable, Dict, Optional, Union
@@ -8,6 +7,7 @@ from typing import Callable, Dict, Optional, Union
 from ...typing import DatasetID, FilePath, PatientID
 from ...utils.io import assert_writeable, load_csv, save_csv
 from ..dataset import DicomDataset
+from .io import load_dicom
 
 def get_new_pat_id(
     old_patient_id: PatientID,
@@ -30,7 +30,7 @@ def rename_dicom(
     makeitso: bool = False,
     pat_regexp: Optional[str] = None) -> None:
     # Get new patient ID.
-    dicom = dcm.dcmread(filepath)
+    dicom = load_dicom(filepath)
     old_pat = dicom.PatientID
     new_pat = get_new_pat_id(old_pat, rename_fn, pat_regexp=pat_regexp)
     if old_pat == new_pat:

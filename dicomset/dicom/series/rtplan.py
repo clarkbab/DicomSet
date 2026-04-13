@@ -7,6 +7,7 @@ from typing import Any, Dict, TYPE_CHECKING
 
 from ... import config
 from ...typing import SeriesID
+from ..utils.io import load_dicom
 from .series import DicomSeries
 if TYPE_CHECKING:
     from ..dataset import DicomDataset
@@ -31,7 +32,7 @@ class DicomRtPlanSeries(DicomSeries):
 
     @property
     def dicom(self) -> dcm.dataset.FileDataset:
-        return dcm.dcmread(self.__filepath)
+        return load_dicom(self.__filepath)
 
     def __str__(self) -> str:
         return super().__str__(self.__class__.__name__)
