@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import numpy as np
+import SimpleITK as sitk
 from typing import List, Tuple, TYPE_CHECKING
 if TYPE_CHECKING:
     import torch
 
-from ..typing import Number
-from .python import delegates_to
+from ..typing import AffineMatrix, ChannelImage, Image, Number, SpatialDim
+from .geometry import affine_origin, affine_spacing, create_affine
+from .python import bubble_args
+from .transforms.transpose import spatial_transpose
 
 def to_numpy(
     data: bool | Number | str | List[bool | Number | str] | np.ndarray | torch.Tensor | torch.Size,
@@ -42,7 +45,19 @@ def to_numpy(
     else:
         return data
 
-@delegates_to(to_numpy)
+def from_sitk_image(
+    img: sitk.Image,
+    ) -> Tuple[Image, AffineMatrix]:
+    data = sitk.GetArrayFromImage(img)
+    # SimpleITK always flips the data coordinates (x, y, z) -> (z, y, x) when converting to numpy.
+    # See C- (row-major) vs. Fortran- (column-major) style indexing.
+    data = data.transpose()
+    spacing = img.GetSpacing()
+    origin = img.GetOrigin()
+    affine = create_affine(spacing, origin)
+    return data, affine
+
+@bubble_args(to_numpy)
 def to_list(
     data: bool | Number | str | List[bool | Number | str] | np.ndarray,
     **kwargs,
@@ -50,6 +65,39 @@ def to_list(
     if data is None:
         return None 
     return to_numpy(data, **kwargs).tolist()
+
+def to_sitk_image(
+    data: ChannelImage | Image,
+    affine: AffineMatrix | None = None,
+    dim: SpatialDim = 3,
+    ) -> sitk.Image:
+    # Multi-channel sitk images must be stored as vector images.
+    is_vector = True if data.ndim == dim + 1 else False
+
+    # Convert to SimpleITK data types.
+    if data.dtype == bool:
+        data = data.astype(np.uint8)
+    
+    # SimpleITK **sometimes** flips the data coordinates (x, y, z) -> (z, y, x) when converting from numpy.
+    # See C- (row-major) vs. Fortran- (column-major) style indexing.
+    # Preprocessing, such as np.transpose and np.moveaxis can change the numpy array indexing style
+    # from the default C-style to Fortran-style. SimpleITK will flip coordinates for C-style but not F-style.
+    data = spatial_transpose(data, dim=dim)
+    # We can use 'copy' to reset the indexing to C-style and ensure that SimpleITK flips coordinates. If we
+    # don't do this, code called before 'to_sitk' could affect the behaviour of 'GetImageFromArray', which
+    # was very confusing for me.
+    data = data.copy()
+    if is_vector:
+        # Sitk expects vector dimension to be last.
+        data = np.moveaxis(data, 0, -1)
+    img = sitk.GetImageFromArray(data, isVector=is_vector)
+    if affine is not None:
+        spacing = affine_spacing(affine)
+        origin = affine_origin(affine)
+        img.SetSpacing(spacing)
+        img.SetOrigin(origin)
+
+    return img
 
 def to_tensor(
     data: bool | Number | str | List[bool | Number | str] | np.ndarray | torch.Tensor | torch.Size,
@@ -88,7 +136,8 @@ def to_tensor(
     else:
         return data
 
-@delegates_to(to_numpy)
+# SimpleITK handles 2-4D images.
+@bubble_args(to_numpy)
 def to_tuple(
     data: bool | Number | str | List[bool | Number | str] | np.ndarray,
     decimals: int | None = None,

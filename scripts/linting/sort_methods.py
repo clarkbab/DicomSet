@@ -7,7 +7,7 @@ Rules
 - ``__init__`` always comes first.
 - Methods/functions referenced in sibling decorator expressions come next,
   sorted alphabetically (e.g. ``ensure_loaded`` used as ``@ensure_loaded``,
-  or ``to_numpy`` referenced in ``@delegates_to(to_numpy)``).
+  or ``to_numpy`` referenced in ``@bubble_args(to_numpy)``).
 - Other methods/functions are sorted alphabetically, ignoring leading/trailing
   underscores (e.g. ``_foo`` sorts as ``foo``, ``__bar__`` as ``bar``).
 - Consecutive same-name methods (e.g. ``@property`` getter/setter pairs)
@@ -115,7 +115,7 @@ def _collect_decorator_deps(body: list) -> Set[str]:
     """Return names of sibling functions/methods referenced in decorator expressions.
 
     This catches both direct usage (``@ensure_loaded``) and indirect
-    references (``@delegates_to(to_numpy)``) — any sibling name that
+    references (``@bubble_args(to_numpy)``) — any sibling name that
     appears anywhere in a decorator AST subtree.
     """
     # Collect all names defined as functions in this body.

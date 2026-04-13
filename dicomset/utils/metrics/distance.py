@@ -4,9 +4,31 @@ from typing import Dict, List
 
 from ...typing import AffineMatrix, BatchLabelImage, LabelImage, Number, SpatialDim
 from ...utils.args import arg_to_list
-from ...utils.geometry import affine_spacing
-from ..python import delegates_to
+from ...utils.conversion import to_numpy
+from ...utils.geometry import affine_spacing, centre_of_mass
+from ..python import bubble_args
 from .shared import compute_spatial_metrics
+
+def __spatial_centroid_error(
+    a: LabelImage,
+    b: LabelImage,
+    affine: AffineMatrix | None = None,
+    ) -> float:
+    a = to_numpy(a, dtype=bool)
+    b = to_numpy(b, dtype=bool)
+    if a.shape != b.shape:
+        raise ValueError(f"Metric 'centroid_error' expects arrays of equal shape. Got '{a.shape}' and '{b.shape}'.")
+    if a.sum() == 0 or b.sum() == 0:
+        raise ValueError(f"Metric 'centroid_error' can't be calculated on empty labels.")
+
+    # Compute centroids - these are the same as centre-of-mass for label images.
+    a_centroid = centre_of_mass(a, affine=affine)    
+    b_centroid = centre_of_mass(b, affine=affine)
+
+    # Compute error.
+    error = np.linalg.norm(np.array(b_centroid) - np.array(a_centroid))
+
+    return error
 
 def __spatial_distances(
     a: LabelImage,
@@ -14,10 +36,12 @@ def __spatial_distances(
     affine: AffineMatrix | None = None,    
     tols: Number | List[Number] | None = None, 
     ) -> Dict[str, float]:
+    a = to_numpy(a, dtype=bool)
+    b = to_numpy(b, dtype=bool)
     if a.shape != b.shape:
         raise ValueError(f"Metric 'distances' expects arrays of equal shape. Got '{a.shape}' and '{b.shape}'.")
     if a.sum() == 0 or b.sum() == 0:
-        raise ValueError(f"Metric 'distances' can't be calculated on labels.")
+        raise ValueError(f"Metric 'distances' can't be calculated on empty labels.")
 
     # Calculate surface distances.
     if affine is not None:
@@ -39,10 +63,22 @@ def __spatial_distances(
 
     return metrics
 
-@delegates_to(__spatial_distances)
+# These are grouped because they all require surface distances calc
+# which is fairly expensive.
+@bubble_args(__spatial_centroid_error)
+def centroid_error(
+    a: LabelImage | BatchLabelImage,
+    b: LabelImage | BatchLabelImage,
+    dim: SpatialDim | None = None,
+    **kwargs,
+    ) -> float | List[float]:
+    return compute_spatial_metrics(__spatial_centroid_error, a, b, dim=dim, **kwargs)
+
+@bubble_args(__spatial_distances)
 def distances(
     a: LabelImage | BatchLabelImage,
     b: LabelImage | BatchLabelImage,
     dim: SpatialDim | None = None,
+    **kwargs,
     ) -> Dict[str, float] | List[Dict[str, float]]:
-    return compute_spatial_metrics(__spatial_distances, a, b, dim=dim)
+    return compute_spatial_metrics(__spatial_distances, a, b, dim=dim, **kwargs)

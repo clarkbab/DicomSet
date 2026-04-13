@@ -2,7 +2,7 @@ from colorlog import ColoredFormatter
 import inspect
 import logging as python_logging
 import numpy as np
-from typing import Any, List
+from typing import Any
 
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 LEVEL_MAP = {
@@ -10,91 +10,86 @@ LEVEL_MAP = {
     20: 'INFO',
     30: 'WARNING',
     40: 'ERROR',
-    50: 'CRITICAL'
+    50: 'CRITICAL',
 }
-LOG_FORMAT = "%(log_color)s%(asctime)s | %(log_color)s%(levelname)-8s%(reset)s | %(log_color)s%(message)s%(reset)s"
+LOG_FORMAT_COLOR = "%(log_color)s%(asctime)s | %(log_color)s%(levelname)-8s%(reset)s | %(log_color)s%(message)s%(reset)s"
+LOG_FORMAT_PLAIN = "%(asctime)s | %(levelname)-8s | %(message)s"
 
-logger = None
+class Logger:
+    def __init__(self) -> None:
+        self._logger: python_logging.Logger | None = None
 
-def arg_log(
-    action: str,
-    arg_names: str | List[str],
-    arg_vals: Any | List[Any],
-    ) -> None:
-    message = action + ' with ' + ', '.join([f"{arg_name}={arg_val}" for arg_name, arg_val in zip(arg_names, arg_vals)]) + '.'
-    info(message)
+    def configure(self, level: str) -> None:
+        # Create logger and set level.
+        self._logger = python_logging.getLogger('DicomSet')
+        numeric_level = getattr(python_logging, level.upper(), None)
+        if not isinstance(numeric_level, int):
+            raise ValueError(f"Logging level '{level}' not valid.")
+        self._logger.setLevel(numeric_level)
 
-def configure(level: str) -> None:
-    global logger
+        # Create console handler and set level.
+        ch = python_logging.StreamHandler()
+        ch.setLevel(numeric_level)
 
-    # Create logger and set level.
-    logger = python_logging.getLogger('DicomSet')
-    level = getattr(python_logging, level.upper(), None)
-    if not isinstance(level, int):
-        raise ValueError(f"Logging level '{level}' not valid.")
-    logger.setLevel(level)
+        # Add formatter to console handler.
+        formatter = ColoredFormatter(LOG_FORMAT_COLOR, DATE_FORMAT)
+        ch.setFormatter(formatter)
 
-    # Create console handler and set level.
-    ch = python_logging.StreamHandler()
-    ch.setLevel(level)
+        # Remove old handlers.
+        for handler in self._logger.handlers:
+            self._logger.removeHandler(handler)
+        
+        # Add console handler to logger.
+        self._logger.addHandler(ch)
 
-    # Add formatter to console handler.
-    formatter = ColoredFormatter(LOG_FORMAT, DATE_FORMAT)
-    ch.setFormatter(formatter)
+    def critical(self, *args, **kwargs):
+        return self._logger.critical(*args, **kwargs)
 
-    # Remove old handlers.
-    for handler in logger.handlers:
-        logger.removeHandler(handler)
-    
-    # Add console handler to logger.
-    logger.addHandler(ch)
+    def debug(self, *args, **kwargs):
+        return self._logger.debug(*args, **kwargs)
 
-def critical(*args, **kwargs):
-    global logger
-    return logger.critical(*args, **kwargs)
+    def error(self, *args, **kwargs):
+        return self._logger.error(*args, **kwargs)
 
-def debug(*args, **kwargs):
-    global logger
-    return logger.debug(*args, **kwargs)
+    @staticmethod
+    def _format_numpy(val: Any) -> str:
+        if isinstance(val, np.ndarray):
+            return f"np.ndarray(shape={val.shape}, dtype={val.dtype})"
+        return repr(val)
 
-def error(*args, **kwargs):
-    global logger
-    return logger.error(*args, **kwargs)
+    def info(self, *args, **kwargs):
+        return self._logger.info(*args, **kwargs)
 
-def format_numpy(val: Any) -> str:
-    if isinstance(val, np.ndarray):
-        return f"np.ndarray(shape={val.shape}, dtype={val.dtype})"
-    return repr(val)
+    @property
+    def level(self) -> str:
+        return LEVEL_MAP[self._logger.level]
 
-def info(*args, **kwargs):
-    global logger
-    return logger.info(*args, **kwargs)
+    def log_method(
+        self,
+        message: str | None = None,
+        ) -> None:
+        frame = inspect.currentframe().f_back
+        func_name = frame.f_code.co_name
+        arg_info = inspect.getargvalues(frame)
+        parts = []
+        for name in arg_info.args:
+            parts.append(f"{name}={self._format_numpy(arg_info.locals[name])}")
+        if arg_info.varargs and arg_info.locals.get(arg_info.varargs):
+            for val in arg_info.locals[arg_info.varargs]:
+                parts.append(self._format_numpy(val))
+        if arg_info.keywords and arg_info.locals.get(arg_info.keywords):
+            for k, v in arg_info.locals[arg_info.keywords].items():
+                parts.append(f"{k}={self._format_numpy(v)}")
+        fn_str = f"{func_name}({', '.join(parts)})"
+        if message:
+            self.info(f"{fn_str}: {message}")
+        else:
+            self.info(fn_str)
 
-def level():
-    return LEVEL_MAP[logger.level]
+    def warn(self, *args, **kwargs):
+        return self._logger.warning(*args, **kwargs)
 
-def log_args(message: str = '') -> None:
-    frame = inspect.currentframe().f_back
-    func_name = frame.f_code.co_name
-    arg_info = inspect.getargvalues(frame)
-    parts = []
-    for name in arg_info.args:
-        parts.append(f"{name}={format_numpy(arg_info.locals[name])}")
-    if arg_info.varargs and arg_info.locals.get(arg_info.varargs):
-        for val in arg_info.locals[arg_info.varargs]:
-            parts.append(format_numpy(val))
-    if arg_info.keywords and arg_info.locals.get(arg_info.keywords):
-        for k, v in arg_info.locals[arg_info.keywords].items():
-            parts.append(f"{k}={format_numpy(v)}")
-    fn_str = f"{func_name}({', '.join(parts)})"
-    if message:
-        info(f"{message}: {fn_str}")
-    else:
-        info(fn_str)
-
-def warning(*args, **kwargs):
-    global logger
-    return logger.warning(*args, **kwargs)
+logger = Logger()
 
 # Default config.
-configure('info')
+logger.configure('info')

@@ -298,9 +298,13 @@ def _collect_relative_imports_from_file(module_path: Path) -> Set[Path]:
             real = resolved.resolve()
             # Skip ancestor __init__.py — already loaded when module_path
             # is being imported.
-            if real in own_ancestors:
-                continue
-            paths.add(real)
+            if real not in own_ancestors:
+                paths.add(real)
+        # Also include intermediate package __init__.py files that Python
+        # executes as a side-effect of dotted imports.
+        for init_path in _intermediate_init_files(mod_str, module_path):
+            if init_path not in own_ancestors:
+                paths.add(init_path)
     return paths
 
 
@@ -532,6 +536,45 @@ def _find_module_import(
 # ---------------------------------------------------------------------------
 # Collect all names used in the file body (excluding import section)
 # ---------------------------------------------------------------------------
+
+def _intermediate_init_files(from_module: str, file_path: Path) -> Set[Path]:
+    """Return ``__init__.py`` files for intermediate packages in a dotted
+    relative import.
+
+    For example, ``from .transforms.transpose import X`` in
+    ``utils/conversion.py`` traverses the ``transforms`` package.  Python
+    executes ``transforms/__init__.py`` as a side-effect, so it is an
+    implicit runtime dependency.
+
+    Only intermediate segments are returned — the final target module is
+    excluded (it is already handled by ``_resolve_module_path``).
+    """
+    dots = 0
+    for ch in from_module:
+        if ch == '.':
+            dots += 1
+        else:
+            break
+    remainder = from_module[dots:]
+    if not remainder:
+        return set()
+    parts = remainder.split('.')
+    if len(parts) <= 1:
+        return set()  # no intermediate packages
+
+    base = file_path.parent
+    for _ in range(dots - 1):
+        base = base.parent
+
+    result: Set[Path] = set()
+    current = base
+    for part in parts[:-1]:  # all segments except the final target
+        current = current / part
+        init = current / '__init__.py'
+        if init.exists():
+            result.add(init.resolve())
+    return result
+
 
 def _names_from_target(target: ast.AST) -> Set[str]:
     """Recursively extract all ``ast.Name`` ids from an assignment target

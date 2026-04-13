@@ -27,15 +27,11 @@ def append_row(
     # Create new dataframe.
     new_df = pd.DataFrame([data], columns=df.columns, index=index)
 
-    # Preserve types when adding to any empty dataframe.
-    use_new_df_types = True if len(df) == 0 else False
-    
-    # Perform concat.
-    df = pd.concat((df, new_df), axis=0)
-
-    # Automatic assigning of types to columns will break when we concat with an empty dataframe.
-    if use_new_df_types:
-        df = df.astype(new_df.dtypes.to_dict())
+    # Just return new dataframe if existing is empty. 
+    if len(df) == 0:
+        df = new_df
+    else:
+        df = pd.concat((df, new_df), axis=0)
     
     return df
 

@@ -3,7 +3,7 @@ import SimpleITK as sitk
 from typing import List
 
 from ...typing import BatchLabelImage, LabelImage, SpatialDim
-from ...utils.python import delegates_to
+from ...utils.python import bubble_args
 from .shared import compute_spatial_metrics
 
 def __spatial_dice(
@@ -28,7 +28,7 @@ def __spatial_dice(
     dice = filter.GetDiceCoefficient()
     return dice
 
-@delegates_to(__spatial_dice)
+@bubble_args(__spatial_dice)
 def dice(
     a: LabelImage | BatchLabelImage,
     b: LabelImage | BatchLabelImage,
