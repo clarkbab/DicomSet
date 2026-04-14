@@ -36,9 +36,9 @@ class NiftiRegionsSeries(NiftiImageSeries):
         self.__path = dirpath
         self.__regions_map = regions_map
 
-    @alias_kwargs([
+    @alias_kwargs(
         ('r', 'region_id'),
-    ])
+    )
     def data(
         self,
         region_id: RegionID | List[RegionID] | Literal['all'] = 'all',
@@ -125,10 +125,10 @@ class NiftiRegionsSeries(NiftiImageSeries):
         n_overlap = len(np.intersect1d(region_ids, all_ids))
         return n_overlap > 0 if any else n_overlap == len(region_ids)
 
-    @alias_kwargs([
+    @alias_kwargs(
         ('r', 'region_id'),
         ('um', 'use_mapping'),
-    ])
+    )
     def list_regions(
         self,
         region_id: RegionID | List[RegionID] | Literal['all'] = 'all',

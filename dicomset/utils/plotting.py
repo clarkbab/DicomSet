@@ -4,7 +4,7 @@ import numpy as np
 import seaborn as sns
 from typing import List, Literal
 
-from ..typing import AffineMatrix3D, BatchLabelImage2D, BatchLabelImage3D, Image2D, Image3D, LabelImage3D, Orientation, Point3D, Points3D, Size3D, View
+from ..typing import AffineMatrix2D, AffineMatrix3D, BatchLabelImage2D, BatchLabelImage3D, Image, Image2D, Image3D, LabelImage2D, LabelImage3D, Number, Orientation, Point3D, Points3D, Size3D, View
 from .args import arg_to_list
 from .geometry import affine_origin, affine_spacing, centre_of_mass, foreground_fov_centre, to_image_coords
 from .logging import logger
@@ -143,21 +143,66 @@ def _get_view_xy(
     axes = [i for i in range(3) if i != view]
     return values[axes[0]], values[axes[1]]
 
+def plot_hist(
+    data: Image,
+    ax: mpl.axes.Axes | None = None,
+    bins: int = 50,
+    log_scale: bool = False,
+    min: Number | None = None,
+    max: Number | None = None,
+    return_axis: bool = False,
+    title: str | None = None,
+    x_label: str | None = None,
+    y_label: str | None = None,
+    ) -> mpl.axes.Axes | None:
+    if ax is None:
+        ax = plt.gca()
+        show = True
+    else:
+        show = False
+    okwargs = {}
+    if min is not None and max is not None:
+        okwargs['range'] = (min, max)
+    ax.hist(data.flatten(), bins=bins, color='gray', **okwargs)
+    if log_scale:
+        ax.set_yscale('log')
+
+    # Add text.
+    if title is not None:
+        ax.set_title(title)
+    if x_label is not None:
+        ax.set_xlabel(x_label)
+    if y_label is not None:
+        ax.set_ylabel(y_label)
+
+    if show:
+        plt.show()
+
+    if return_axis:
+        return ax
+
 def plot_slice(
     data: Image2D,
+    affine: AffineMatrix2D | None = None,
     alpha: float = 0.3,
     ax: mpl.axes.Axes | None = None,
     cmap: str = 'gray',
-    labels: BatchLabelImage2D | None = None,
+    labels: LabelImage2D | BatchLabelImage2D | None = None,
+    return_axis: bool = False,
     show_hist: bool = False,
     title: str | None = None,
+    use_image_coords: bool = False,
     vmin: float | None = None,
     vmax: float | None = None,
     x_label: str | None = None,
     x_origin: Literal['lower', 'upper'] | None = 'lower',
     y_label: str | None = None,
     y_origin: Literal['lower', 'upper'] | None = 'upper',
-    ) -> mpl.axes.Axes:
+    ) -> mpl.axes.Axes | None:
+    # Normalise labels to batch form (B, X, Y).
+    if labels is not None and labels.ndim == 2:
+        labels = labels[np.newaxis]
+
     if ax is None:
         if show_hist:
             _, axs = plt.subplots(1, 2, figsize=(12, 6), gridspec_kw={'width_ratios': [3, 1]})
@@ -168,8 +213,14 @@ def plot_slice(
         axs = [ax]
         show = False
 
+    # Aspect ratio from affine.
+    aspect = None
+    if affine is not None:
+        spacing = affine_spacing(affine)
+        aspect = float(spacing[1] / spacing[0])
+
     # Plot slice.
-    axs[0].imshow(data.T, cmap=cmap, origin=y_origin, vmax=vmax, vmin=vmin)
+    axs[0].imshow(data.T, aspect=aspect, cmap=cmap, origin=y_origin, vmax=vmax, vmin=vmin)
 
     # Plot labels.
     if labels is not None:
@@ -184,11 +235,26 @@ def plot_slice(
         axs[1].hist(data.flatten(), bins=50, color='gray')
         axs[1].ticklabel_format(axis='y', scilimits=(0, 0), style='scientific')
 
-    # Hide axis spines and ticks.
+    # Coordinate ticks.
+    x_tick_spacing = np.unique(np.diff(axs[0].get_xticks()))[0]
+    x_ticks = np.arange(0, data.shape[0], x_tick_spacing)
+    y_tick_spacing = np.unique(np.diff(axs[0].get_yticks()))[0]
+    y_ticks = np.arange(0, data.shape[1], y_tick_spacing)
+
+    if not use_image_coords and affine is not None:
+        spacing = affine_spacing(affine)
+        origin = affine_origin(affine)
+        axs[0].set_xticks(x_ticks)
+        axs[0].set_xticklabels([f'{t * spacing[0] + origin[0]:.1f}' for t in x_ticks])
+        axs[0].set_yticks(y_ticks)
+        axs[0].set_yticklabels([f'{t * spacing[1] + origin[1]:.1f}' for t in y_ticks])
+    else:
+        axs[0].set_xticks(x_ticks)
+        axs[0].set_yticks(y_ticks)
+
+    # Hide axis spines.
     for p in ['right', 'top', 'bottom', 'left']:
         axs[0].spines[p].set_visible(False)
-    axs[0].set_xticks([])
-    axs[0].set_yticks([])
 
     # Add text.
     if title is not None:
@@ -201,7 +267,8 @@ def plot_slice(
     if show:
         plt.show()
 
-    return axs[0]
+    if return_axis:
+        return axs[0]
 
 def plot_volume(
     data: Image3D,
@@ -221,13 +288,14 @@ def plot_volume(
     label_alpha: float = 0.3,
     points: Points3D | None = None,
     points_colour: str = 'yellow',
+    return_axis: bool = False,
     show_point_idxs: bool = False,
     show_title: bool = True,
     use_image_coords: bool = False,
     view: int | list[int] | Literal['all'] = 'all',
     vmin: float | None = None,
     vmax: float | None = None,
-    ) -> np.ndarray:
+    ) -> np.ndarray | None:
     # Normalise labels to batch form (B, X, Y, Z).
     if labels is not None and labels.ndim == 3:
         labels = labels[np.newaxis]
@@ -344,3 +412,6 @@ def plot_volume(
 
     plt.tight_layout()
     plt.show()
+
+    if return_axis:
+        return axs

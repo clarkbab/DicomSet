@@ -52,7 +52,7 @@ def load_region(
     filepath = os.path.join(set.path, 'data', 'patients', patient_id, study_id, 'regions', series_id, f'{region_id}.nii.gz')
     return load_nifti(filepath)
 
-def load_registration_moved_image(
+def load_registered_image(
     dataset: DatasetID,
     fixed_patient_id: PatientID,
     model: ModelID,
@@ -68,7 +68,7 @@ def load_registration_moved_image(
     filepath = os.path.join(set.path, 'data', 'predictions', 'registration', 'patients', fixed_patient_id, fixed_study_id, fixed_series_id, moving_patient_id, moving_study_id, moving_series_id, modality, f'{model}.nii.gz')
     return load_nifti(filepath)
 
-def load_registration_moved_landmarks(
+def load_registered_landmarks(
     dataset: DatasetID,
     fixed_patient_id: PatientID,
     model: ModelID,
@@ -83,7 +83,7 @@ def load_registration_moved_landmarks(
     filepath = os.path.join(set.path, 'data', 'predictions', 'registration', 'patients', fixed_patient_id, fixed_study_id, fixed_series_id, moving_patient_id, moving_study_id, moving_series_id, 'landmarks', f'{model}.csv')
     return load_csv(filepath)
 
-def load_registration_moved_regions(
+def load_registered_regions(
     dataset: DatasetID,
     fixed_patient_id: PatientID,
     model: ModelID,

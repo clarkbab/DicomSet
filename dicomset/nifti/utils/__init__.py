@@ -3,29 +3,29 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .create import create_ct, create_dataset, create_index, create_region, create_registration_moved_image, create_registration_moved_landmarks, create_registration_moved_regions, create_registration_transform
-    from .load import dataset_exists, load_ct, load_dataset, load_index, load_region, load_registration_moved_image, load_registration_moved_landmarks, load_registration_moved_regions, load_registration_transform
+    from .create import create_ct, create_dataset, create_index, create_region, create_registered_image, create_registered_landmarks, create_registered_regions, create_registration_transform
+    from .load import dataset_exists, load_ct, load_dataset, load_index, load_region, load_registered_image, load_registered_landmarks, load_registered_regions, load_registration_transform
     from .rename import rename_patients
 
 __all__ = [
     'create_ct', 'create_dataset', 'create_index', 'create_region',
-    'create_registration_moved_image', 'create_registration_moved_landmarks',
-    'create_registration_moved_regions', 'create_registration_transform',
+    'create_registered_image', 'create_registered_landmarks',
+    'create_registered_regions', 'create_registration_transform',
     'dataset_exists', 'list_datasets', 'load_ct', 'load_dataset', 'load_index', 'load_region',
-    'load_registration_moved_image', 'load_registration_moved_landmarks',
-    'load_registration_moved_regions', 'load_registration_transform',
+    'load_registered_image', 'load_registered_landmarks',
+    'load_registered_regions', 'load_registration_transform',
     'rename_patients',
 ]
 
 CREATE_IMPORTS = [
     'create_ct', 'create_dataset', 'create_index', 'create_region',
-    'create_registration_moved_image', 'create_registration_moved_landmarks',
-    'create_registration_moved_regions', 'create_registration_transform',
+    'create_registered_image', 'create_registered_landmarks',
+    'create_registered_regions', 'create_registration_transform',
 ]
 LOAD_IMPORTS = [
     'dataset_exists', 'list_datasets', 'load_ct', 'load_dataset', 'load_index', 'load_region',
-    'load_registration_moved_image', 'load_registration_moved_landmarks',
-    'load_registration_moved_regions', 'load_registration_transform',
+    'load_registered_image', 'load_registered_landmarks',
+    'load_registered_regions', 'load_registration_transform',
 ]
 RENAME_IMPORTS = ['rename_patients']
 

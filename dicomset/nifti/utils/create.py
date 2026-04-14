@@ -8,6 +8,7 @@ from ... import config
 from ...typing import AffineMatrix3D, BatchLabelImage3D, DatasetID, Image3D, LabelImage3D, Landmarks3D, ModelID, NiftiModality, PatientID, RegionID, SeriesID, StudyID
 from ...utils.args import arg_to_list
 from ...utils.io import save_csv, save_nifti, save_transform
+from ...utils.python import with_makeitso
 from ..dataset import NiftiDataset
 
 def create_ct(
@@ -49,12 +50,13 @@ def create_region(
     region_id: RegionID,
     data: LabelImage3D,
     affine: AffineMatrix3D,
+    makeitso: bool = False,
     ) -> None:
     set = NiftiDataset(dataset)
     filepath = os.path.join(set.path, 'data', 'patients', patient_id, study_id, 'regions', series_id, f'{region_id}.nii.gz')
-    save_nifti(data, affine, filepath)
+    with_makeitso(makeitso, lambda: save_nifti(data, affine, filepath), f"Creating region '{region_id}' for patient '{patient_id}', study '{study_id}', series '{series_id}' in dataset '{dataset}' at {filepath}.")
 
-def create_registration_moved_image(
+def create_registered_image(
     dataset: DatasetID,
     fixed_patient_id: PatientID,
     model: ModelID,
@@ -72,7 +74,7 @@ def create_registration_moved_image(
     filepath = os.path.join(set.path, 'data', 'predictions', 'registration', 'patients', fixed_patient_id, fixed_study_id, fixed_series_id, moving_patient_id, moving_study_id, moving_series_id, modality, f'{model}.nii.gz')
     save_nifti(data, affine, filepath)
 
-def create_registration_moved_landmarks(
+def create_registered_landmarks(
     dataset: DatasetID,
     fixed_patient_id: PatientID,
     model: ModelID,
@@ -88,7 +90,7 @@ def create_registration_moved_landmarks(
     filepath = os.path.join(set.path, 'data', 'predictions', 'registration', 'patients', fixed_patient_id, fixed_study_id, fixed_series_id, moving_patient_id, moving_study_id, moving_series_id, 'landmarks', f'{model}.csv')
     save_csv(data, filepath)
 
-def create_registration_moved_regions(
+def create_registered_regions(
     dataset: DatasetID,
     fixed_patient_id: PatientID,
     model: ModelID,

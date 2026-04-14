@@ -159,9 +159,9 @@ class DicomRtStructSeries(DicomSeries):
     # 1. Should return only regions when landmark_regexp is None, load regexp from config or default.
     # 2. Should return landmarks also when use_landmark_regexp is False.
 
-    @alias_kwargs([
+    @alias_kwargs(
         ('r', 'region_id'),
-    ])
+    )
     def list_regions(
         self,
         filter_landmarks: bool = True,
@@ -216,9 +216,9 @@ class DicomRtStructSeries(DicomSeries):
     def ref_ct(self) -> DicomCtSeries:
         return self.__ref_ct
 
-    @alias_kwargs([
+    @alias_kwargs(
         ('r', 'region_id'),
-    ])
+    )
     def regions_data(
         self,
         region_id: RegionID | List[RegionID] | Literal['all'] = 'all',

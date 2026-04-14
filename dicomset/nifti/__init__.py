@@ -4,7 +4,6 @@ from typing import List
 
 from .. import config
 from ..typing import DatasetID
-from ..utils.misc import with_makeitso
 from .dataset import NiftiDataset
 from .patient import NiftiPatient
 from .series import NiftiCtSeries, NiftiDoseSeries, NiftiImageSeries, NiftiLandmarksSeries, NiftiMrSeries, NiftiRegionsSeries

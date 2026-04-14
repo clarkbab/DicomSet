@@ -33,6 +33,8 @@ class NiftiDataset(IndexMixin, Dataset):
 
     @property
     def dicom(self) -> DicomDataset:
+        if self._index is None:
+            raise ValueError(f"Missing 'index.csv' for dataset '{self._dataset.id}', cannot find corresponding dicom dataset.")
         ds = self._index['dicom-dataset'].unique().tolist()
         assert len(ds) == 1
         return DicomDataset(ds[0])

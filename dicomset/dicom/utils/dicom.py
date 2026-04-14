@@ -10,11 +10,12 @@ import seaborn as sns
 import skimage as ski
 from typing import Any, Dict, List, Literal, Tuple
 
-from ...typing import AffineMatrix3D, BatchLabelImage3D, DirPath, FilePath, Image2D, Image3D, LabelImage3D, PatientID, Point2D, Points2D, RegionID, Size3D, Spacing2D, StudyID
-from ...utils.args import arg_to_list
+from ...typing import AffineMatrix3D, BatchLabelImage3D, DirPath, FilePath, Image2D, Image3D, LabelImage3D, PatientID, Point2D, Points2D, RegionID, Size2D, Size3D, Spacing2D, StudyID
+from ...utils.args import alias_kwargs, arg_to_list
 from ...utils.geometry import affine_origin, affine_spacing, create_affine
 from ...utils.logging import logger
 from ...utils.maths import round
+from ...utils.python import filter_lists
 from ..utils.io import load_dicom
 
 CONTOUR_FORMATS = ['POINT', 'CLOSED_PLANAR']
@@ -215,6 +216,9 @@ def from_rtplan_dicom(
 
     return info
 
+@alias_kwargs(
+    ('r', 'region_id'),
+)
 def from_rtstruct_dicom(
     rtstruct: FilePath | dcm.dataset.FileDataset,
     ct_size: Size3D,
@@ -230,41 +234,46 @@ def from_rtstruct_dicom(
     # Determine regions to load. 
     rois = rtstruct.StructureSetROISequence
     all_region_ids = [r.ROIName for r in rois]
-    all_contours = rtstruct.ROIContourSequence
-    if len(all_contours) != len(all_region_ids):
-        raise ValueError(f"Length of 'StructureSetROISequence' and 'ROIContourSequence' must be the same, got '{len(all_region_ids)}' and '{len(all_contours)}' respectively.")
+    all_region_contours = rtstruct.ROIContourSequence
+    if len(all_region_contours) != len(all_region_ids):
+        raise ValueError(f"Length of 'StructureSetROISequence' and 'ROIContourSequence' must be the same, got '{len(all_region_ids)}' and '{len(all_region_contours)}' respectively.")
     if region_id == 'all':
         region_ids = all_region_ids
-        contours = all_contours
+        region_contours = all_region_contours
     else:
         region_ids = arg_to_list(region_id, str)
-        contours = [] 
+        region_contours = [] 
         for r in region_ids:
             if r not in all_region_ids:
                 raise ValueError(f"RTSTRUCT doesn't contain region '{r}'.")
             idx = all_region_ids.index(r)                   
-            contours.append(all_contours[idx])
+            region_contours.append(all_region_contours[idx])
 
     # Filter regions with missing data.
     tmp_len = len(region_ids)
-    region_ids = [r for r, c in zip(region_ids, contours) if getattr(c, 'ContourSequence', None) is not None]    
+    region_ids, region_contours = filter_lists([region_ids, region_contours], lambda ic: getattr(ic[1], 'ContourSequence', None) is not None)
     if len(region_ids) < tmp_len:
-        logger.warn(f"Some regions ({tmp_len - len(region_ids)}) don't have contour data and will be skipped.") 
+        logger.warn(f"Some regions ({tmp_len - len(region_ids)}) don't have contour data and will be skipped.")
 
     # Create label placeholder.
     regions_data = np.zeros((len(region_ids), *ct_size), dtype=bool)
 
     # Add regions data.
-    for r, c in zip(region_ids, contours):
+    for i, (r, cs) in enumerate(zip(region_ids, region_contours)):
+        # Skip label if no contour sequence.
+        contour_seq = getattr(cs, 'ContourSequence', None)
+        if not contour_seq:
+            raise ValueError(f"'ContourSequence' not found for region '{r}'.")
+
         # Filter contours without data.
-        z_contours = filter(lambda ci: hasattr(ci, 'ContourData'), c)
+        z_contours = filter(lambda c: hasattr(c, 'ContourData'), contour_seq)
         z_contours = sorted(z_contours, key=lambda c: c.ContourData[2])  # Sort by z position.
 
         # Convert from boundary point cloud into binary mask. 
-        for i, contour in enumerate(z_contours):
+        for j, contour in enumerate(z_contours):
             contour_data = np.array(contour.ContourData)
             if not contour.ContourGeometricType in CONTOUR_FORMATS:
-                raise ValueError(f"Expected one of '{CONTOUR_FORMATS}' ContourGeometricTypes, got '{contour.ContourGeometricType}' for contour '{i}', region '{r}'.")
+                raise ValueError(f"Expected one of '{CONTOUR_FORMATS}' ContourGeometricTypes, got '{contour.ContourGeometricType}' for contour '{j}', region '{r}'.")
 
             # Coords are stored in flat array.
             if contour_data.size % 3 != 0:
@@ -285,7 +294,7 @@ def from_rtstruct_dicom(
                 continue
 
             # Write slice data to label, using XOR.
-            regions_data[:, :, z_idx][slice_data == True] = np.invert(regions_data[:, :, z_idx][slice_data == True])
+            regions_data[i, :, :, z_idx][slice_data == True] = np.invert(regions_data[i, :, :, z_idx][slice_data == True])
 
     if return_regions:
         return regions_data, region_ids
@@ -294,6 +303,7 @@ def from_rtstruct_dicom(
 
 def __get_slice_mask(
     points: Points2D,
+    size: Size2D,
     spacing: Spacing2D,
     origin: Point2D,
     ) -> np.ndarray:
@@ -309,19 +319,31 @@ def __get_slice_mask(
     pts = [np.expand_dims(indices, axis=0)]
 
     # Get all voxels on the boundary and interior described by the indices.
-    slice_data = np.zeros(dtype='uint8')   # 'cv.fillPoly' expects to write to 'uint8' mask.shape=size, dtype='uint8')   # 'cv.fillPoly' expects to write to 'uint8' mask.
+    slice_data = np.zeros(size, dtype='uint8')   # 'cv.fillPoly' expects to write to 'uint8' mask.shape=size, dtype='uint8')   # 'cv.fillPoly' expects to write to 'uint8' mask.
     cv.fillPoly(color=1, img=slice_data, pts=pts)
     slice_data = slice_data.astype(bool)
 
     return slice_data
 
+def list_rtstruct_regions(
+    rtstruct: FilePath | RtStructDicom,
+    ) -> List[RegionID]:
+    if isinstance(rtstruct, str):
+        rtstruct = load_dicom(rtstruct, force=False)
+    roi_infos = rtstruct.StructureSetROISequence
+    region_ids = list(sorted(info.ROIName for info in roi_infos))
+    return region_ids
+
 def to_ct_dicom(
     data: Image3D, 
     affine: AffineMatrix3D,
     patient_id: PatientID = 'pat_0',
-    study_id: StudyID = 'study_0',
+    study_desc: str = 'study_0',
+    study_id: str = 'study_0',  # Confusingly, this isn't the actualy ID, but a short human-readable ID - UID is the actual ID.
     patient_name: str | None = None,
     series_desc: str | None = None,
+    series_number: int = 0,
+    study_uid: StudyID | None = None,
     ) -> List[dcm.dataset.FileDataset]:
     # Data settings.
     if data.min() < -1024:
@@ -349,7 +371,7 @@ def to_ct_dicom(
     # Create study and series fields.
     # StudyID and StudyInstanceUID are different fields.
     # StudyID is a human-readable identifier, while StudyInstanceUID is a unique identifier.
-    study_uid = dcm.uid.generate_uid()
+    study_uid = dcm.uid.generate_uid() if study_uid is None else study_uid
     series_uid = dcm.uid.generate_uid()
     frame_of_reference_uid = dcm.uid.generate_uid()
     dt = datetime.now()
@@ -390,7 +412,8 @@ def to_ct_dicom(
 
         # Add study info.
         ct_dicom.StudyDate = dt.strftime(DICOM_DATE_FORMAT)
-        ct_dicom.StudyDescription = study_id
+        if study_desc is not None:
+            ct_dicom.StudyDescription = study_desc
         ct_dicom.StudyInstanceUID = study_uid
         ct_dicom.StudyID = study_id
         ct_dicom.StudyTime = dt.strftime(DICOM_TIME_FORMAT)
@@ -399,7 +422,7 @@ def to_ct_dicom(
         ct_dicom.SeriesDate = dt.strftime(DICOM_DATE_FORMAT)
         ct_dicom.SeriesDescription = f'CT ({study_id})' if series_desc is None else series_desc
         ct_dicom.SeriesInstanceUID = series_uid
-        ct_dicom.SeriesNumber = 0
+        ct_dicom.SeriesNumber = series_number
         ct_dicom.SeriesTime = dt.strftime(DICOM_TIME_FORMAT)
 
         # Add data.
@@ -565,6 +588,7 @@ def to_rtstruct_dicom(
     label: str = 'RTSTRUCT',
     series_desc: str | None = None,
     series_id: str | None = None,
+    series_number: int = 0,
     ) -> dcm.dataset.FileDataset:
     if data.ndim == 3:
         data = np.expand_dims(data, axis=0)    
@@ -636,7 +660,7 @@ def to_rtstruct_dicom(
     rtstruct.SeriesTime = time
     rtstruct.SeriesInstanceUID = dcm.uid.generate_uid() if series_id is None else series_id
     rtstruct.SeriesDescription = f'RTSTRUCT ({rtstruct.StudyID})' if series_desc is None else series_desc
-    rtstruct.SeriesNumber = 0
+    rtstruct.SeriesNumber = series_number
 
     # Add frame of reference.
     ref_frame = dcm.dataset.Dataset()

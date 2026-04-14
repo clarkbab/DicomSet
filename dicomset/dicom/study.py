@@ -71,10 +71,10 @@ class DicomStudy(IndexWithErrorsMixin, Study):
         n_overlap = len(np.intersect1d(real_ids, req_ids))
         return n_overlap > 0 if any else n_overlap == len(req_ids)
 
-    @alias_kwargs((
+    @alias_kwargs(
         ('sd', 'show_date'),
         ('sf', 'show_filepath'),
-    ))
+    )
     def list_series(
         self,
         modality: DicomModality,

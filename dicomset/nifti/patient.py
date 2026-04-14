@@ -40,7 +40,7 @@ class NiftiPatient(IndexMixin, Patient):
     @property
     def dicom(self) -> DicomPatient:
         if self._index is None:
-            raise ValueError(f"Dataset did not originate from dicom (no 'index.csv').")
+            raise ValueError(f"Missing 'index.csv' for dataset '{self._dataset.id}', cannot find corresponding dicom patient.")
         index = self._index[['dataset', 'patient-id', 'dicom-dataset', 'dicom-patient-id']]
         index = index[(index['dataset'] == self._dataset.id) & (index['patient-id'] == self._id)].drop_duplicates()
         assert len(index) == 1

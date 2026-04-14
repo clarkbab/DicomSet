@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import numpy as np
 import SimpleITK as sitk
-from typing import List, Tuple, TYPE_CHECKING
-if TYPE_CHECKING:
-    import torch
+import torch
+from typing import List, Tuple
 
 from ..typing import AffineMatrix, ChannelImage, Image, Number, SpatialDim
+from .args import bubble_args
 from .geometry import affine_origin, affine_spacing, create_affine
-from .python import bubble_args
-from .transforms.transpose import spatial_transpose
 
 def to_numpy(
     data: bool | Number | str | List[bool | Number | str] | np.ndarray | torch.Tensor | torch.Size,
@@ -29,8 +27,12 @@ def to_numpy(
     # Convert data to array.
     if isinstance(data, (bool, float, int, str)):
         data = np.array([data])
-    if isinstance(data, (list, tuple)):
+    elif isinstance(data, (list, tuple)):
         data = np.array(data)
+    elif isinstance(data, torch.Size):
+        data = np.array(data)
+    elif isinstance(data, torch.Tensor):
+        data = data.detach().cpu().numpy()
 
     # Set data type.
     if dtype is not None:
@@ -106,11 +108,6 @@ def to_tensor(
     dtype: torch.dtype | None = None,
     return_type: bool = False,
     ) -> torch.Tensor | Tuple[torch.Tensor | None, type] | None:
-    try:
-        import torch
-    except ImportError:
-        raise ImportError("torch is required for to_tensor(). Install with: pip install torch")
-
     # Record input type.
     if return_type:
         input_type = type(data)
