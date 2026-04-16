@@ -1,5 +1,6 @@
 import numpy as np
 import scipy
+from typing import List
 
 from ..typing import AffineMatrix, Box, Image, LabelImage, Pixel, Point, Size, Spacing, SpatialDim, Voxel
 
@@ -181,3 +182,10 @@ def to_world_coords(
     origin = affine_origin(affine)
     point_w = np.array(point) * spacing + origin
     return point_w
+
+def combine_boxes(
+    *boxes: List[Box],
+    ) -> Box:
+    min = np.stack([box[0] for box in boxes]).min(axis=0)
+    max = np.stack([box[1] for box in boxes]).max(axis=0)
+    return np.stack([min, max])

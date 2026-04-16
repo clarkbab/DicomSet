@@ -165,3 +165,24 @@ def ncc(
     **kwargs,
     ) -> float | List[float]:
     return compute_channel_or_spatial_metrics(__spatial_ncc, a, b, dim=dim, **kwargs)
+
+def __spatial_volume(
+    a: LabelImage,
+    affine: AffineMatrix | None = None,
+    ) -> float:
+    a = to_numpy(a, dtype=bool)
+    if affine is not None:
+        spacing = affine_spacing(affine)
+        voxel_volume = np.prod(spacing)
+    else:
+        voxel_volume = 1
+    volume = a.sum() * voxel_volume
+    return volume
+
+@bubble_args(__spatial_volume)
+def volume(
+    a: LabelImage | BatchLabelImage,
+    dim: SpatialDim | None = None,
+    **kwargs,
+    ) -> float | List[float]:
+    return compute_channel_or_spatial_metrics(__spatial_volume, a, dim=dim, **kwargs)
