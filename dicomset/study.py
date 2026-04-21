@@ -4,8 +4,9 @@ from typing import Any, Dict
 
 from .dataset import Dataset
 from .patient import Patient
-from .regions_map import RegionsMap
+from .region_map import RegionMap
 from .typing import StudyID
+from .utils.python import wrap_quotes
 
 class Study:
     def __init__(
@@ -15,14 +16,14 @@ class Study:
         id: StudyID,
         config: Dict[str, Any] | None = None,
         ct_from: Study | None = None,
-        regions_map: RegionsMap | None = None,
+        region_map: RegionMap | None = None,
         ) -> None:
         self._dataset = dataset
         self._config = config
         self._pat = pat
         self._id = str(id)
         self._ct_from = ct_from
-        self._regions_map = regions_map
+        self._region_map = region_map
 
     @property
     def ct_from(self) -> Study | None:
@@ -41,8 +42,8 @@ class Study:
         return self._pat
 
     @property
-    def regions_map(self) -> RegionsMap | None:
-        return self._regions_map
+    def region_map(self) -> RegionMap | None:
+        return self._region_map
 
     def __repr__(self) -> str:
         return str(self)
@@ -52,9 +53,9 @@ class Study:
         class_name: str,
         ) -> str:
         params = dict(
-            dataset=self._dataset.id,
-            id=self._id,
-            pat=self._pat.id,
+            dataset_id=wrap_quotes(self._dataset.id),
+            id=wrap_quotes(self._id),
+            patient_id=wrap_quotes(self._pat.id),
         )
         if self._ct_from is not None:
             params['ct_from'] = self._ct_from.id

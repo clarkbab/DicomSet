@@ -3,12 +3,12 @@ from __future__ import annotations
 from datetime import datetime as dt
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Literal, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Literal, TYPE_CHECKING
 
 from ..dataset import Dataset
 from ..mixins import IndexWithErrorsMixin
 from ..patient import Patient
-from ..regions_map import RegionsMap
+from ..region_map import RegionMap
 from ..study import Study
 from ..typing import DicomModality, SeriesID, StudyID
 from ..utils.args import alias_kwargs, arg_to_list, resolve_id
@@ -30,9 +30,9 @@ class DicomStudy(IndexWithErrorsMixin, Study):
         index_errors: pd.DataFrame,
         config: Dict[str, Any] | None = None,
         ct_from: DicomStudy | None = None,
-        regions_map: RegionsMap | None = None,
+        region_map: RegionMap | None = None,
         ) -> None:
-        super().__init__(dataset, patient, id, config=config, ct_from=ct_from, regions_map=regions_map)
+        super().__init__(dataset, patient, id, config=config, ct_from=ct_from, region_map=region_map)
         self.__ct_from = ct_from
         self._index = index
         self._index_errors = index_errors
@@ -56,7 +56,7 @@ class DicomStudy(IndexWithErrorsMixin, Study):
         ) -> DicomSeries | None:
         serieses = self.list_series(modality)
         if show_warning and len(serieses) > 1:
-            logger.warning(f"More than one '{modality}' series found for '{self}', defaulting to latest.")
+            logger.warn(f"More than one '{modality}' series found for '{self}', defaulting to latest.")
         return self.series(serieses[-1], modality) if len(serieses) > 0 else None
 
     def has_series(
@@ -81,6 +81,7 @@ class DicomStudy(IndexWithErrorsMixin, Study):
         series_id: SeriesID | List[SeriesID] | Literal['all'] = 'all', 
         show_date: bool = False,
         show_filepath: bool = False,
+        sort: Callable[[DicomSeries], int] | None = None,   # Not implemented.
         ) -> List[SeriesID]:
         if modality not in DicomModality.__args__:
             raise ValueError(f"Unrecognised modality '{modality}'. Should be one of {DicomModality.__args__}.")
@@ -143,6 +144,8 @@ class DicomStudy(IndexWithErrorsMixin, Study):
             return DicomRtPlanSeries(self._dataset, self._pat, self, id, index, index_policy, **kwargs)
         elif modality == 'rtstruct':
             ref_study = self.__ct_from if self.__ct_from is not None else self
+
+            # Load ref CT series - required for the frame of reference.
             ref_ct_id = index['mod-spec'][DICOM_RTSTRUCT_REF_CT_KEY]
             if not index_policy['no-ref-ct']['allow']:
                 # Require use of the referenced CT.
@@ -154,7 +157,7 @@ class DicomStudy(IndexWithErrorsMixin, Study):
                 else:
                     ref_ct = ref_study.default_series('ct')
 
-            return DicomRtStructSeries(self._dataset, self._pat, self, id, ref_ct, index, index_policy, config=self._config, regions_map=self._regions_map, **kwargs)
+            return DicomRtStructSeries(self._dataset, self._pat, self, id, ref_ct, index, index_policy, config=self._config, region_map=self._region_map, **kwargs)
 
     def series_modality(
         self,
@@ -179,12 +182,12 @@ for m in mods:
 # Add 'list_{mod}_series' methods.
 mods = ['ct', 'mr', 'rtdose', 'rtplan', 'rtstruct']
 for m in mods:
-    setattr(DicomStudy, f'list_{m}_series', lambda self, m=m: self.list_series(m))
+    setattr(DicomStudy, f'list_{m}_series', lambda self, m=m, **kwargs: self.list_series(m, **kwargs))
 
 # Add '{mod}_series' methods.
 mods = ['ct', 'mr', 'rtdose', 'rtplan', 'rtstruct']
 for m in mods:
-    setattr(DicomStudy, f'{m}_series', lambda self, series, m=m: self.series(series, m))
+    setattr(DicomStudy, f'{m}_series', lambda self, series, m=m, **kwargs: self.series(series, m, **kwargs))
 
 # Add 'default_{mod}' properties.
 mods = ['ct', 'mr', 'rtdose', 'rtplan', 'rtstruct']
@@ -193,7 +196,7 @@ for m in mods:
 
 # Add image property shortcuts from 'default_series(mod)' methods.
 mods = ['ct', 'mr', 'rtdose']
-props = ['data', 'fov', 'origin', 'size', 'spacing']
+props = ['affine', 'data', 'fov', 'origin', 'size', 'spacing']
 for m in mods:
     n = 'dose' if m == 'rtdose' else m
     for p in props:

@@ -1,8 +1,10 @@
 import numpy as np
+import pandas as pd
 import scipy
 from typing import List
 
-from ..typing import AffineMatrix, Box, Image, LabelImage, Pixel, Point, Size, Spacing, SpatialDim, Voxel
+from ..typing import AffineMatrix, Box, Image, LabelImage, Landmarks, Pixel, Point, Points, Size, Spacing, SpatialDim, Voxel
+from .landmarks import landmarks_to_points, points_to_landmarks
 
 def affine_origin(
     affine: AffineMatrix,
@@ -41,6 +43,13 @@ def centre_of_mass(
         com = to_world_coords(com, affine)
 
     return com
+
+def combine_boxes(
+    *boxes: List[Box],
+    ) -> Box:
+    min = np.stack([box[0] for box in boxes]).min(axis=0)
+    max = np.stack([box[1] for box in boxes]).max(axis=0)
+    return np.stack([min, max])
 
 def create_affine(
     spacing: Spacing,
@@ -166,26 +175,31 @@ def fov_width(
     return fov_w
 
 def to_image_coords(
-    point: Point,
+    point: Point | Points | Landmarks,
     affine: AffineMatrix,
     ) -> Pixel | Voxel:
     spacing = affine_spacing(affine)
     origin = affine_origin(affine)
-    point_im = np.round((np.array(point) - origin) / spacing).astype(np.int32)
-    return point_im
+    if isinstance(point, pd.DataFrame):
+        landmarks = point
+        points = landmarks_to_points(landmarks)
+        points = np.round((np.array(points) - origin) / spacing).astype(np.int32)
+        points = points_to_landmarks(points, landmarks['landmark-id'])
+    else:
+        points = np.round((np.array(point) - origin) / spacing).astype(np.int32)
+    return points
 
 def to_world_coords(
-    point: Point,
+    point: Point | Point | Landmarks,
     affine: AffineMatrix,
     ) -> Point:
     spacing = affine_spacing(affine)
     origin = affine_origin(affine)
-    point_w = np.array(point) * spacing + origin
-    return point_w
-
-def combine_boxes(
-    *boxes: List[Box],
-    ) -> Box:
-    min = np.stack([box[0] for box in boxes]).min(axis=0)
-    max = np.stack([box[1] for box in boxes]).max(axis=0)
-    return np.stack([min, max])
+    if isinstance(point, pd.DataFrame):
+        landmarks = point
+        points = landmarks_to_points(landmarks)
+        points = (points * spacing + origin).astype(np.float32)
+        points = points_to_landmarks(points, landmarks['landmark-id'])
+    else:
+        points = (np.array(point) * spacing + origin).astype(np.float32)
+    return points

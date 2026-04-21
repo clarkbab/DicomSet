@@ -6,6 +6,7 @@ from .dataset import Dataset
 from .patient import Patient
 from .study import Study
 from .typing import SeriesID
+from .utils.python import wrap_quotes
 
 class Series:
     def __init__(
@@ -42,10 +43,10 @@ class Series:
         class_name: str,
         ) -> str:
         params = dict(
-            dataset=self._dataset.id,
-            id=self._id,
-            pat=self._pat.id,
-            study=self._study.id,
+            dataset_id=wrap_quotes(self._dataset.id),
+            id=wrap_quotes(self._id),
+            patient_id=wrap_quotes(self._pat.id),
+            study_id=wrap_quotes(self._study.id),
         )
         return f"{class_name}({', '.join([f'{k}={v}' for k, v in params.items()])})"
 

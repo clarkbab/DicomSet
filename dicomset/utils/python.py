@@ -30,13 +30,14 @@ def filter_lists(
     lists: List[List[Any]],
     filt_fn: Callable,
     ) -> List[List[Any]]:
+    n_lists = len(lists)
     n_elements = len(lists[0])
     for l in lists:
         if len(l) != n_elements:
             raise ValueError('All lists must have the same length.')
     lists = list(map(list, zip(*[i for i in list(zip(*lists)) if filt_fn(i)])))
     if len(lists) == 0:
-        return [[],] * n_elements
+        return [[],] * n_lists
     return lists
 
 def has_private_attr(obj, attr_name):
@@ -131,3 +132,6 @@ def with_makeitso(
     else:
         if message is not None:
             logger.info(f"Would run: {message}")
+
+def wrap_quotes(s: str) -> str:
+    return f"'{s}'"

@@ -13,7 +13,9 @@ from ...study import Study
 from ...training import sample
 from ...typing import LandmarkID, Landmarks3D, SeriesID
 from ...utils.args import arg_to_list
+from ...utils.geometry import to_image_coords
 from ...utils.io import load_csv
+from ...utils.landmarks import landmarks_to_points
 from .series import NiftiSeries
 if TYPE_CHECKING:
     from ...dicom import DicomRtStructSeries
@@ -31,9 +33,9 @@ class NiftiLandmarksSeries(NiftiSeries):
         ref_dose: NiftiDoseSeries | None = None,
         ) -> None:
         super().__init__('landmarks', dataset, patient, study, id, index=index)
-        self.__filepath = os.path.join(config.directories.datasets, 'nifti', self._dataset_id, 'data', 'patients', self._pat_id, self._study_id, self._modality, f'{self._id}.csv')
+        self.__filepath = os.path.join(config.directories.datasets, 'nifti', self._dataset.id, 'data', 'patients', self._pat.id, self._study.id, self._modality, f'{self._id}.csv')
         if not os.path.exists(self.__filepath):
-            raise ValueError(f"No NiftiLandmarksSeries '{self._id}' found for study '{self._study_id}'. Filepath: {self.__filepath}")
+            raise ValueError(f"No NiftiLandmarksSeries '{self._id}' found for study '{self._study.id}'. Filepath: {self.__filepath}")
         self.__ref_ct = ref_ct
         self.__ref_dose = ref_dose
 
@@ -54,7 +56,7 @@ class NiftiLandmarksSeries(NiftiSeries):
         if not use_world_coords:
             if self.__ref_ct is None:
                 raise ValueError(f"Cannot convert landmarks to image coordinates without 'ref_ct'.")
-            landmarks_data = landmarks_to_image_coords(landmarks_data, self.__ref_ct.spacing, self.__ref_ct.origin)
+            landmarks_data = to_image_coords(landmarks_data, self.__ref_ct.affine)
 
         # Sort by landmark IDs - this means that 'n_landmarks' will be consistent between
         # Dicom/Nifti dataset types.
@@ -73,7 +75,7 @@ class NiftiLandmarksSeries(NiftiSeries):
         if sample_ct:
             if self.__ref_ct is None:
                 raise ValueError(f"Cannot sample CT intensities without 'ref_ct'.")
-            ct_values = sample(self.__ref_ct.data, landmarks_to_data(landmarks_data), origin=self.__ref_ct.origin, spacing=self.__ref_ct.spacing, **kwargs)
+            ct_values = sample(self.__ref_ct.data, landmarks_to_points(landmarks_data), affine=self.__ref_ct.affine, **kwargs)
             landmarks_data['ct-series-id'] = self.__ref_ct.id
             landmarks_data['ct'] = ct_values
 
@@ -81,15 +83,15 @@ class NiftiLandmarksSeries(NiftiSeries):
         if sample_dose:
             if self.__ref_dose is None:
                 raise ValueError(f"Cannot sample dose intensities without 'ref_dose'.")
-            dose_values = sample(self.__ref_dose.data, landmarks_to_data(landmarks_data), origin=self.__ref_dose.origin, spacing=self.__ref_dose.spacing, **kwargs)
+            dose_values = sample(self.__ref_dose.data, landmarks_to_points(landmarks_data), affine=self.__ref_dose.affine, **kwargs)
             landmarks_data['dose-series-id'] = self.__ref_dose.id
             landmarks_data['dose'] = dose_values
 
         # Add extra columns - in case we're concatenating landmarks from multiple patients/studies.
         if 'patient-id' not in landmarks_data.columns:
-            landmarks_data.insert(0, 'patient-id', self._pat_id)
+            landmarks_data.insert(0, 'patient-id', self._pat.id)
         if 'study-id' not in landmarks_data.columns:
-            landmarks_data.insert(1, 'study-id', self._study_id)
+            landmarks_data.insert(1, 'study-id', self._study.id)
         if 'series-id' not in landmarks_data.columns:
             landmarks_data.insert(2, 'series-id', self._id)
 
@@ -103,8 +105,8 @@ class NiftiLandmarksSeries(NiftiSeries):
         if self._index is None:
             raise ValueError(f"Dataset did not originate from dicom (no 'index.csv').")
         index = self._index[['dataset', 'patient-id', 'study-id', 'series-id', 'modality', 'dicom-dataset', 'dicom-patient-id', 'dicom-study-id', 'dicom-series-id']]
-        index = index[(index['dataset'] == self._dataset_id) & (index['patient-id'] == self._pat_id) & (index['study-id'] == self._study_id) & (index['series-id'] == self._id) & (index['modality'] == 'landmarks')].drop_duplicates()
-        assert len(index) == 1
+        index = index[(index['dataset'] == self._dataset.id) & (index['patient-id'] == self._pat.id) & (index['study-id'] == self._study.id) & (index['series-id'] == self._id) & (index['modality'] == 'landmarks')].drop_duplicates()
+        assert len(index) == 1, f"Expected 1 index entry for DICOM landmarks series '{self._id}', but found {len(index)}. Index: {index}"
         row = index.iloc[0]
         return DicomDataset(row['dicom-dataset']).patient(row['dicom-patient-id']).study(row['dicom-study-id']).rtstruct_series(row['dicom-series-id'])
 

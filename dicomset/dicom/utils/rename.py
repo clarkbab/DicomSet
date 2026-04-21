@@ -1,5 +1,6 @@
 from mymi import logging
 import os
+import re
 import shutil
 from tqdm import tqdm
 from typing import Callable, Dict, Optional, Union

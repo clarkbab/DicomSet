@@ -67,7 +67,7 @@ class NiftiCtSeries(NiftiImageSeries):
             raise ValueError(f"Dataset did not originate from dicom (no 'index.csv').")
         index = self._index[['dataset', 'patient-id', 'study-id', 'series-id', 'modality', 'dicom-dataset', 'dicom-patient-id', 'dicom-study-id', 'dicom-series-id']]
         index = index[(index['dataset'] == self._dataset.id) & (index['patient-id'] == self._pat.id) & (index['study-id'] == self._study.id) & (index['series-id'] == self._id) & (index['modality'] == 'ct')].drop_duplicates()
-        assert len(index) == 1
+        assert len(index) == 1, f"Expected 1 index entry for DICOM CT series '{self._id}', but found {len(index)}. Index: {index}"
         row = index.iloc[0]
         return DicomDataset(row['dicom-dataset']).patient(row['dicom-patient-id']).study(row['dicom-study-id']).ct_series(row['dicom-series-id'])
 

@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, List
 
 from .typing import DatasetID, DirPath, GroupID
 from .utils.io import load_yaml
+from .utils.python import wrap_quotes
 
 CT_FROM_REGEXP = r'^__CT_FROM_(.*)__$'
 
@@ -65,7 +66,7 @@ class Dataset:
         class_name: str,
         ) -> str:
         params = dict(
-            id=self._id,
+            id=wrap_quotes(self._id),
         )
         if self._ct_from is not None:
             params['ct_from'] = self._ct_from.id

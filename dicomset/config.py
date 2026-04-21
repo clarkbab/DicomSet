@@ -1,13 +1,25 @@
 import os
 
-DATA_ENV = 'DS_DATA'
+from .typing import DirPath
+
+DATA_DIR = None
+DATA_ENV_VAR = 'DS_DATA'
+
+def config_data(dirpath: DirPath) -> None:
+    global DATA_DIR
+    DATA_DIR = dirpath
 
 class Directories:
     @property
     def data(self):
-        if DATA_ENV not in os.environ:
-            raise ValueError(f"Must set env var '{DATA_ENV}' for DicomSet.")
-        return os.environ[DATA_ENV]
+        if DATA_DIR is not None:
+            return DATA_DIR
+
+        if DATA_ENV_VAR in os.environ:
+            config_data(os.environ[DATA_ENV_VAR])
+            return DATA_DIR
+        else:
+            raise ValueError(f"Environment variable '{DATA_ENV_VAR}=\"<directory>\"' must be set to work with data.")
 
     @property
     def datasets(self):
@@ -22,5 +34,12 @@ class Directories:
         if not os.path.exists(filepath):
             os.makedirs(filepath)
         return filepath
+    
+    # @property
+    # def tmp(self):
+    #     filepath = os.path.join(self.root, 'tmp')
+    #     if not os.path.exists(filepath):
+    #         os.makedirs(filepath)
+    #     return filepath
 
 directories = Directories()

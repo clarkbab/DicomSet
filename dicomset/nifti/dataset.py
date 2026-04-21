@@ -8,10 +8,10 @@ from .. import config
 from ..dataset import CT_FROM_REGEXP, Dataset
 from ..dicom import DicomDataset
 from ..mixins import IndexMixin
-from ..regions_map import RegionsMap
+from ..region_map import RegionMap
 from ..typing import DatasetID, GroupID, PatientID, RegionID
 from ..utils import logging
-from ..utils.args import arg_to_list, resolve_id
+from ..utils.args import alias_kwargs, arg_to_list, resolve_id
 from ..utils.io import load_csv
 from .patient import NiftiPatient
 
@@ -60,6 +60,11 @@ class NiftiDataset(IndexMixin, Dataset):
         landmarks = list(sorted(np.unique(landmarks)))
         return landmarks
 
+    @alias_kwargs(
+        ('g', 'group_id'),
+        ('p', 'patient_id'),
+        ('r', 'region_id'),
+    )
     @Dataset.ensure_loaded
     def list_patients(
         self,
@@ -95,7 +100,7 @@ class NiftiDataset(IndexMixin, Dataset):
             if self._groups is None:
                 raise ValueError(f"File 'groups.csv' not found for dicom dataset '{self._id}'.")
             all_groups = self.list_groups()
-            group_ids = arg_to_list(group_id, int, literals={ 'all': all_groups })
+            group_ids = arg_to_list(group_id, str, literals={ 'all': all_groups })
             for g in group_ids:
                 if g not in all_groups:
                     raise ValueError(f"Group {g} not found.")
@@ -225,7 +230,7 @@ class NiftiDataset(IndexMixin, Dataset):
             self.__group_index = None
 
         # Load region map.
-        self.__regions_map = RegionsMap.load(self._path)
+        self.__region_map = RegionMap.load(self._path)
 
     # Copied from 'mymi/reports/dataset/nift.py' to avoid circular dependency.
     def __load_patient_regions_report(
@@ -271,12 +276,12 @@ class NiftiDataset(IndexMixin, Dataset):
         else:
             ct_from = None
 
-        return NiftiPatient(self, id, ct_from=ct_from, excluded_labels=exc_df, index=index, regions_map=self.__regions_map, **kwargs)
+        return NiftiPatient(self, id, ct_from=ct_from, excluded_labels=exc_df, index=index, region_map=self.__region_map, **kwargs)
 
     @property
     @Dataset.ensure_loaded
-    def regions_map(self) -> RegionsMap | None:
-        return self.__regions_map
+    def region_map(self) -> RegionMap | None:
+        return self.__region_map
 
     def __str__(self) -> str:
         return super().__str__(self.__class__.__name__)

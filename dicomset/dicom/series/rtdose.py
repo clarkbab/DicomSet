@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, TYPE_CHECKING
 
 from ... import config
 from ...typing import Box3D, Image3D, Point3D, SeriesID, Size3D, Spacing3D
-from ...utils.geometry import fov
+from ...utils.geometry import affine_origin, affine_spacing, fov
 from ...utils.python import has_private_attr
 from ..utils.dicom import from_rtdose_dicom
 from ..utils.io import load_dicom
@@ -43,6 +43,11 @@ class DicomRtDoseSeries(DicomSeries):
 
     @property
     @ensure_loaded
+    def affine(self) -> AffineMatrix3D:
+        return self.__affine
+
+    @property
+    @ensure_loaded
     def data(self) -> Image3D:
         return self.__data
 
@@ -54,15 +59,15 @@ class DicomRtDoseSeries(DicomSeries):
     def fov(
         self,
         **kwargs) -> Box3D:
-        return fov(self.__data, origin=self.__origin, spacing=self.__spacing, **kwargs)
+        return fov(self.__data.shape, self.__affine, **kwargs)
 
     def __load_data(self) -> None:
-        self.__data, self.__spacing, self.__origin = from_rtdose_dicom(self.dicom)
+        self.__data, self.__affine = from_rtdose_dicom(self.dicom)
 
     @property
     @ensure_loaded
     def origin(self) -> Point3D:
-        return self.__origin
+        return affine_origin(self.__affine)
 
     @property
     @ensure_loaded
@@ -72,7 +77,7 @@ class DicomRtDoseSeries(DicomSeries):
     @property
     @ensure_loaded
     def spacing(self) -> Spacing3D:
-        return self.__spacing
+        return affine_spacing(self.__affine)
 
     def __str__(self) -> str:
         return super().__str__(self.__class__.__name__)

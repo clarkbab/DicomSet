@@ -42,6 +42,7 @@ class DicomCtSeries(DicomSeries):
         return wrapper
 
     @property
+    @ensure_loaded
     def affine(self) -> AffineMatrix3D:
         return self.__affine
 

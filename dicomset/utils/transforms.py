@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import SimpleITK as sitk
-from typing import Callable, Literal, List, Tuple, TYPE_CHECKING
+from typing import Callable, Literal, Tuple, TYPE_CHECKING
 
 from ..typing import AffineMatrix, BatchChannelImage, BatchImage, Image, Number, Size, SpatialDim
 from .args import bubble_args
@@ -16,69 +16,6 @@ if TYPE_CHECKING:
 # Handles 2/3D batch/channel/spatial images and passes them to the
 # spatial or channel transform. Channel is needed because some transforms
 # merge data across channels - e.g. minmax normalisation.
-def compute_channel_or_spatial_transforms(
-    transform_fn: Callable,
-    data: Image | BatchImage | BatchChannelImage,
-    combine_channels: bool = False,
-    dim: SpatialDim | None = None, 
-    **kwargs,
-    ) -> Image | BatchImage | BatchChannelImage:
-    if data.ndim == 2:    # 2D image.
-        return transform_fn(data, **kwargs) 
-    elif data.ndim == 3:  # 2D batch or 3D image.
-        if dim is None or dim == 3: # 3D image.
-            logger.warn(f"Transform function '{transform_fn.__name__}' received 3D array with no specified 'dim'. Assuming 3D labels. If these are batches of 2D labels, specify 'dim=2' to compute transform per image in batch.") 
-            return transform_fn(data, **kwargs)
-        elif dim == 2:                       # Batch of 2D images.
-            # Assume that a dim=2, 3D array is (C, X, Y).
-            if combine_channels:
-                return transform_fn(data, **kwargs)
-            else:
-                results = []
-                for d in data:
-                    results.append(transform_fn(d, **kwargs)) 
-                return np.stack(results, axis=0)
-    elif data.ndim == 4:  # 2D batch/channel or 3D batch.
-        if dim is None or dim == 3:
-            # Assume that a dim=3, 4D array is (C, X, Y, Z).
-            logger.warn(f"Transform function '{transform_fn.__name__}' received 4D array with no specified 'dim'. Assuming batch of 3D labels. If these are batch/channels of 2D labels, specify 'dim=2' to compute transform per image in batch.")    
-            if combine_channels:
-                return transform_fn(data, **kwargs)
-            else:
-                results = []
-                for d in data:
-                    results.append(transform_fn(d, **kwargs))
-                return np.stack(results, axis=0) 
-        elif dim == 2:
-            results = []
-            for b in data:
-                if combine_channels:
-                    # Pass all channels to the transform function.
-                    results.append(transform_fn(b, **kwargs))
-                else:
-                    # Transform each channel separately.
-                    channel_results = []
-                    for c in b:
-                        channel_results.append(transform_fn(c, **kwargs))
-                    results.append(np.stack(channel_results, axis=0))
-            return np.stack(results, axis=0) 
-    elif data.ndim == 5:  # 3D batch/channel.
-        results = []
-        for b in data:
-            # Pass all channels to the transform function.
-            if combine_channels:
-                results.append(transform_fn(b, **kwargs))
-                continue
-            # Transform each channel separately.
-            channel_results = []
-            for c in b:
-                channel_results.append(transform_fn(c, **kwargs))
-            results.append(np.stack(channel_results, axis=0))
-        return np.stack(results, axis=0) 
-    else:
-        raise ValueError(f"Transform function '{transform_fn.__name__}' expects array of spatial dimension 2 or 3, with optional batch dimension. Got array of shape '{data.shape}' with inferred spatial dimension {data.ndim}. Specify 'dim' to override inference.")        
-
-# Can be applied to spatial or channel image.
 def __minmax(
     data: Image,
     ) -> Image:
@@ -88,15 +25,7 @@ def __minmax(
     data = (data - data.min()) / data_width
     return data
 
-@bubble_args(__minmax)
-def minmax(
-    data: Image | BatchImage,
-    **kwargs,
-    ) -> Image | BatchImage:
-    return compute_channel_or_spatial_transforms(__minmax, data, **kwargs)
-
-# Pulls image data/affine from "data/affine" or "image" series.
-# Output size/affine is pulled from "output_size/affine" or "output_image" series. 
+# Can be applied to spatial or channel image.
 def __spatial_resample(
     data: Image | None = None,
     affine: AffineMatrix | None = None,
@@ -183,6 +112,77 @@ def __spatial_resample(
         return image, filter.GetTransform()
     else:
         return image
+
+def compute_channel_or_spatial_transforms(
+    transform_fn: Callable,
+    data: Image | BatchImage | BatchChannelImage,
+    combine_channels: bool = False,
+    dim: SpatialDim | None = None, 
+    **kwargs,
+    ) -> Image | BatchImage | BatchChannelImage:
+    if data.ndim == 2:    # 2D image.
+        return transform_fn(data, **kwargs) 
+    elif data.ndim == 3:  # 2D batch or 3D image.
+        if dim is None or dim == 3: # 3D image.
+            logger.warn(f"Transform function '{transform_fn.__name__}' received 3D array with no specified 'dim'. Assuming 3D labels. If these are batches of 2D labels, specify 'dim=2' to compute transform per image in batch.") 
+            return transform_fn(data, **kwargs)
+        elif dim == 2:                       # Batch of 2D images.
+            # Assume that a dim=2, 3D array is (C, X, Y).
+            if combine_channels:
+                return transform_fn(data, **kwargs)
+            else:
+                results = []
+                for d in data:
+                    results.append(transform_fn(d, **kwargs)) 
+                return np.stack(results, axis=0)
+    elif data.ndim == 4:  # 2D batch/channel or 3D batch.
+        if dim is None or dim == 3:
+            # Assume that a dim=3, 4D array is (C, X, Y, Z).
+            logger.warn(f"Transform function '{transform_fn.__name__}' received 4D array with no specified 'dim'. Assuming batch of 3D labels. If these are batch/channels of 2D labels, specify 'dim=2' to compute transform per image in batch.")    
+            if combine_channels:
+                return transform_fn(data, **kwargs)
+            else:
+                results = []
+                for d in data:
+                    results.append(transform_fn(d, **kwargs))
+                return np.stack(results, axis=0) 
+        elif dim == 2:
+            results = []
+            for b in data:
+                if combine_channels:
+                    # Pass all channels to the transform function.
+                    results.append(transform_fn(b, **kwargs))
+                else:
+                    # Transform each channel separately.
+                    channel_results = []
+                    for c in b:
+                        channel_results.append(transform_fn(c, **kwargs))
+                    results.append(np.stack(channel_results, axis=0))
+            return np.stack(results, axis=0) 
+    elif data.ndim == 5:  # 3D batch/channel.
+        results = []
+        for b in data:
+            # Pass all channels to the transform function.
+            if combine_channels:
+                results.append(transform_fn(b, **kwargs))
+                continue
+            # Transform each channel separately.
+            channel_results = []
+            for c in b:
+                channel_results.append(transform_fn(c, **kwargs))
+            results.append(np.stack(channel_results, axis=0))
+        return np.stack(results, axis=0) 
+    else:
+        raise ValueError(f"Transform function '{transform_fn.__name__}' expects array of spatial dimension 2 or 3, with optional batch dimension. Got array of shape '{data.shape}' with inferred spatial dimension {data.ndim}. Specify 'dim' to override inference.")        
+
+# Pulls image data/affine from "data/affine" or "image" series.
+# Output size/affine is pulled from "output_size/affine" or "output_image" series. 
+@bubble_args(__minmax)
+def minmax(
+    data: Image | BatchImage,
+    **kwargs,
+    ) -> Image | BatchImage:
+    return compute_channel_or_spatial_transforms(__minmax, data, **kwargs)
 
 @bubble_args(__spatial_resample)
 def resample(

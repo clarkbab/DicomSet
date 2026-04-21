@@ -1,36 +1,27 @@
-import os
-from typing import List
+from typing import List, Literal
 
-from .. import config
-from ..typing import RegionID
+from ..region_map import RegionMap
+from ..typing import RegionID, RegionList
 from .args import arg_to_list
 
-# Behaves like 'arg_to_list', but also handles special 'rl:<region list>' format.
-def regions_to_list(
-    region: RegionID | List[RegionID],
+# Converts to a list and resolves region lists ("rl:<name>").
+def region_to_list(
+    region_id: RegionID | RegionList | List[RegionID | RegionList] | Literal['all'],
+    region_map: RegionMap | None,
     **kwargs,
     ) -> List[RegionID]:
-    if region is None:
-        return None
+    region_ids = arg_to_list(region_id, str, **kwargs)
 
-    regions = arg_to_list(region, str, **kwargs)
-
-    # Expand 'rl:<region list>' to list of regions.
-    expanded_regions = []
-    for r in regions:
-        if r.startswith('rl:'): 
-            # Expand str to list of regions.
-            rl_name = r.split(':')[-1]
-            if hasattr(RegionList, rl_name):
-                r = list(getattr(RegionList, rl_name))
-            else:
-                filepath = os.path.join(config.directories.config, 'region-lists', f'{rl_name}.csv')
-                if not os.path.exists(filepath):
-                    raise ValueError(f"Region list '{rl_name}' not found. Filepath: {filepath}")
-                df = pd.read_csv(filepath, header=None)
-                r = list(sorted(df[0]))
-            expanded_regions += r
+    # Expand regions.
+    regions = []
+    for r in region_ids:
+        if r.startswith('l:'): 
+            # Load region list.
+            list_name = r.split(':')[-1]
+            if region_map is None:
+                raise ValueError(f"Used region list '{list_name}' without a region map.")
+            regions += region_map.region_list(list_name)
         else:
-            expanded_regions.append(r)
+            regions.append(r)
 
-    return expanded_regions
+    return list(sorted(set(regions)))

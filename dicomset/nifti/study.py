@@ -7,7 +7,7 @@ from typing import Dict, List, Literal, TYPE_CHECKING
 from .. import config
 from ..dicom.dataset import DicomDataset
 from ..mixins import IndexMixin
-from ..regions_map import RegionsMap
+from ..region_map import RegionMap
 from ..study import Study
 from ..typing import NiftiModality, SeriesID, StudyID
 from ..utils.args import arg_to_list, resolve_id
@@ -27,9 +27,9 @@ class NiftiStudy(IndexMixin, Study):
         id: StudyID,
         ct_from: NiftiStudy | None = None,
         index: pd.DataFrame | None = None,
-        regions_map: RegionsMap | None = None,
+        region_map: RegionMap | None = None,
         ) -> None:
-        super().__init__(dataset, pat, id, ct_from=ct_from, index=index, regions_map=regions_map)
+        super().__init__(dataset, pat, id, ct_from=ct_from, index=index, region_map=region_map)
         self.__path = os.path.join(config.directories.datasets, 'nifti', self._dataset.id, 'data', 'patients', self._pat.id, self._id)
         if not os.path.exists(self.__path):
             raise ValueError(f"No nifti study '{self._id}' found at path: {self.__path}")
@@ -40,7 +40,7 @@ class NiftiStudy(IndexMixin, Study):
         ) -> NiftiSeries | None:
         serieses = self.list_series(modality)
         if len(serieses) > 1:
-            logger.warning(f"More than one '{modality}' series found for '{self}', defaulting to latest.")
+            logger.warn(f"More than one '{modality}' series found for '{self}', defaulting to latest.")
         return self.series(serieses[-1], modality) if len(serieses) > 0 else None
 
     @property
@@ -49,7 +49,7 @@ class NiftiStudy(IndexMixin, Study):
             raise ValueError(f"Missing 'index.csv' for dataset '{self._dataset.id}', cannot find corresponding dicom study.")
         index = self._index[['dataset', 'patient-id', 'study-id', 'dicom-dataset', 'dicom-patient-id', 'dicom-study-id']]
         index = index[(index['dataset'] == self._dataset.id) & (index['patient-id'] == self._pat.id) & (index['study-id'] == self._id)].drop_duplicates()
-        assert len(index) == 1
+        assert len(index) == 1, f"Expected 1 index entry for DICOM study '{self._id}', but found {len(index)}. Index: {index}"
         row = index.iloc[0]
         return DicomDataset(row['dicom-dataset']).patient(row['dicom-patient-id']).study(row['dicom-study-id'])
 
@@ -136,7 +136,7 @@ class NiftiStudy(IndexMixin, Study):
         elif modality == 'regions':
             id = resolve_id(id, lambda: self.list_series('regions'))
             index = self._index[(self._index['dataset'] == self._dataset.id) & (self._index['patient-id'] == self._pat.id) & (self._index['study-id'] == self._id) & (self._index['series-id'] == id) & (self._index['modality'] == 'regions')].copy() if self._index is not None else None
-            return NiftiRegionsSeries(self._dataset, self._pat, self, id, index=index, regions_map=self._regions_map)
+            return NiftiRegionsSeries(self._dataset, self._pat, self, id, index=index, region_map=self._region_map)
         else:
             raise ValueError(f"Unknown NiftiSeries modality '{modality}'.")
 
@@ -146,12 +146,12 @@ class NiftiStudy(IndexMixin, Study):
 # Add 'list_{mod}_series' methods.
 mods = ['ct', 'dose', 'landmarks', 'mr', 'regions']
 for m in mods:
-    setattr(NiftiStudy, f'list_{m}_series', lambda self, m=m: self.list_series(m))
+    setattr(NiftiStudy, f'list_{m}_series', lambda self, m=m, **kwargs: self.list_series(m, **kwargs))
 
 # Add '{mod}_series' methods.
 mods = ['ct', 'dose', 'landmarks', 'mr', 'regions']
 for m in mods:
-    setattr(NiftiStudy, f'{m}_series', lambda self, series, m=m: self.series(series, m))
+    setattr(NiftiStudy, f'{m}_series', lambda self, series, m=m, **kwargs: self.series(series, m, **kwargs))
     
 # Add 'has_{mod}' properties.
 # Note that 'has_landmarks' refers to the landmarks series, whereas 'has_landmark' is used for

@@ -5,7 +5,7 @@ import pandas as pd
 from typing import List, TYPE_CHECKING
 
 from ..typing import RegionID, SampleID, SplitID
-from ..utils.regions import regions_to_list
+from ..utils.regions import region_to_list
 from .sample import TrainingSample
 if TYPE_CHECKING:
     from .dataset import TrainingDataset
@@ -39,7 +39,7 @@ class HoldoutSplit:
         self,
         region_ids: RegionID | List[RegionID] | None = None,
         ) -> List[SampleID]:
-        filter_regions = regions_to_list(region_ids, literals={ 'all': self.dataset.regions })
+        filter_regions = region_to_list(region_ids, literals={ 'all': self.dataset.regions })
         sample_ids = self.index['sample-id'].to_list()
         if filter_regions is None:
             return sample_ids

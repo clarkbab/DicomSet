@@ -3,17 +3,17 @@ import os
 import pandas as pd
 import re
 from tqdm import tqdm
-from typing import List, Literal
+from typing import Callable, List, Literal
 
 from .. import config
 from ..dataset import CT_FROM_REGEXP, Dataset
 from ..mixins import IndexWithErrorsMixin
-from ..regions_map import RegionsMap
+from ..region_map import RegionMap
 from ..typing import DatasetID, GroupID, PatientID, RegionID
-from ..utils.args import arg_to_list, resolve_id
+from ..utils.args import alias_kwargs, arg_to_list, resolve_id
 from ..utils.io import load_csv, load_yaml
 from ..utils.logging import logger
-from ..utils.regions import regions_to_list
+from ..utils.regions import region_to_list
 from .index import ERROR_INDEX_COLS, INDEX_COLS, build_index as build_index_base, index_exists
 from .patient import DicomPatient
 
@@ -50,6 +50,11 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         n_overlap = len(np.intersect1d(real_ids, req_ids))
         return n_overlap > 0 if any else n_overlap == len(req_ids)
 
+    @alias_kwargs(
+        ('g', 'group_id'),
+        ('p', 'patient_id'),
+        ('r', 'region_id'),
+    )
     @Dataset.ensure_loaded
     def list_patients(
         self,
@@ -57,6 +62,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         patient_id: PatientID | List[PatientID] | Literal['all'] = 'all', 
         region_id: RegionID | List[RegionID] | Literal['all'] = 'all',
         show_progress: bool = False,
+        sort: Callable[DicomPatient, int] | None = None,    # Not yet implemented.
         use_mapping: bool = True,
         use_regions_report: bool = True,
         ) -> List[PatientID]:
@@ -66,12 +72,12 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
             filename = 'regions.csv' if use_mapping else 'unmapped-regions.csv'
             filepath = os.path.join(self._path, 'reports', filename)
             if os.path.exists(filepath):
-                region_ids = regions_to_list(region_id)
+                region_ids = region_to_list(region_id)
                 df = pd.read_csv(filepath)
                 df = df[df['region'].isin(region_ids)]
                 ids = list(sorted(df['patient-id'].unique()))
             else:
-                logger.warning(f"No patient regions report for dataset '{self}'. Would speed up queries filtered by 'region'.")
+                logger.warn(f"No patient regions report for dataset '{self}'. Would speed up queries filtered by 'region'.")
         else:
             # Load patient IDs from index.
             ids = list(sorted(self._index['patient-id'].unique()))
@@ -147,7 +153,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
                 ids = list(sorted(df['region'].unique()))
                 return ids
             else:
-                logger.warning(f"No regions report for dataset '{self}'. Would speed up 'list_regions' query.")
+                logger.warn(f"No regions report for dataset '{self}'. Would speed up 'list_regions' query.")
 
         # Get patient regions.
         # Trawl the depths for region IDs.
@@ -181,7 +187,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         # Load index.
         filepath = os.path.join(self._path, 'index.csv')
         try:
-            self._index = load_csv(filepath, map_types=INDEX_COLS, parse_cols='mod-spec')
+            self._index = load_csv(filepath, eval_cols='mod-spec', map_types=INDEX_COLS)
         except pd.errors.EmptyDataError:
             logger.info(f"Index empty for dataset '{self}'.")
             self._index = pd.DataFrame(columns=INDEX_COLS.keys())
@@ -189,13 +195,13 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         # Load error index.
         try:
             filepath = os.path.join(self._path, 'index-errors.csv')
-            self._index_errors = load_csv(filepath, map_types=ERROR_INDEX_COLS, parse_cols='mod-spec')
+            self._index_errors = load_csv(filepath, eval_cols='mod-spec', map_types=ERROR_INDEX_COLS)
         except pd.errors.EmptyDataError:
             logger.info(f"Error index empty for dataset '{self}'.")
             self._index_errors = pd.DataFrame(columns=ERROR_INDEX_COLS.keys())
 
         # Load region map.
-        self.__regions_map = RegionsMap.load(self._path)
+        self.__region_map = RegionMap.load(self._path)
 
     @Dataset.ensure_loaded
     def patient(
@@ -210,12 +216,12 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         index = self._index[self._index['patient-id'] == str(id)]
         index_errors = self._index_errors[self._index_errors['patient-id'] == str(id)]
         ct_from = self._ct_from.patient(id) if self._ct_from is not None and self._ct_from.has_patient(id) else None
-        return DicomPatient(self, id, index, self._index_policy, index_errors, config=self._config, ct_from=ct_from, regions_map=self.__regions_map, **kwargs)
+        return DicomPatient(self, id, index, self._index_policy, index_errors, config=self._config, ct_from=ct_from, region_map=self.__region_map, **kwargs)
 
     @property
     @Dataset.ensure_loaded
-    def regions_map(self) -> RegionsMap:
-        return self.__regions_map
+    def region_map(self) -> RegionMap:
+        return self.__region_map
 
     def __str__(self) -> str:
         return super().__str__(self.__class__.__name__)

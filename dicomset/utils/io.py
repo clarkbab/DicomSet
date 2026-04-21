@@ -41,7 +41,7 @@ def load_csv(
     filters: Dict[str, Any] = {},
     map_cols: Dict[str, str] = {},
     map_types: Dict[str, Any] = {},
-    parse_cols: str | List[str] = [],
+    eval_cols: str | List[str] | None = None,
     **kwargs,
     ) -> pd.DataFrame | bool:
     filepath = resolve_filepath(filepath)
@@ -60,13 +60,17 @@ def load_csv(
     map_types['series-id'] = str
     df = pd.read_csv(filepath, dtype=map_types, **kwargs)
 
+    # Filter out nan rows - was messing with "ast.literal_eval".
+    df = df.dropna()
+
     # Map column names.
     df = df.rename(columns=map_cols)
 
     # Evaluate columns as literals.
-    parse_cols = arg_to_list(parse_cols, str)
-    for c in parse_cols:
-        df[c] = df[c].apply(lambda s: ast.literal_eval(s))
+    if eval_cols is not None:
+        eval_cols = arg_to_list(eval_cols, str)
+        for c in eval_cols:
+            df[c] = df[c].apply(lambda s: ast.literal_eval(s))
 
     # Apply filters.
     for k, v in filters.items():

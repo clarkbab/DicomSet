@@ -87,7 +87,7 @@ class Logger:
             self.info(fn_str)
 
     def warn(self, *args, **kwargs):
-        return self._logger.warning(*args, **kwargs)
+        return self._logger.warn(*args, **kwargs)
 
 logger = Logger()
 

@@ -36,12 +36,17 @@ def append_row(
     return df
 
 def concat_dataframes(
-    dfs: List[pd.DataFrame],
+    *dfs: List[pd.DataFrame],
     ) -> pd.DataFrame:
     # Filter empty dataframes.
-    dfs = [df for df in dfs if len(df) > 0]
+    filt_dfs = [df for df in dfs if len(df) > 0]
 
     # Perform concatenation.
-    df = pd.concat(dfs, axis=0)
+    if len(filt_dfs) >= 2:
+        df = pd.concat(filt_dfs, axis=0)
+    elif len(filt_dfs) == 1:
+        df = filt_dfs[0]
+    else:
+        df = dfs[0]
 
     return df

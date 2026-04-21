@@ -1,12 +1,14 @@
 import numpy as np
+import pandas as pd
 import SimpleITK as sitk
 from surface_distance import compute_average_surface_distance, compute_robust_hausdorff, compute_surface_dice_at_tolerance, compute_surface_distances
 from typing import Callable, Dict, List
 
-from ..typing import AffineMatrix, BatchImage, BatchLabelImage, Image, LabelImage, Number, SpatialDim
+from ..typing import AffineMatrix, BatchImage, BatchLabelImage, Image, LabelImage, Landmarks, Number, Point, Points, SpatialDim
 from .args import arg_to_list, bubble_args
-from .conversion import to_numpy
+from .conversion import to_list, to_numpy
 from .geometry import affine_spacing, centre_of_mass
+from .landmarks import landmarks_dim, points_to_landmarks
 from .logging import logger
 
 # Allows us to compute metrics on image batches by applying metric to 
@@ -61,8 +63,9 @@ def __spatial_distances(
     a: LabelImage,
     b: LabelImage, 
     affine: AffineMatrix | None = None,    
-    tols: Number | List[Number] | None = None, 
+    tol: Number | List[Number] | None = None, 
     ) -> Dict[str, float]:
+    print('spatial distances')
     a = to_numpy(a, dtype=bool)
     b = to_numpy(b, dtype=bool)
     if a.shape != b.shape:
@@ -77,16 +80,20 @@ def __spatial_distances(
         spacing = (1,) * a.ndim
     surf_dists = compute_surface_distances(a, b, spacing) 
 
+    print(surf_dists)
+
     # Compute metrics.
     metrics = {
         'hd': compute_robust_hausdorff(surf_dists, 100),
         'hd-95': compute_robust_hausdorff(surf_dists, 95),
         'msd': np.mean(compute_average_surface_distance(surf_dists)),
     }
-    if tols is not None:
-        tols = arg_to_list(tols, (int, float))
+    if tol is not None:
+        tols = arg_to_list(tol, (int, float))
         for t in tols:
             metrics[f'surface-dice-{t}'] = compute_surface_dice_at_tolerance(surf_dists, t)
+
+    print(metrics)
 
     return metrics
 
@@ -106,6 +113,19 @@ def __spatial_ncc(
 
     return result
 
+def __spatial_volume(
+    a: LabelImage,
+    affine: AffineMatrix | None = None,
+    ) -> float:
+    a = to_numpy(a, dtype=bool)
+    if affine is not None:
+        spacing = affine_spacing(affine)
+        voxel_volume = np.prod(spacing)
+    else:
+        voxel_volume = 1
+    volume = a.sum() * voxel_volume
+    return volume
+
 @bubble_args(__spatial_centroid_error)
 def centroid_error(
     a: LabelImage | BatchLabelImage,
@@ -122,9 +142,14 @@ def compute_channel_or_spatial_metrics(
     dim: SpatialDim | None = None, 
     **kwargs,
     ) -> float | List[float]:
+    print('compute spatial')
+    print(data[0].ndim)
     if data[0].ndim == 2:    # 2D image.
+        print("2d")
         return spatial_metric_fn(*data, **kwargs) 
     elif data[0].ndim == 3:  # 2D batch or 3D image.
+        print("2/3d")
+        print(dim)
         # Could be 3D label or batch of 2D labels - assume 3D. 
         if dim is None or dim == 3: # 3D image.
             logger.warn(f"Metric function '{spatial_metric_fn.__name__}' received 3D arrays with no specified 'dim'. Assuming 3D labels. If these are batches of 2D labels, specify 'dim=2' to compute metric per image in batch.") 
@@ -133,7 +158,10 @@ def compute_channel_or_spatial_metrics(
             # Split data into lists.
             interleaved_data = list(zip(*data)) 
             return [spatial_metric_fn(*d, **kwargs) for d in interleaved_data]
+        else:
+            raise ValueError(f"Invalid 'dim' argument '{dim}'. Expected 2 or 3.")
     elif data[0].ndim == 4:  # Batch of 3D images.
+        print('batch of 3D')
         # Split data into lists.
         interleaved_data = list(zip(*data)) 
         return [spatial_metric_fn(*d, **kwargs) for d in interleaved_data]
@@ -166,18 +194,48 @@ def ncc(
     ) -> float | List[float]:
     return compute_channel_or_spatial_metrics(__spatial_ncc, a, b, dim=dim, **kwargs)
 
-def __spatial_volume(
-    a: LabelImage,
-    affine: AffineMatrix | None = None,
-    ) -> float:
-    a = to_numpy(a, dtype=bool)
-    if affine is not None:
-        spacing = affine_spacing(affine)
-        voxel_volume = np.prod(spacing)
+def tre(
+    a: Point | Points | Landmarks,
+    b: Point | Points | Landmarks,
+    return_frame: bool = False,
+    ) -> float | List[float] | pd.DataFrame:
+    assert len(a) == len(b), f"Metric 'tre' expects inputs of equal length. Got '{len(a)}' and '{len(b)}'."
+
+    # Convert single points to array.
+    a, a_was_single = arg_to_list(a, tuple, return_expanded=True)
+    b, b_was_single = arg_to_list(b, tuple, return_expanded=True)
+    if isinstance(a, list):
+        a = to_numpy(a)
+    if isinstance(b, list):
+        b = to_numpy(b)
+
+    # If either of the inputs are points arrays, promote to a dataframe as
+    # we might want to return the tre x/y/z components.
+    if isinstance(a, np.ndarray) and isinstance(b, pd.DataFrame):
+        landmark_ids = b['landmark-id'].values
+        a = points_to_landmarks(a, landmark_ids)
+    elif isinstance(a, pd.DataFrame) and isinstance(b, np.ndarray):
+            landmark_ids = a['landmark-id'].values
+            b = points_to_landmarks(b, landmark_ids)
     else:
-        voxel_volume = 1
-    volume = a.sum() * voxel_volume
-    return volume
+        a = points_to_landmarks(a, list(range(len(a))))
+        b = points_to_landmarks(b, list(range(len(b))))
+
+    # Compute TRE - saving intermediate values in frame.
+    tre_df = a.merge(b, on='landmark-id')
+    assert len(tre_df) == len(a), f"Expected {len(a)} corresponding landmarks, but got {len(tre_df)}."
+    dim = landmarks_dim(a)
+    for i in range(dim):
+        tre_df[f'tre-{i}'] = np.abs(tre_df[f'{i}_x'] - tre_df[f'{i}_y'])
+    tre_ss = np.sum([tre_df[f'tre-{i}'] ** 2 for i in range(dim)], axis=0)
+    tre_df['tre'] = np.sqrt(tre_ss)
+
+    if return_frame:
+        return tre_df
+
+    if a_was_single and b_was_single:
+        return to_list(tre_df['tre'].values[0])
+    return to_list(tre_df['tre'].values)
 
 @bubble_args(__spatial_volume)
 def volume(

@@ -1,15 +1,29 @@
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sns
 from typing import List, Literal
 
-from ..typing import AffineMatrix2D, AffineMatrix3D, BatchLabelImage2D, BatchLabelImage3D, Image, Image2D, Image3D, LabelImage2D, LabelImage3D, Number, Orientation, Point3D, Points3D, Size3D, View
+from ..typing import AffineMatrix2D, AffineMatrix3D, BatchLabelImage2D, BatchLabelImage3D, Image, Image2D, Image3D, LabelImage2D, LabelImage3D, Landmark3D, Landmarks3D, Number, Orientation, Point2D, Point3D, Points2D, Points3D, Size3D, View, Window
 from .args import arg_to_list
+from .conversion import to_numpy
 from .geometry import affine_origin, affine_spacing, centre_of_mass, foreground_fov_centre, to_image_coords
+from .landmarks import landmarks_to_points
 from .logging import logger
 
 VIEWS = ['Sagittal', 'Coronal', 'Axial']
+
+# CT windowing presets: (width, level).
+Window = str | tuple[Number, Number]
+WINDOW_PRESETS = {
+    'bone': (1800, 400),
+    'brain': (80, 40),
+    'liver': (150, 30),
+    'lung': (1500, -600),
+    'mediastinum': (350, 50),
+    'tissue': (400, 50),
+}
 
 def _assert_orientation(
     orientation: Orientation,
@@ -20,7 +34,7 @@ def _assert_orientation(
 
 def _get_view_aspect(
     view: View,
-    affine: np.ndarray | None,
+    affine: AffineMatrix3D | None,
     ) -> float | None:
     if affine is None:
         return None
@@ -32,12 +46,12 @@ def _get_view_aspect(
 def _get_view_idx(
     view: View,
     size: Size3D,
-    affine: np.ndarray | None = None,
+    affine: AffineMatrix3D | None = None,
     centre_method: Literal['com', 'fov'] = 'com',
     idx: int | float | str | Point3D | None = None,
-    labels: np.ndarray | None = None,
+    labels: BatchLabelImage3D | None = None,
     label_names: List[str] | None = None,
-    points: np.ndarray | None = None,
+    points: Point3D | Points3D | Landmark3D | Landmarks3D | None = None,
     ) -> int:
     # Default to middle slice.
     if idx is None:
@@ -96,9 +110,14 @@ def _get_view_idx(
             raise ValueError(f"Unknown centre_method '{centre_method}'. Expected 'com' or 'fov'.")
 
     # Points.
-    elif source == 'points':
+    elif source in ('point', 'points'):
         if points is None:
             raise ValueError(f"idx='{idx}' but no points were provided.")
+
+        if isinstance(points, (pd.DataFrame, pd.Series)):
+            points = landmarks_to_points(points)
+        if points.ndim == 1:
+            points = points[np.newaxis, :]
         centre = points[int(value)]
 
     else:
@@ -188,17 +207,24 @@ def plot_slice(
     ax: mpl.axes.Axes | None = None,
     cmap: str = 'gray',
     labels: LabelImage2D | BatchLabelImage2D | None = None,
+    points: Point2D | Points2D | None = None,
+    points_colour: str = 'yellow',
     return_axis: bool = False,
     show_hist: bool = False,
+    show_point_idxs: bool = False,
     title: str | None = None,
     use_image_coords: bool = False,
     vmin: float | None = None,
     vmax: float | None = None,
+    window: Window | None = None,
     x_label: str | None = None,
     x_origin: Literal['lower', 'upper'] | None = 'lower',
     y_label: str | None = None,
     y_origin: Literal['lower', 'upper'] | None = 'upper',
     ) -> mpl.axes.Axes | None:
+    # Resolve window to vmin/vmax.
+    vmin, vmax = __resolve_window(window, vmin, vmax)
+
     # Normalise labels to batch form (B, X, Y).
     if labels is not None and labels.ndim == 2:
         labels = labels[np.newaxis]
@@ -229,6 +255,27 @@ def plot_slice(
             cmap_label = mpl.colors.ListedColormap(((1, 1, 1, 0), palette[i]))
             axs[0].imshow(l.T, alpha=alpha, cmap=cmap_label)
             axs[0].contour(l.T, colors=[palette[i]], levels=[.5], linestyles='solid')
+
+    # Plot points.
+    if points is not None:
+        if isinstance(points, pd.DataFrame):
+            points = landmarks_to_points(points)
+        assert points.ndim == 2 and points.shape[1] == 2, f"Expected points to have shape (N, 2) but got {points.shape}."
+        if affine is not None:
+            spacing = affine_spacing(affine)
+            origin = affine_origin(affine)
+        if points_colour == 'gradient' and len(points) > 1:
+            points_cmap = mpl.colors.LinearSegmentedColormap.from_list('warm_bright', ['#FFE600', '#FF8C00', '#FF3300', '#FF0066'])
+            p_colours = [points_cmap(i / (len(points) - 1)) for i in range(len(points))]
+        else:
+            p_colours = [points_colour] * len(points)
+        for pi, p in enumerate(points):
+            vox = (p - origin) / spacing if affine is not None else p
+            axs[0].scatter(vox[0], vox[1], c=[p_colours[pi]], marker='o', s=20, zorder=5)
+            if show_point_idxs:
+                axs[0].annotate(str(pi), (vox[0], vox[1]),
+                    color=p_colours[pi], fontsize=8,
+                    textcoords='offset points', xytext=(5, 5), zorder=5)
 
     # Add histogram.
     if show_hist:
@@ -286,22 +333,37 @@ def plot_volume(
     centre_method: Literal['com', 'fov'] = 'com',
     orientation: Orientation = 'LPS',
     label_alpha: float = 0.3,
-    points: Points3D | None = None,
+    points: Point3D | Points3D | Landmark3D | Landmarks3D | None = None,
     points_colour: str = 'yellow',
     return_axis: bool = False,
+    show_labels: bool = True,
+    show_points: bool = True,
     show_point_idxs: bool = False,
     show_title: bool = True,
     use_image_coords: bool = False,
     view: int | list[int] | Literal['all'] = 'all',
     vmin: float | None = None,
     vmax: float | None = None,
+    window: Window | None = None,
     ) -> np.ndarray | None:
+    # Resolve window to vmin/vmax.
+    vmin, vmax = __resolve_window(window, vmin, vmax)
+
     # Normalise labels to batch form (B, X, Y, Z).
     if labels is not None and labels.ndim == 3:
         labels = labels[np.newaxis]
 
     # Check for empty points array - could be filtered by the transform.
     if points is not None:
+        if isinstance(points, (pd.DataFrame, pd.Series)):
+            points = landmarks_to_points(points)
+        elif not isinstance(points, np.ndarray):
+            points = to_numpy(points)
+
+        # Expand single points.
+        if points.ndim == 1:
+            points = points[np.newaxis, :]
+
         if points.shape[0] == 0:
             logger.warn("Points array is empty. No points will be plotted.")
             points = None
@@ -344,7 +406,7 @@ def plot_volume(
             col_ax.imshow(dose_slice.T, aspect=aspect, cmap=alpha_cmap, origin=origin_y)
 
         # Label overlays.
-        if labels is not None:
+        if show_labels and labels is not None:
             label_names_list = arg_to_list(label_names, str) if label_names is not None else None
             for j, lab in enumerate(labels):
                 label_slice = _get_view_slice(v, lab, resolved_idx)
@@ -358,7 +420,7 @@ def plot_volume(
                 col_ax.legend(fontsize='small', framealpha=0.7, handles=handles, loc='upper right')
 
         # Point overlays.
-        if points is not None:
+        if show_points and points is not None:
             view_axes = [i for i in range(3) if i != v]
             if affine is not None:
                 spacing = affine_spacing(affine)
@@ -415,3 +477,23 @@ def plot_volume(
 
     if return_axis:
         return axs
+
+def __resolve_window(
+    window: Window | None,
+    vmin: float | None,
+    vmax: float | None,
+    ) -> tuple[float | None, float | None]:
+    if window is not None:
+        assert vmin is None, "vmin must be None if window is specified."
+        assert vmax is None, "vmax must be None if window is specified."
+    if window is None:
+        return vmin, vmax
+    if isinstance(window, str):
+        if window not in WINDOW_PRESETS:
+            raise ValueError(f"Unknown window preset '{window}'. Expected one of {list(WINDOW_PRESETS.keys())}.")
+        width, level = WINDOW_PRESETS[window]
+    else:
+        width, level = window
+    vmin = level - width / 2
+    vmax = level + width / 2
+    return vmin, vmax
