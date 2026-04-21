@@ -65,7 +65,6 @@ def __spatial_distances(
     affine: AffineMatrix | None = None,    
     tol: Number | List[Number] | None = None, 
     ) -> Dict[str, float]:
-    print('spatial distances')
     a = to_numpy(a, dtype=bool)
     b = to_numpy(b, dtype=bool)
     if a.shape != b.shape:
@@ -80,8 +79,6 @@ def __spatial_distances(
         spacing = (1,) * a.ndim
     surf_dists = compute_surface_distances(a, b, spacing) 
 
-    print(surf_dists)
-
     # Compute metrics.
     metrics = {
         'hd': compute_robust_hausdorff(surf_dists, 100),
@@ -92,8 +89,6 @@ def __spatial_distances(
         tols = arg_to_list(tol, (int, float))
         for t in tols:
             metrics[f'surface-dice-{t}'] = compute_surface_dice_at_tolerance(surf_dists, t)
-
-    print(metrics)
 
     return metrics
 
@@ -142,14 +137,9 @@ def compute_channel_or_spatial_metrics(
     dim: SpatialDim | None = None, 
     **kwargs,
     ) -> float | List[float]:
-    print('compute spatial')
-    print(data[0].ndim)
     if data[0].ndim == 2:    # 2D image.
-        print("2d")
         return spatial_metric_fn(*data, **kwargs) 
     elif data[0].ndim == 3:  # 2D batch or 3D image.
-        print("2/3d")
-        print(dim)
         # Could be 3D label or batch of 2D labels - assume 3D. 
         if dim is None or dim == 3: # 3D image.
             logger.warn(f"Metric function '{spatial_metric_fn.__name__}' received 3D arrays with no specified 'dim'. Assuming 3D labels. If these are batches of 2D labels, specify 'dim=2' to compute metric per image in batch.") 
@@ -161,7 +151,6 @@ def compute_channel_or_spatial_metrics(
         else:
             raise ValueError(f"Invalid 'dim' argument '{dim}'. Expected 2 or 3.")
     elif data[0].ndim == 4:  # Batch of 3D images.
-        print('batch of 3D')
         # Split data into lists.
         interleaved_data = list(zip(*data)) 
         return [spatial_metric_fn(*d, **kwargs) for d in interleaved_data]

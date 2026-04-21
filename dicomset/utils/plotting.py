@@ -6,7 +6,7 @@ import seaborn as sns
 from typing import List, Literal
 
 from ..typing import AffineMatrix2D, AffineMatrix3D, BatchLabelImage2D, BatchLabelImage3D, Image, Image2D, Image3D, LabelImage2D, LabelImage3D, Landmark3D, Landmarks3D, Number, Orientation, Point2D, Point3D, Points2D, Points3D, Size3D, View, Window
-from .args import arg_to_list
+from .args import alias_kwargs, arg_to_list
 from .conversion import to_numpy
 from .geometry import affine_origin, affine_spacing, centre_of_mass, foreground_fov_centre, to_image_coords
 from .landmarks import landmarks_to_points
@@ -55,7 +55,7 @@ def _get_view_idx(
     ) -> int:
     # Default to middle slice.
     if idx is None:
-        idx = 'p:0.5'
+        idx = 'f:0.5'
 
     # Point3D - a 3D world coordinate (tuple, list, or np.ndarray).
     if isinstance(idx, (tuple, list, np.ndarray)) and not isinstance(idx, bool):
@@ -79,7 +79,7 @@ def _get_view_idx(
     source, value = idx.split(':')
 
     # Proportion of field-of-view.
-    if source == 'p':
+    if source == 'f':
         p = float(value)
         return int(np.clip(np.round(p * (size[view] - 1)), 0, size[view] - 1))
 
@@ -88,7 +88,7 @@ def _get_view_idx(
         return int(np.clip(int(value), 0, size[view] - 1))
 
     # Label channels - by index (e.g. "labels:0") or name (e.g. "labels:Brainstem").
-    if source in ('label', 'labels'):
+    if source in ('l', 'label', 'labels'):
         if labels is None:
             raise ValueError(f"idx='{idx}' but no labels were provided.")
 
@@ -110,7 +110,7 @@ def _get_view_idx(
             raise ValueError(f"Unknown centre_method '{centre_method}'. Expected 'com' or 'fov'.")
 
     # Points.
-    elif source in ('point', 'points'):
+    elif source in ('p', 'point', 'points'):
         if points is None:
             raise ValueError(f"idx='{idx}' but no points were provided.")
 
@@ -317,8 +317,15 @@ def plot_slice(
     if return_axis:
         return axs[0]
 
+@alias_kwargs(
+    ('a', 'affine'),
+    ('i', 'idx'),
+    ('l', 'labels'),
+    ('ln', 'label_names'),
+    ('p', 'points'),
+)
 def plot_volume(
-    data: Image3D,
+    data: Image3D | None,
     affine: AffineMatrix3D | None = None,
     cmap: str = 'gray',
     dose: Image3D | None = None,
@@ -346,6 +353,10 @@ def plot_volume(
     vmax: float | None = None,
     window: Window | None = None,
     ) -> np.ndarray | None:
+    if data is None:
+        assert labels is not None, "Labels must be provided if data is None."
+        data = np.zeros(labels.shape[-3:])
+
     # Resolve window to vmin/vmax.
     vmin, vmax = __resolve_window(window, vmin, vmax)
 

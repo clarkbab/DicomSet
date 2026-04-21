@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+
+import importlib
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from .create import create_dataset
-    from .load import dataset_exists, list_datasets, load_dataset
+LAZY_IMPORTS = {
+    'create': ['create_dataset'],
+    'load': ['dataset_exists', 'list_datasets', 'load_dataset'],
+}
 
-__all__ = ['create_dataset', 'dataset_exists', 'list_datasets', 'load_dataset']
+__all__ = [attr for attrs in LAZY_IMPORTS.values() for attr in attrs]
+
+if TYPE_CHECKING:
+    for module, attrs in LAZY_IMPORTS.items():
+        for attr in attrs:
+            exec(f"from .{module} import {attr}")
 
 def __getattr__(name):
-    if name in ('create_dataset'): 
-        from .create import create_dataset
-        return locals()[name]
-    if name in ('dataset_exists', 'load_dataset', 'list_datasets'):
-        from .load import dataset_exists, load_dataset, list_datasets
-        return locals()[name]
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    for module, attrs in LAZY_IMPORTS.items():
+        if name in attrs:
+            return getattr(importlib.import_module(f"{__name__}.{module}"), name)
+    raise AttributeError(f"Module {__name__} has no attribute {name}")
