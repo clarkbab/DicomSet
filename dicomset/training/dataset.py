@@ -15,25 +15,10 @@ class TrainingDataset(Dataset):
         id: DatasetID,
         **kwargs,
         ) -> None:
-        self._path = os.path.join(config.directories.datasets, 'training', id)
-        if not os.path.exists(self._path):
-            raise ValueError(f"No training dataset '{id}' found at path: {self._path}")
+        self.__path = os.path.join(config.directories.datasets, 'training', id)
+        if not os.path.exists(self.__path):
+            raise ValueError(f"No training dataset '{id}' found at path: {self.__path}")
         super().__init__(id)
-
-    @property
-    def index(self) -> str:
-        if self.__index is None:
-            filepath = os.path.join(self._path, 'index.csv')
-            self.__index = pd.read_csv(filepath)
-            str_types = [
-                'origin-study-id',
-                'origin-fixed-study-id',
-                'origin-moving-study-id'
-            ]
-            for t in str_types:
-                if t in self.__index.columns:
-                    self.__index[t] = self.__index[t].astype(str)
-        return self.__index
     
     @property
     def label_types(self) -> List[str]:

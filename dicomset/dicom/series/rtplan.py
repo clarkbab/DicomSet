@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import os
 import pandas as pd
-import pydicom as dcm
 from typing import Any, Dict, TYPE_CHECKING
 
 from ... import config
 from ...typing import SeriesID
+from ...utils.python import ensure_loaded, get_private_attr
 from ..utils.io import load_dicom
 from .series import DicomSeries
 if TYPE_CHECKING:
@@ -31,8 +31,12 @@ class DicomRtPlanSeries(DicomSeries):
         self.__filepath = os.path.join(dspath, index['filepath'])
 
     @property
-    def dicom(self) -> dcm.dataset.FileDataset:
-        return load_dicom(self.__filepath)
+    @ensure_loaded('__data', '__load_data')
+    def dicom(self) -> RtPlanDicom:
+        return self.__dicom
+
+    def __load_data(self) -> None:
+        self.__dicom = load_dicom(self.__filepath)
 
     def __str__(self) -> str:
         return super().__str__(self.__class__.__name__)
@@ -40,6 +44,6 @@ class DicomRtPlanSeries(DicomSeries):
 # Add properties.
 props = ['filepath', 'ref_rtstruct']
 for p in props:
-    setattr(DicomRtPlanSeries, p, property(lambda self, p=p: getattr(self, f'_{DicomRtPlanSeries.__name__}__{p}')))
+    setattr(DicomRtPlanSeries, p, property(lambda self, p=p: get_private_attr(self, f'__{p}')))
 
 

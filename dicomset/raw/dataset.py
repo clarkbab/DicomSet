@@ -9,8 +9,8 @@ class RawDataset(Dataset):
         self,
         id: DatasetID,
         ) -> None:
-        self._path = os.path.join(config.directories.datasets, 'raw', str(id))
-        if not os.path.exists(self._path):
-            raise ValueError(f"No raw dataset '{id}' found at path: {self._path}")
+        self.__path = os.path.join(config.directories.datasets, 'raw', str(id))
+        if not os.path.exists(self.__path):
+            raise ValueError(f"No raw dataset '{id}' found at path: {self.__path}")
         super().__init__(id)
     

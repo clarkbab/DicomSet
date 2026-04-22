@@ -5,19 +5,20 @@ import os
 import pandas as pd
 from typing import List, Literal, Tuple, TYPE_CHECKING
 
-from .... import config
-from ....dicom import DicomDataset
-from ....region_map import RegionMap
-from ....typing import BatchLabelImage3D, FilePath, RegionID, SeriesID
-from ....utils.args import alias_kwargs, arg_to_list
-from ....utils.io import load_nifti, load_nrrd
-from ....utils.regions import region_to_list
-from .image import NiftiImageSeries
+from ...dicom import DicomDataset
+from ...region_map import RegionMap
+from ...typing import BatchLabelImage3D, FilePath, RegionID, SeriesID
+from ...utils.args import alias_kwargs, arg_to_list
+from ...utils.io import load_nifti, load_nrrd
+from ...utils.regions import region_to_list
+from .. import config
+from .images.image import NiftiImageSeries
+from .shared import IMAGE_EXTENSIONS
 if TYPE_CHECKING:
-    from ....dicom import DicomRtStructSeries
-    from ...dataset import NiftiDataset
-    from ...patient import NiftiPatient
-    from ...study import NiftiStudy
+    from ...dicom import DicomRtStructSeries
+    from ..dataset import NiftiDataset
+    from ..patient import NiftiPatient
+    from ..study import NiftiStudy
 
 class NiftiRegionsSeries(NiftiImageSeries):
     def __init__(
@@ -30,7 +31,6 @@ class NiftiRegionsSeries(NiftiImageSeries):
         region_map: RegionMap | None = None,
         ) -> None:
         super().__init__('regions', dataset, patient, study, id, index=index)
-        extensions = ['.nii', '.nii.gz', '.nrrd']
         dirpath = os.path.join(config.directories.datasets, 'nifti', self._dataset.id, 'data', 'patients', self._pat.id, self._study.id, self._modality, self._id)
         if not os.path.exists(dirpath):
             raise ValueError(f"No regions series '{self._id}' found for study '{self._study.id}'. Dirpath: {dirpath}")
@@ -65,8 +65,7 @@ class NiftiRegionsSeries(NiftiImageSeries):
             reg_data = []
             for reg in disk_regions:
                 matched = False
-                extensions = ['.nii', '.nii.gz', '.nrrd']
-                for e in extensions:
+                for e in IMAGE_EXTENSIONS:
                     filepath = os.path.join(self.__path, f'{reg}{e}')
                     if os.path.exists(filepath):
                         matched = True
@@ -92,9 +91,9 @@ class NiftiRegionsSeries(NiftiImageSeries):
 
     @property
     def dicom(self) -> DicomRtStructSeries:
-        if self._index is None:
+        if self.__index is None:
             raise ValueError(f"Dataset did not originate from dicom (no 'index.csv').")
-        index = self._index[['dataset', 'patient-id', 'study-id', 'series-id', 'modality', 'dicom-dataset', 'dicom-patient-id', 'dicom-study-id', 'dicom-series-id']]
+        index = self.__index[['dataset', 'patient-id', 'study-id', 'series-id', 'modality', 'dicom-dataset', 'dicom-patient-id', 'dicom-study-id', 'dicom-series-id']]
         index = index[(index['dataset'] == self._dataset.id) & (index['patient-id'] == self._pat.id) & (index['study-id'] == self._study.id) & (index['series-id'] == self._id) & (index['modality'] == 'regions')].drop_duplicates()
         assert len(index) == 1, f"Expected one row in index for series '{self.id}', but found {len(index)}. Index: {index}"
         row = index.iloc[0]
@@ -110,11 +109,10 @@ class NiftiRegionsSeries(NiftiImageSeries):
             raise ValueError(f'Regions {region_ids} not found in series {self.id}.')
         region_ids = [r for r in region_ids if self.has_region(r)]  # Filter out missing regions.
         # Region mapping is many-to-one, so we could get multiple files on disk for the same mapped region.
-        image_extensions = ['.nii', '.nii.gz', '.nrrd']
         disk_ids = self.__region_map.inv_map_region(region_ids, disk_regions=self.list_regions(use_mapping=False)) if self.__region_map is not None else region_ids
         disk_ids = arg_to_list(disk_ids, str)
         # Check all possible file extensions.
-        filepaths = [os.path.join(self.__path, f'{i}{e}') for i in disk_ids for e in image_extensions if os.path.exists(os.path.join(self.__path, f'{i}{e}'))]
+        filepaths = [os.path.join(self.__path, f'{i}{e}') for i in disk_ids for e in IMAGE_EXTENSIONS if os.path.exists(os.path.join(self.__path, f'{i}{e}'))]
         return filepaths
 
     def has_region(
@@ -128,6 +126,11 @@ class NiftiRegionsSeries(NiftiImageSeries):
         n_overlap = len(np.intersect1d(region_ids, all_ids))
         return n_overlap > 0 if any else n_overlap == len(region_ids)
 
+    def __list_disk_regions(self) -> List[RegionID]:
+        files = os.listdir(self.__path)
+        disk_regions = [f.replace(e, '') for f in files for e in IMAGE_EXTENSIONS if f.endswith(e)]
+        return list(sorted(set(disk_regions)))
+
     @alias_kwargs(
         ('r', 'region_id'),
         ('um', 'use_mapping'),
@@ -140,7 +143,7 @@ class NiftiRegionsSeries(NiftiImageSeries):
         if self.__region_map is None:
             use_mapping = False
 
-        true_disk_regions = self.__load_disk_regions()
+        true_disk_regions = self.__list_disk_regions()
         
         # Map disk regions back to API regions.
         if region_id == 'all':
@@ -164,12 +167,6 @@ class NiftiRegionsSeries(NiftiImageSeries):
                         api_regions.append(r)
 
         return list(sorted(set(api_regions)))
-
-    def __load_disk_regions(self) -> List[RegionID]:
-        extensions = ['.nii', '.nii.gz', '.nrrd']
-        files = os.listdir(self.__path)
-        disk_regions = [f.replace(e, '') for f in files for e in extensions if f.endswith(e)]
-        return list(sorted(set(disk_regions)))
 
     def __str__(self) -> str:
         return super().__str__(self.__class__.__name__)

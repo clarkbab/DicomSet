@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import numpy as np
-import re
 import SimpleITK as sitk
 import torch
 from typing import List, Tuple

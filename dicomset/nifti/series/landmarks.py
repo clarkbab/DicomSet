@@ -13,6 +13,7 @@ from ...study import Study
 from ...training import sample
 from ...typing import LandmarkID, Landmarks3D, SeriesID
 from ...utils.args import arg_to_list
+from ...utils.python import get_private_attr
 from ...utils.geometry import to_image_coords
 from ...utils.io import load_csv
 from ...utils.landmarks import landmarks_to_points
@@ -102,9 +103,9 @@ class NiftiLandmarksSeries(NiftiSeries):
 
     @property
     def dicom(self) -> DicomRtStructSeries:
-        if self._index is None:
+        if self.__index is None:
             raise ValueError(f"Dataset did not originate from dicom (no 'index.csv').")
-        index = self._index[['dataset', 'patient-id', 'study-id', 'series-id', 'modality', 'dicom-dataset', 'dicom-patient-id', 'dicom-study-id', 'dicom-series-id']]
+        index = self.__index[['dataset', 'patient-id', 'study-id', 'series-id', 'modality', 'dicom-dataset', 'dicom-patient-id', 'dicom-study-id', 'dicom-series-id']]
         index = index[(index['dataset'] == self._dataset.id) & (index['patient-id'] == self._pat.id) & (index['study-id'] == self._study.id) & (index['series-id'] == self._id) & (index['modality'] == 'landmarks')].drop_duplicates()
         assert len(index) == 1, f"Expected 1 index entry for DICOM landmarks series '{self._id}', but found {len(index)}. Index: {index}"
         row = index.iloc[0]
@@ -148,4 +149,4 @@ class NiftiLandmarksSeries(NiftiSeries):
 # Add properties.
 props = ['filepath']
 for p in props:
-    setattr(NiftiLandmarksSeries, p, property(lambda self, p=p: getattr(self, f'_{NiftiLandmarksSeries.__name__}__{p}')))
+    setattr(NiftiLandmarksSeries, p, property(lambda self, p=p: get_private_attr(self, f'__{p}')))

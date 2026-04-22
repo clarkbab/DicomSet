@@ -57,13 +57,6 @@ class TrainingSample:
         return self._id
 
     @property
-    def index(self) -> str:
-        if self.__index is None:
-            s_index = self.split.index
-            self.__index = s_index[s_index['sample-id'] == self._id].iloc[0].copy()
-        return self.__index
-
-    @property
     @ensure_loaded
     def input(self) -> np.ndarray:
         return self.__input

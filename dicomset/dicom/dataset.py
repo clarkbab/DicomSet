@@ -13,6 +13,7 @@ from ..typing import DatasetID, GroupID, PatientID, RegionID
 from ..utils.args import alias_kwargs, arg_to_list, resolve_id
 from ..utils.io import load_csv, load_yaml
 from ..utils.logging import logger
+from ..utils.python import ensure_loaded
 from ..utils.regions import region_to_list
 from .index import ERROR_INDEX_COLS, INDEX_COLS, build_index as build_index_base, index_exists
 from .patient import DicomPatient
@@ -22,11 +23,11 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         self,
         id: DatasetID,
         ) -> None:
-        self._path = os.path.join(config.directories.datasets, 'dicom', str(id))
-        if not os.path.exists(self._path):
-            raise ValueError(f"No dicom dataset '{id}' found at path: {self._path}")
+        self.__path = os.path.join(config.directories.datasets, 'dicom', str(id))
+        if not os.path.exists(self.__path):
+            raise ValueError(f"No dicom dataset '{id}' found at path: {self.__path}")
         ct_from = None
-        for f in os.listdir(self._path):
+        for f in os.listdir(self.__path):
             match = re.match(CT_FROM_REGEXP, f)
             if match:
                 ct_from = match.group(1)
@@ -39,6 +40,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         ) -> None:
         build_index_base(self._id, **kwargs)
 
+    @ensure_loaded('__index', '__load_data')
     def has_patient(
         self,
         patient: PatientID | List[PatientID],
@@ -55,7 +57,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         ('p', 'patient_id'),
         ('r', 'region_id'),
     )
-    @Dataset.ensure_loaded
+    @ensure_loaded('__index', '__load_data')
     def list_patients(
         self,
         group_id: GroupID | List[GroupID] | Literal['all'] = 'all',
@@ -70,7 +72,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         if region_id != 'all' and use_regions_report:
             # Can't use 'load_patient_regions_report' due to circularity.
             filename = 'regions.csv' if use_mapping else 'unmapped-regions.csv'
-            filepath = os.path.join(self._path, 'reports', filename)
+            filepath = os.path.join(self.__path, 'reports', filename)
             if os.path.exists(filepath):
                 region_ids = region_to_list(region_id)
                 df = pd.read_csv(filepath)
@@ -80,7 +82,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
                 logger.warn(f"No patient regions report for dataset '{self}'. Would speed up queries filtered by 'region'.")
         else:
             # Load patient IDs from index.
-            ids = list(sorted(self._index['patient-id'].unique()))
+            ids = list(sorted(self.__index['patient-id'].unique()))
 
             # Filter by region ID.
             if region_id != 'all':
@@ -109,7 +111,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
 
         # Filter by group ID.
         if group_id != 'all':
-            if self._groups is None:
+            if self.__groups is None:
                 raise ValueError(f"File 'groups.csv' not found for dicom dataset '{self._id}'.")
             all_groups = self.list_groups()
             group_ids = arg_to_list(group_id, str, literals={ 'all': all_groups })
@@ -118,7 +120,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
                     raise ValueError(f"Group '{g}' not found.")
 
             def filter_fn(p: PatientID) -> bool:
-                pat_groups = self._groups[self._groups['patient-id'] == p]
+                pat_groups = self.__groups[self.__groups['patient-id'] == p]
                 if len(pat_groups) == 0:
                     return False
                 elif len(pat_groups) > 1:
@@ -132,7 +134,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
 
         return ids
 
-    @Dataset.ensure_loaded
+    @ensure_loaded('__index', '__load_data')
     def list_regions(
         self,
         group_id: GroupID | List[GroupID] | Literal['all'] = 'all',
@@ -146,7 +148,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         if use_regions_report:
             # Can't use 'load_patient_regions_report' due to circularity.
             filename = 'regions.csv' if use_mapping else 'unmapped-regions.csv'
-            filepath = os.path.join(self._path, 'reports', filename)
+            filepath = os.path.join(self.__path, 'reports', filename)
             if os.path.exists(filepath):
                 df = pd.read_csv(filepath)
                 df = df[df['patient-id'].isin(patient_ids)]
@@ -171,39 +173,40 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
 
         return ids
 
-    def _load_data(self) -> None:
+    # Grouping all the data is easier - there's not many files.
+    def __load_data(self) -> None:
         # Trigger index build if necessary.
         if not index_exists(self._id):
             build_index_base(self._id) 
 
-        # Load groups.
-        filepath = os.path.join(self._path, 'groups.csv')
-        self._groups = load_csv(filepath) if os.path.exists(filepath) else None
-
-        # Load index policy.
-        filepath = os.path.join(self._path, 'index-policy.yaml')
-        self._index_policy = load_yaml(filepath)
-
         # Load index.
-        filepath = os.path.join(self._path, 'index.csv')
+        filepath = os.path.join(self.__path, 'index.csv')
         try:
-            self._index = load_csv(filepath, eval_cols='mod-spec', map_types=INDEX_COLS)
+            self.__index = load_csv(filepath, eval_cols='mod-spec', map_types=INDEX_COLS)
         except pd.errors.EmptyDataError:
             logger.info(f"Index empty for dataset '{self}'.")
-            self._index = pd.DataFrame(columns=INDEX_COLS.keys())
+            self.__index = pd.DataFrame(columns=INDEX_COLS.keys())
 
         # Load error index.
         try:
-            filepath = os.path.join(self._path, 'index-errors.csv')
-            self._index_errors = load_csv(filepath, eval_cols='mod-spec', map_types=ERROR_INDEX_COLS)
+            filepath = os.path.join(self.__path, 'index-errors.csv')
+            self.__index_errors = load_csv(filepath, eval_cols='mod-spec', map_types=ERROR_INDEX_COLS)
         except pd.errors.EmptyDataError:
             logger.info(f"Error index empty for dataset '{self}'.")
-            self._index_errors = pd.DataFrame(columns=ERROR_INDEX_COLS.keys())
+            self.__index_errors = pd.DataFrame(columns=ERROR_INDEX_COLS.keys())
+
+        # Load index policy.
+        filepath = os.path.join(self.__path, 'index-policy.yaml')
+        self.__index_policy = load_yaml(filepath)
 
         # Load region map.
-        self.__region_map = RegionMap.load(self._path)
+        self.__region_map = RegionMap.load(self.__path)
 
-    @Dataset.ensure_loaded
+        # Load groups.
+        filepath = os.path.join(self.__path, 'groups.csv')
+        self.__groups = load_csv(filepath) if os.path.exists(filepath) else None
+
+    @ensure_loaded('__index', '__load_data')
     def patient(
         self,
         id: PatientID,
@@ -213,13 +216,12 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         id = resolve_id(id, lambda: self.list_patients(group_id=group_id))
         if not self.has_patient(id):
             raise ValueError(f"Patient '{id}' not found in dataset '{self}'.")
-        index = self._index[self._index['patient-id'] == str(id)]
-        index_errors = self._index_errors[self._index_errors['patient-id'] == str(id)]
+        index = self.__index[self.__index['patient-id'] == str(id)]
+        index_errors = self.__index_errors[self.__index_errors['patient-id'] == str(id)]
         ct_from = self._ct_from.patient(id) if self._ct_from is not None and self._ct_from.has_patient(id) else None
-        return DicomPatient(self, id, index, self._index_policy, index_errors, config=self._config, ct_from=ct_from, region_map=self.__region_map, **kwargs)
+        return DicomPatient(self, id, index, self.__index_policy, index_errors, config=self._config, ct_from=ct_from, region_map=self.__region_map, **kwargs)
 
-    @property
-    @Dataset.ensure_loaded
+    @ensure_loaded('__region_map', '__load_data')
     def region_map(self) -> RegionMap:
         return self.__region_map
 

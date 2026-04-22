@@ -3,13 +3,12 @@ from __future__ import annotations
 import numpy as np
 import os
 import pandas as pd
-import pydicom as dcm
-from typing import Any, Callable, Dict, List, TYPE_CHECKING
+from typing import Any, Dict, List, TYPE_CHECKING
 
 from ... import config
 from ...typing import Box3D, Image3D, Point3D, SeriesID, Size3D, Spacing3D
 from ...utils.geometry import fov
-from ...utils.python import has_private_attr
+from ...utils.python import ensure_loaded, get_private_attr
 from ..utils.io import load_dicom
 from .series import DicomSeries
 if TYPE_CHECKING:
@@ -32,38 +31,35 @@ class DicomMrSeries(DicomSeries):
         relpaths = list(index['filepath'])
         abspaths = [os.path.join(dspath, p) for p in relpaths]
         self.__filepaths = abspaths
-
-    @staticmethod
-    def ensure_loaded(fn: Callable) -> Callable:
-        def wrapper(self, *args, **kwargs):
-            if not has_private_attr(self, '__data'):
-                self.__load_data()
-            return fn(self, *args, **kwargs)
-        return wrapper
     
     @property
-    @ensure_loaded
+    @ensure_loaded('__data', '__load_data')
     def data(self) -> Image3D:
         return self.__data
 
     @property
-    def dicoms(self) -> List[dcm.dataset.FileDataset]:
-        # Sort MRs by z position, smallest first.
-        mr_dicoms = [load_dicom(f, force=False) for f in self.__filepaths]
-        mr_dicoms = list(sorted(mr_dicoms, key=lambda m: m.ImagePositionPatient[2]))
-        return mr_dicoms
+    @ensure_loaded('__data', '__load_data')
+    def dicoms(self) -> List[MrDicom]:
+        return self.__dicoms
 
-    @ensure_loaded
+    @ensure_loaded('__data', '__load_data')
     def fov(
         self,
         **kwargs) -> Box3D:
         return fov(self.__data, origin=self.__origin, spacing=self.__spacing, **kwargs)
 
     def __load_data(self) -> None:
-        mr_dicoms = self.dicoms
+        # Load dicoms.
+        # Sort MRs by z position, smallest first.
+        dicoms = [load_dicom(f, force=False) for f in self.__filepaths]
+        dicoms = list(sorted(dicoms, key=lambda m: m.ImagePositionPatient[2]))
+        self.__dicoms = dicoms
 
         # Store origin.
         # Indexing checked that all 'ImagePositionPatient' keys were the same for the series.
+        raise ValueError("Implement 'from_mr_dicom'")
+        self.__data, self.__affine = from_mr_dicom(dicoms)
+
         origin = mr_dicoms[0].ImagePositionPatient    
         self.__origin = tuple(float(round(o)) for o in origin)
 
@@ -98,17 +94,17 @@ class DicomMrSeries(DicomSeries):
         self.__data = data
 
     @property
-    @ensure_loaded
+    @ensure_loaded('__data', '__load_data')
     def origin(self) -> Point3D:
         return self.__origin
 
     @property
-    @ensure_loaded
+    @ensure_loaded('__data', '__load_data')
     def size(self) -> Size3D:
         return self.__data.shape
 
     @property
-    @ensure_loaded
+    @ensure_loaded('__data', '__load_data')
     def spacing(self) -> Spacing3D:
         return self.__spacing
 
@@ -118,4 +114,4 @@ class DicomMrSeries(DicomSeries):
 # Add properties.
 props = ['filepaths']
 for p in props:
-    setattr(DicomMrSeries, p, property(lambda self, p=p: getattr(self, f'_{DicomMrSeries.__name__}__{p}')))
+    setattr(DicomMrSeries, p, property(lambda self, p=p: get_private_attr(self, f'__{p}')))

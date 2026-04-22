@@ -19,7 +19,7 @@ LAZY_IMPORTS = {
     'metrics': ['centroid_error', 'distances', 'dice', 'tre', 'volume'],
     'pandas': ['append_row'],
     'plotting': ['plot_hist', 'plot_slice', 'plot_volume'],
-    'python': ['filter_lists'],
+    'python': ['ensure_loaded', 'filter_lists'],
     'regions': ['region_to_list'],
     'transforms': ['minmax', 'resample', 'spatial_transpose'],
 }

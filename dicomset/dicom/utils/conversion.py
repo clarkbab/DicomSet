@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import numpy as np
 import os
 import pandas as pd
-from pathlib import Path
 import re
 import shutil
 from time import time
@@ -11,14 +9,17 @@ from tqdm import tqdm
 from typing import Callable, List, Literal, TYPE_CHECKING
 
 from ...dataset import CT_FROM_REGEXP
-from ...nifti.utils import create_dataset as create_nifti
 from ...region_map import RegionMap
 from ...typing import GroupID, LandmarkID, PatientID, RegionID
 from ...utils.args import arg_to_list
-from ...utils.io import load_csv, save_csv, save_nifti
+from ...utils.io import save_csv, save_nifti
 from ...utils.logging import logger
 from ...utils.pandas import append_row
 from ..dataset import DicomDataset
+from ..patient import DicomPatient
+from ..series.mr import DicomMrSeries
+from ..series.rtdose import DicomRtDoseSeries
+from ..series.rtstruct import DicomRtStructSeries
 if TYPE_CHECKING:
     from ..study import DicomStudy
 
@@ -345,7 +346,7 @@ def convert_to_nifti(
                         create_index_entry = False
 
                         if p in patient_ids:
-                            landmarks_data = series.landmarks_data(landmark_id=landmark_id, add_ids=False)
+                            landmarks_data = series.landmarks_data(add_ids=False, landmark_id=landmark_id)
                             if landmarks_data is not None:
                                 if not os.path.exists(filepath):
                                     logger.info(f"Writing: {series} -> {filepath}")

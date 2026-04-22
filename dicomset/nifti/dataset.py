@@ -13,6 +13,7 @@ from ..typing import DatasetID, GroupID, PatientID, RegionID
 from ..utils import logging
 from ..utils.args import alias_kwargs, arg_to_list, resolve_id
 from ..utils.io import load_csv
+from ..utils.python import ensure_loaded
 from .patient import NiftiPatient
 
 class NiftiDataset(IndexMixin, Dataset):
@@ -20,11 +21,11 @@ class NiftiDataset(IndexMixin, Dataset):
         self,
         id: DatasetID,
         ) -> None:
-        self._path = os.path.join(config.directories.datasets, 'nifti', str(id))
-        if not os.path.exists(self._path):
-            raise ValueError(f"No nifti dataset '{id}' found at path: {self._path}")
+        self.__path = os.path.join(config.directories.datasets, 'nifti', str(id))
+        if not os.path.exists(self.__path):
+            raise ValueError(f"No nifti dataset '{id}' found at path: {self.__path}")
         ct_from = None
-        for f in os.listdir(self._path):
+        for f in os.listdir(self.__path):
             match = re.match(CT_FROM_REGEXP, f)
             if match:
                 ct_from = match.group(1)
@@ -33,9 +34,9 @@ class NiftiDataset(IndexMixin, Dataset):
 
     @property
     def dicom(self) -> DicomDataset:
-        if self._index is None:
+        if self.__index is None:
             raise ValueError(f"Missing 'index.csv' for dataset '{self._dataset.id}', cannot find corresponding dicom dataset.")
-        ds = self._index['dicom-dataset'].unique().tolist()
+        ds = self.__index['dicom-dataset'].unique().tolist()
         assert len(ds) == 1
         return DicomDataset(ds[0])
 
@@ -65,7 +66,7 @@ class NiftiDataset(IndexMixin, Dataset):
         ('p', 'patient_id'),
         ('r', 'region_id'),
     )
-    @Dataset.ensure_loaded
+    @ensure_loaded('__index', '__load_data')
     def list_patients(
         self,
         exclude: PatientID | List[PatientID] | Literal['all'] | None = None,
@@ -74,7 +75,7 @@ class NiftiDataset(IndexMixin, Dataset):
         region_id: RegionID | List[RegionID] | Literal['all'] = 'all',
         ) -> List[PatientID]:
         # Load patients from filenames.
-        dirpath = os.path.join(self._path, 'data', 'patients')
+        dirpath = os.path.join(self.__path, 'data', 'patients')
         all_ids = list(sorted(os.listdir(dirpath)))
 
         # Filter by region ID.
@@ -97,7 +98,7 @@ class NiftiDataset(IndexMixin, Dataset):
 
         # Filter by group ID.
         if group_id != 'all':
-            if self._groups is None:
+            if self.__groups is None:
                 raise ValueError(f"File 'groups.csv' not found for dicom dataset '{self._id}'.")
             all_groups = self.list_groups()
             group_ids = arg_to_list(group_id, str, literals={ 'all': all_groups })
@@ -106,7 +107,7 @@ class NiftiDataset(IndexMixin, Dataset):
                     raise ValueError(f"Group {g} not found.")
 
             def filter_fn(p: PatientID) -> bool:
-                pat_groups = self._groups[self._groups['patient-id'] == p]
+                pat_groups = self.__groups[self.__groups['patient-id'] == p]
                 if len(pat_groups) == 0:
                     return False
                 elif len(pat_groups) > 1:
@@ -194,50 +195,28 @@ class NiftiDataset(IndexMixin, Dataset):
 
         return ids
 
-    def _load_data(self) -> None:
-        # Load groups.
-        filepath = os.path.join(self._path, 'groups.csv')
-        self._groups = load_csv(filepath) if os.path.exists(filepath) else None
-
+    def __load_data(self) -> None:
         # Load index.
-        filepath = os.path.join(self._path, 'index.csv')
+        filepath = os.path.join(self.__path, 'index.csv')
         if os.path.exists(filepath):
             map_types = { 'dicom-patient-id': str, 'patient-id': str, 'study-id': str, 'series-id': str }
-            self._index = load_csv(filepath, map_types=map_types)
+            self.__index = load_csv(filepath, map_types=map_types)
         else:
-            self._index = None
-    
-        # Load excluded labels.
-        filepath = os.path.join(self._path, 'excluded-labels.csv')
-        if os.path.exists(filepath):
-            self.__excluded_labels = load_csv(filepath).astype({ 'patient-id': str })
-            self.__excluded_labels = self.__excluded_labels.sort_values(['patient-id', 'region'])
+            self.__index = None
 
-            # Drop duplicates.
-            dup_cols = ['patient-id', 'region']
-            dup_df = self.__excluded_labels[self.__excluded_labels[dup_cols].duplicated()]
-            if len(dup_df) > 0:
-                logging.warning(f"Found {len(dup_df)} duplicate entries in 'excluded-labels.csv', removing.")
-                self.__excluded_labels = self.__excluded_labels[~self.__excluded_labels[dup_cols].duplicated()]
-        else:
-            self.__excluded_labels = None
-
-        # Load group index.
-        filepath = os.path.join(self._path, 'group-index.csv')
-        if os.path.exists(filepath):
-            self.__group_index = load_csv(filepath).astype({ 'patient-id': str })
-        else:
-            self.__group_index = None
+        # Load groups.
+        filepath = os.path.join(self.__path, 'groups.csv')
+        self.__groups = load_csv(filepath) if os.path.exists(filepath) else None
 
         # Load region map.
-        self.__region_map = RegionMap.load(self._path)
+        self.__region_map = RegionMap.load(self.__path)
 
     # Copied from 'mymi/reports/dataset/nift.py' to avoid circular dependency.
     def __load_patient_regions_report(
         self,
         exists_only: bool = False,
         ) -> pd.DataFrame | bool:
-        filepath = os.path.join(self._path, 'reports', 'region-count.csv')
+        filepath = os.path.join(self.__path, 'reports', 'region-count.csv')
         if os.path.exists(filepath):
             if exists_only:
                 return True
@@ -253,7 +232,7 @@ class NiftiDataset(IndexMixin, Dataset):
     def n_patients(self) -> int:
         return len(self.list_patients())
 
-    @Dataset.ensure_loaded
+    @ensure_loaded('__index', '__load_data')
     def patient(
         self,
         id: PatientID | None = None,
@@ -267,7 +246,8 @@ class NiftiDataset(IndexMixin, Dataset):
             id = self.list_patients()[n]
 
         # Filter indexes to include only rows relevant to the new patient.
-        index = self._index[self._index['patient-id'] == str(id)].copy() if self._index is not None else None
+        index = self.__index[self.__index['patient-id'] == str(id)].copy() if self.__index is not None else None
+        self.__excluded_labels = None
         exc_df = self.__excluded_labels[self.__excluded_labels['patient-id'] == str(id)].copy() if self.__excluded_labels is not None else None
 
         # Get 'ct_from' patient.
@@ -279,7 +259,7 @@ class NiftiDataset(IndexMixin, Dataset):
         return NiftiPatient(self, id, ct_from=ct_from, excluded_labels=exc_df, index=index, region_map=self.__region_map, **kwargs)
 
     @property
-    @Dataset.ensure_loaded
+    @ensure_loaded('__region_map', '__load_data')
     def region_map(self) -> RegionMap | None:
         return self.__region_map
 

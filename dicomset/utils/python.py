@@ -1,8 +1,14 @@
 from collections.abc import Sequence as CSequence
+import functools
 import sys
 from typing import Any, Callable, Dict, List, Literal, Tuple, Union, get_args, get_origin
 
 from .logging import logger
+
+def call_private_method(obj, method_name, *args, **kwargs):
+    if method_name.startswith('__'):
+        method_name = f'_{obj.__class__.__name__}{method_name}'
+    return getattr(obj, method_name)(*args, **kwargs)
 
 def deep_merge(
     d: Dict[str, Any],
@@ -26,6 +32,16 @@ def deep_merge(
             
     return merged
 
+def ensure_loaded(attr: str, method: str) -> Callable:
+    def decorator(fn: Callable) -> Callable:
+        @functools.wraps(fn)
+        def wrapper(self, *args, **kwargs):
+            if not has_private_attr(self, attr):
+                call_private_method(self, method)
+            return fn(self, *args, **kwargs)
+        return wrapper
+    return decorator
+
 def filter_lists(
     lists: List[List[Any]],
     filt_fn: Callable,
@@ -40,9 +56,25 @@ def filter_lists(
         return [[],] * n_lists
     return lists
 
+def get_private_attr(obj, attr_name, *args):
+    if attr_name.startswith('__'):
+        attr_name = f"_{obj.__class__.__name__}{attr_name}"
+    return getattr(obj, attr_name, *args)
+
 def has_private_attr(obj, attr_name):
-    attr_name = f"_{obj.__class__.__name__}{attr_name}"
+    if attr_name.startswith('__'):
+        attr_name = f"_{obj.__class__.__name__}{attr_name}"
     return hasattr(obj, attr_name)
+
+def set_private_attr(obj, attr_name, value):
+    if attr_name.startswith('__'):
+        attr_name = f"_{obj.__class__.__name__}{attr_name}"
+    setattr(obj, attr_name, value)
+
+def call_private_method(obj, method_name, *args, **kwargs):
+    if method_name.startswith('__'):
+        method_name = f'_{obj.__class__.__name__}{method_name}'
+    return getattr(obj, method_name)(*args, **kwargs)
 
 def is_generic(t: Any) -> bool:
     return get_origin(t) is not None

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import pandas as pd
 from typing import List, TYPE_CHECKING
 
 from ..typing import RegionID, SampleID, SplitID
@@ -27,13 +26,6 @@ class HoldoutSplit:
     @property
     def dataset(self) -> TrainingDataset:
         return self.__dataset
-
-    @property
-    def index(self) -> pd.DataFrame:
-        if self.__index is None:
-            ds_index = self.dataset.index
-            self.__index = ds_index[ds_index['split'] == self._id].copy()
-        return self.__index
 
     def list_samples(
         self,

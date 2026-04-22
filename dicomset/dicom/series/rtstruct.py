@@ -4,15 +4,14 @@ import numpy as np
 import os
 import pandas as pd
 import re
-from typing import Any, Callable, Dict, List, Literal, TYPE_CHECKING
+from typing import Any, Dict, List, Literal, TYPE_CHECKING
 
 from ... import config as conf
 from ...region_map import RegionMap
 from ...typing import BatchLabelImage3D, FilePath, LandmarkID, Landmarks3D, Points3D, RegionID, RegionList, RtStructDicom, SeriesID, Voxels
 from ...utils.args import alias_kwargs, arg_to_list
-from ...utils.conversion import to_numpy
 from ...utils.landmarks import landmarks_to_points
-from ...utils.python import has_private_attr
+from ...utils.python import ensure_loaded
 from ...utils.regions import region_to_list
 from ..utils.dicom import from_rtstruct_dicom, list_rtstruct_regions
 from ..utils.io import load_dicom
@@ -41,20 +40,11 @@ class DicomRtStructSeries(DicomSeries):
         ) -> None:
         super().__init__('rtstruct', dataset, patient, study, id, config=config)
         self.__filepath = os.path.join(conf.directories.datasets, 'dicom', dataset.id, 'data', 'patients', index['filepath'])
-        self.__modality = 'rtstruct'
         self.__ref_ct = ref_ct
         self.__region_map = region_map
 
-    @staticmethod
-    def ensure_loaded(fn: Callable) -> Callable:
-        def wrapper(self, *args, **kwargs):
-            if not has_private_attr(self, '__dicom'):
-                self.__load_data()
-            return fn(self, *args, **kwargs)
-        return wrapper
-
     @property
-    @ensure_loaded
+    @ensure_loaded('__dicom', '__load_data')
     def dicom(self) -> RtStructDicom:
         return self.__dicom
 
@@ -62,6 +52,7 @@ class DicomRtStructSeries(DicomSeries):
     def filepath(self) -> FilePath:
         return self.__filepath
 
+    @ensure_loaded('__data', '__load_data')
     def has_landmark(
         self,
         landmark_id: LandmarkID | List[LandmarkID],
@@ -73,6 +64,7 @@ class DicomRtStructSeries(DicomSeries):
         n_overlap = len(np.intersect1d(landmark_ids, all_ids))
         return n_overlap > 0 if any else n_overlap == len(landmark_ids)
 
+    @ensure_loaded('__data', '__load_data')
     def has_region(
         self,
         region_id: RegionID | List[RegionID],
@@ -91,6 +83,7 @@ class DicomRtStructSeries(DicomSeries):
         else:
             return DEFAULT_LANDMARK_REGEXP
 
+    @ensure_loaded('__data', '__load_data')
     def landmarks_data(
         self,
         add_ids: bool = True,
@@ -109,7 +102,7 @@ class DicomRtStructSeries(DicomSeries):
         # Add extra columns - in case we're concatenating landmarks from multiple patients/studies.
         if add_ids:
             if 'patient-id' not in landmarks_data.columns:
-                landmarks_data.insert(0, 'patient-id', self._pat.id)
+                landmarks_data.insert(0, 'patient-id', self._patient.id)
             if 'study-id' not in landmarks_data.columns:
                 landmarks_data.insert(1, 'study-id', self._study.id)
             if 'series-id' not in landmarks_data.columns:
@@ -132,6 +125,7 @@ class DicomRtStructSeries(DicomSeries):
         else:
             return landmarks_data
 
+    @ensure_loaded('__data', '__load_data')
     def list_landmarks(
         self,
         landmark_id: LandmarkID | List[LandmarkID] = 'all',
@@ -149,6 +143,7 @@ class DicomRtStructSeries(DicomSeries):
     @alias_kwargs(
         ('r', 'region_id'),
     )
+    @ensure_loaded('__data', '__load_data')
     def list_regions(
         self,
         filter_landmarks: bool = True,
@@ -207,6 +202,7 @@ class DicomRtStructSeries(DicomSeries):
         ('rr', 'return_regions'),
         ('um', 'use_mapping'),
     )
+    @ensure_loaded('__data', '__load_data')
     def regions_data(
         self,
         region_id: RegionID | List[RegionID] | RegionList | Literal['all'] = 'all',

@@ -39,9 +39,9 @@ class NiftiPatient(IndexMixin, Patient):
 
     @property
     def dicom(self) -> DicomPatient:
-        if self._index is None:
+        if self.__index is None:
             raise ValueError(f"Missing 'index.csv' for dataset '{self._dataset.id}', cannot find corresponding dicom patient.")
-        index = self._index[['dataset', 'patient-id', 'dicom-dataset', 'dicom-patient-id']]
+        index = self.__index[['dataset', 'patient-id', 'dicom-dataset', 'dicom-patient-id']]
         index = index[(index['dataset'] == self._dataset.id) & (index['patient-id'] == self._id)].drop_duplicates()
         assert len(index) == 1, f"Expected 1 index entry for DICOM patient '{self._id}', but found {len(index)}. Index: {index}"
         row = index.iloc[0]
@@ -94,7 +94,7 @@ class NiftiPatient(IndexMixin, Patient):
         **kwargs,
         ) -> NiftiStudy:
         id = resolve_id(id, self.list_studies)
-        index = self._index[self._index['study-id'] == id].copy() if self._index is not None else None
+        index = self.__index[self.__index['study-id'] == id].copy() if self.__index is not None else None
 
         # Get 'ct_from' study.
         if self._ct_from is not None and self._ct_from.has_study(id):

@@ -10,6 +10,7 @@ from ..region_map import RegionMap
 from ..typing import PatientID, StudyID
 from ..utils.args import arg_to_list, resolve_id
 from ..utils.pandas import append_row
+from ..utils.python import get_private_attr
 from .study import DicomStudy
 if TYPE_CHECKING:
     from .dataset import DicomDataset
@@ -27,9 +28,9 @@ class DicomPatient(IndexWithErrorsMixin, Patient):
         region_map: RegionMap | None = None,
         ) -> None:
         super().__init__(dataset, id, config=config, ct_from=ct_from, region_map=region_map)
-        self._index_errors = index_errors
-        self._index = index
-        self._index_policy = index_policy
+        self.__index_errors = index_errors
+        self.__index = index
+        self.__index_policy = index_policy
 
     @property
     def age(self) -> str:
@@ -91,7 +92,7 @@ class DicomPatient(IndexWithErrorsMixin, Patient):
         study_id: StudyID | List[StudyID] | Literal['all'] = 'all',
         ) -> List[StudyID]:
         # Sort studies by date/time - oldest first.
-        ids = list(self._index.sort_values(['study-date', 'study-time'])['study-id'].unique())
+        ids = list(self.__index.sort_values(['study-date', 'study-time'])['study-id'].unique())
         
         # Filter by study ID.
         if study_id != 'all':
@@ -144,10 +145,10 @@ class DicomPatient(IndexWithErrorsMixin, Patient):
         id = resolve_id(id, lambda: self.list_studies(sort=sort))
         if not self.has_study(id):
             raise ValueError(f"Study '{id}' not found for patient '{self}'.")
-        index = self._index[self._index['study-id'] == str(id)].copy()
-        index_errors = self._index_errors[self._index_errors['study-id'] == str(id)].copy()
+        index = self.__index[self.__index['study-id'] == str(id)].copy()
+        index_errors = self.__index_errors[self.__index_errors['study-id'] == str(id)].copy()
         ct_from = self._ct_from.study(id) if self._ct_from is not None and self._ct_from.has_study(id) else None
-        return DicomStudy(self._dataset, self, id, index, self._index_policy, index_errors, config=self._config, ct_from=ct_from, region_map=self._region_map)
+        return DicomStudy(self._dataset, self, id, index, self.__index_policy, index_errors, config=self._config, ct_from=ct_from, region_map=self._region_map)
 
     @property
     def weight(self) -> str:
@@ -156,7 +157,7 @@ class DicomPatient(IndexWithErrorsMixin, Patient):
 # Add properties.
 props = ['index_policy']
 for p in props:
-    setattr(DicomPatient, p, property(lambda self, p=p: getattr(self, f'_{DicomPatient.__name__}__{p}')))
+    setattr(DicomPatient, p, property(lambda self, p=p: get_private_attr(self, f'__{p}')))
 
 # Add properties/methods from 'default_study'.
 mods = ['ct', 'mr', 'rtdose', 'rtplan', 'rtstruct']

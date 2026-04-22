@@ -34,14 +34,14 @@ class DicomStudy(IndexWithErrorsMixin, Study):
         ) -> None:
         super().__init__(dataset, patient, id, config=config, ct_from=ct_from, region_map=region_map)
         self.__ct_from = ct_from
-        self._index = index
-        self._index_errors = index_errors
-        self._index_policy = index_policy
+        self.__index = index
+        self.__index_errors = index_errors
+        self.__index_policy = index_policy
 
     @property
     def date(self) -> str:
-        date_str = self._index['study-date'].iloc[0]
-        time_str = self._index['study-time'].iloc[0]
+        date_str = self.__index['study-date'].iloc[0]
+        time_str = self.__index['study-time'].iloc[0]
         return f'{date_str}:{time_str}'
 
     @property
@@ -85,7 +85,7 @@ class DicomStudy(IndexWithErrorsMixin, Study):
         ) -> List[SeriesID]:
         if modality not in DicomModality.__args__:
             raise ValueError(f"Unrecognised modality '{modality}'. Should be one of {DicomModality.__args__}.")
-        index = self.__ct_from.index().copy() if modality == 'ct' and self.__ct_from is not None else self._index.copy()
+        index = self.__ct_from.index().copy() if modality == 'ct' and self.__ct_from is not None else self.__index.copy()
         index = index[index['modality'] == modality]
         index = index.sort_values(['series-date', 'series-time'], ascending=[True, True])
         ids = list(index['series-id'].unique())
@@ -126,10 +126,10 @@ class DicomStudy(IndexWithErrorsMixin, Study):
             raise ValueError(f"{modality.upper()} series '{id}' not found for study '{self}'.")
 
         # Get series-specific data.
-        index = self._index[(self._index['modality'] == modality) & (self._index['series-id'] == id)].copy()
+        index = self.__index[(self.__index['modality'] == modality) & (self.__index['series-id'] == id)].copy()
         if modality in ['rtdose', 'rtplan', 'rtstruct']:
             index = index.iloc[0]
-        index_policy = self._index_policy[modality]
+        index_policy = self.__index_policy[modality]
 
         if modality == 'ct':
             if self.__ct_from is not None:
@@ -164,7 +164,7 @@ class DicomStudy(IndexWithErrorsMixin, Study):
         id: SeriesID,
         ) -> DicomModality:
         # Get modality from index.
-        index = self._index.copy()
+        index = self.__index.copy()
         index = index[index['series-id'] == id]
         if len(index) == 0:
             raise ValueError(f"Series '{id}' not found in study '{self}'.")

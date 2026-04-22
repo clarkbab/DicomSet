@@ -9,11 +9,10 @@ from ..utils.dicom import DICOM_DATE_FORMAT, DICOM_TIME_FORMAT
 class DicomSeries(IndexMixin, Series):
     def __init__(
         self,
-        modality: DicomModality,
         *args,
-        **kwargs) -> None:
+        **kwargs,
+        ) -> None:
         super().__init__(*args, **kwargs)
-        self._modality = modality
 
     @property
     def date(self) -> str:

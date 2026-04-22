@@ -4,7 +4,7 @@ import os
 import re
 from typing import Dict, List
 
-from .typing import DiskRegionID, RegionID, RegionList
+from .typing import DirPath, DiskRegionID, FilePath, RegionID, RegionList
 from .utils.args import arg_to_list
 from .utils.io import load_yaml
 

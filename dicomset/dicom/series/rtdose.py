@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import os
 import pandas as pd
-import pydicom as dcm
-from typing import Any, Callable, Dict, TYPE_CHECKING
+from typing import Any, Dict, TYPE_CHECKING
 
 from ... import config
-from ...typing import Box3D, Image3D, Point3D, SeriesID, Size3D, Spacing3D
+from ...typing import AffineMatrix3D, Box3D, Image3D, Point3D, SeriesID, Size3D, Spacing3D
 from ...utils.geometry import affine_origin, affine_spacing, fov
-from ...utils.python import has_private_attr
+from ...utils.python import ensure_loaded, get_private_attr
 from ..utils.dicom import from_rtdose_dicom
 from ..utils.io import load_dicom
 from .series import DicomSeries
@@ -33,49 +32,43 @@ class DicomRtDoseSeries(DicomSeries):
         dspath = os.path.join(config.directories.datasets, 'dicom', self._dataset.id, 'data', 'patients')
         self.__filepath = os.path.join(dspath, index['filepath'])
 
-    @staticmethod
-    def ensure_loaded(fn: Callable) -> Callable:
-        def wrapper(self, *args, **kwargs):
-            if not has_private_attr(self, '__data'):
-                self.__load_data()
-            return fn(self, *args, **kwargs)
-        return wrapper
-
     @property
-    @ensure_loaded
+    @ensure_loaded('__data', '__load_data')
     def affine(self) -> AffineMatrix3D:
         return self.__affine
 
     @property
-    @ensure_loaded
+    @ensure_loaded('__data', '__load_data')
     def data(self) -> Image3D:
         return self.__data
 
     @property
-    def dicom(self) -> dcm.dataset.FileDataset:
-        return load_dicom(self.__filepath)
+    @ensure_loaded('__data', '__load_data')
+    def dicom(self) -> RtDoseDicom:
+        return self.__dicom
 
-    @ensure_loaded
+    @ensure_loaded('__data', '__load_data')
     def fov(
         self,
         **kwargs) -> Box3D:
         return fov(self.__data.shape, self.__affine, **kwargs)
 
     def __load_data(self) -> None:
-        self.__data, self.__affine = from_rtdose_dicom(self.dicom)
+        self.__dicom = load_dicom(self.__filepath)
+        self.__data, self.__affine = from_rtdose_dicom(self.__dicom)
 
     @property
-    @ensure_loaded
+    @ensure_loaded('__data', '__load_data')
     def origin(self) -> Point3D:
         return affine_origin(self.__affine)
 
     @property
-    @ensure_loaded
+    @ensure_loaded('__data', '__load_data')
     def size(self) -> Size3D:
         return self.__data.shape
 
     @property
-    @ensure_loaded
+    @ensure_loaded('__data', '__load_data')
     def spacing(self) -> Spacing3D:
         return affine_spacing(self.__affine)
 
@@ -85,4 +78,4 @@ class DicomRtDoseSeries(DicomSeries):
 # Add properties.
 props = ['filepath', 'ref_rtplan']
 for p in props:
-    setattr(DicomRtDoseSeries, p, property(lambda self, p=p: getattr(self, f'_{DicomRtDoseSeries.__name__}__{p}')))
+    setattr(DicomRtDoseSeries, p, property(lambda self, p=p: get_private_attr(self, f'__{p}')))
