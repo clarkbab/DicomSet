@@ -16,9 +16,9 @@ class HoldoutSplit:
         id: SplitID,
         ) -> None:
         self.__dataset = dataset
-        self._id = id
-        self.__global_id = f"{self.__dataset}:{self._id}"
-        self.__path = os.path.join(self.__dataset.path, 'data', str(self._id))
+        self.__id = id
+        self.__global_id = f"{self.__dataset}:{self.__id}"
+        self.__path = os.path.join(self.__dataset.path, 'data', str(self.__id))
         if not os.path.exists(self.__path):
             raise ValueError(f"Training split '{self.__global_id}' does not exist.")
         self.__index = None

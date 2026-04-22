@@ -6,44 +6,44 @@ from .dataset import Dataset
 from .patient import Patient
 from .region_map import RegionMap
 from .typing import StudyID
-from .utils.python import wrap_quotes
+from .utils.python import get_private_attr, set_private_attr, wrap_quotes
 
 class Study:
     def __init__(
         self,
         dataset: Dataset,
-        pat: Patient,
+        patient: Patient,
         id: StudyID,
         config: Dict[str, Any] | None = None,
         ct_from: Study | None = None,
         region_map: RegionMap | None = None,
         ) -> None:
-        self._dataset = dataset
-        self._config = config
-        self._pat = pat
-        self._id = str(id)
-        self._ct_from = ct_from
-        self._region_map = region_map
+        set_private_attr(self, '__dataset', dataset)
+        set_private_attr(self, '__config', config)
+        set_private_attr(self, '__patient', patient)
+        set_private_attr(self, '__id', str(id))
+        set_private_attr(self, '__ct_from', ct_from)
+        set_private_attr(self, '__region_map', region_map)
 
     @property
     def ct_from(self) -> Study | None:
-        return self._ct_from
+        return get_private_attr(self, '__ct_from')
 
     @property
     def dataset(self) -> Dataset:
-        return self._dataset
+        return get_private_attr(self, '__dataset')
 
     @property
     def id(self) -> StudyID:
-        return self._id
+        return get_private_attr(self, '__id')
 
     @property
-    def pat(self) -> Patient:
-        return self._pat
+    def patient(self) -> Patient:
+        return get_private_attr(self, '__patient')
 
     @property
     def region_map(self) -> RegionMap | None:
-        return self._region_map
+        return get_private_attr(self, '__region_map')
 
     def __repr__(self) -> str:
         return str(self)
@@ -53,10 +53,11 @@ class Study:
         class_name: str,
         ) -> str:
         params = dict(
-            dataset_id=wrap_quotes(self._dataset.id),
-            id=wrap_quotes(self._id),
-            patient_id=wrap_quotes(self._pat.id),
+            dataset_id=wrap_quotes(get_private_attr(self, '__dataset').id),
+            id=wrap_quotes(get_private_attr(self, '__id')),
+            patient_id=wrap_quotes(get_private_attr(self, '__patient').id),
         )
-        if self._ct_from is not None:
-            params['ct_from'] = self._ct_from.id
+        ct_from = get_private_attr(self, '__ct_from')
+        if ct_from is not None:
+            params['ct_from'] = ct_from.id
         return f"{class_name}({', '.join([f'{k}={v}' for k, v in params.items()])})"

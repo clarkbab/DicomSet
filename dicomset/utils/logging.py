@@ -17,15 +17,15 @@ LOG_FORMAT_PLAIN = "%(asctime)s | %(levelname)-8s | %(message)s"
 
 class Logger:
     def __init__(self) -> None:
-        self._logger: python_logging.Logger | None = None
+        self.__logger: python_logging.Logger | None = None
 
     def configure(self, level: str) -> None:
         # Create logger and set level.
-        self._logger = python_logging.getLogger('DicomSet')
+        self.__logger = python_logging.getLogger('DicomSet')
         numeric_level = getattr(python_logging, level.upper(), None)
         if not isinstance(numeric_level, int):
             raise ValueError(f"Logging level '{level}' not valid.")
-        self._logger.setLevel(numeric_level)
+        self.__logger.setLevel(numeric_level)
 
         # Create console handler and set level.
         ch = python_logging.StreamHandler()
@@ -36,20 +36,20 @@ class Logger:
         ch.setFormatter(formatter)
 
         # Remove old handlers.
-        for handler in self._logger.handlers:
-            self._logger.removeHandler(handler)
+        for handler in self.__logger.handlers:
+            self.__logger.removeHandler(handler)
         
         # Add console handler to logger.
-        self._logger.addHandler(ch)
+        self.__logger.addHandler(ch)
 
     def critical(self, *args, **kwargs):
-        return self._logger.critical(*args, **kwargs)
+        return self.__logger.critical(*args, **kwargs)
 
     def debug(self, *args, **kwargs):
-        return self._logger.debug(*args, **kwargs)
+        return self.__logger.debug(*args, **kwargs)
 
     def error(self, *args, **kwargs):
-        return self._logger.error(*args, **kwargs)
+        return self.__logger.error(*args, **kwargs)
 
     @staticmethod
     def _format_numpy(val: Any) -> str:
@@ -58,11 +58,11 @@ class Logger:
         return repr(val)
 
     def info(self, *args, **kwargs):
-        return self._logger.info(*args, **kwargs)
+        return self.__logger.info(*args, **kwargs)
 
     @property
     def level(self) -> str:
-        return LEVEL_MAP[self._logger.level]
+        return LEVEL_MAP[self.__logger.level]
 
     def log_method(
         self,
@@ -87,7 +87,7 @@ class Logger:
             self.info(fn_str)
 
     def warn(self, *args, **kwargs):
-        return self._logger.warn(*args, **kwargs)
+        return self.__logger.warn(*args, **kwargs)
 
 logger = Logger()
 

@@ -6,34 +6,34 @@ from .dataset import Dataset
 from .patient import Patient
 from .study import Study
 from .typing import SeriesID
-from .utils.python import wrap_quotes
+from .utils.python import get_private_attr, set_private_attr, wrap_quotes
 
 class Series:
     def __init__(
         self,
         dataset: Dataset,
-        pat: Patient,
+        patient: Patient,
         study: Study,
         id: SeriesID,
         config: Dict[str, Any] | None = None,
         ) -> None:
-        self._dataset = dataset
-        self._config = config
-        self._pat = pat
-        self._study = study
-        self._id = str(id)
+        set_private_attr(self, '__dataset', dataset)
+        set_private_attr(self, '__config', config)
+        set_private_attr(self, '__patient', patient)
+        set_private_attr(self, '__study', study)
+        set_private_attr(self, '__id', str(id))
 
     @property
     def dataset(self) -> Dataset:
-        return self._dataset
+        return get_private_attr(self, '__dataset')
 
     @property
     def id(self) -> SeriesID:
-        return self._id
+        return get_private_attr(self, '__id')
 
     @property
-    def pat(self) -> Patient:
-        return self._pat
+    def patient(self) -> Patient:
+        return get_private_attr(self, '__patient')
 
     def __repr__(self) -> str:
         return str(self)
@@ -43,13 +43,13 @@ class Series:
         class_name: str,
         ) -> str:
         params = dict(
-            dataset_id=wrap_quotes(self._dataset.id),
-            id=wrap_quotes(self._id),
-            patient_id=wrap_quotes(self._pat.id),
-            study_id=wrap_quotes(self._study.id),
+            dataset_id=wrap_quotes(get_private_attr(self, '__dataset').id),
+            id=wrap_quotes(get_private_attr(self, '__id')),
+            patient_id=wrap_quotes(get_private_attr(self, '__patient').id),
+            study_id=wrap_quotes(get_private_attr(self, '__study').id),
         )
         return f"{class_name}({', '.join([f'{k}={v}' for k, v in params.items()])})"
 
     @property
     def study(self) -> Study:
-        return self._study
+        return get_private_attr(self, '__study')

@@ -3,15 +3,18 @@ from datetime import datetime as dt
 from ...mixins import IndexMixin
 from ...series import Series
 from ...typing import DicomModality
+from ...utils.python import get_private_attr, set_private_attr
 from ..utils.dicom import DICOM_DATE_FORMAT, DICOM_TIME_FORMAT
 
 # Abstract class.
 class DicomSeries(IndexMixin, Series):
     def __init__(
         self,
+        modality: DicomModality,
         *args,
         **kwargs,
         ) -> None:
+        set_private_attr(self, '__modality', modality)
         super().__init__(*args, **kwargs)
 
     @property
@@ -27,5 +30,5 @@ class DicomSeries(IndexMixin, Series):
 
     @property
     def modality(self) -> DicomModality:
-        return self._modality
+        return get_private_attr(self, '__modality')
  

@@ -7,7 +7,7 @@ from typing import Any, Dict, List, TYPE_CHECKING
 
 from ... import config
 from ...typing import Box3D, Image3D, Point3D, SeriesID, Size3D, Spacing3D
-from ...utils.geometry import fov
+from ...utils.geometry import affine_origin, affine_spacing, fov
 from ...utils.python import ensure_loaded, get_private_attr
 from ..utils.io import load_dicom
 from .series import DicomSeries
@@ -27,7 +27,7 @@ class DicomMrSeries(DicomSeries):
         index_policy: Dict[str, Any],
         ) -> None:
         super().__init__('mr', dataset, patient, study, id, index=index, index_policy=index_policy)
-        dspath = os.path.join(config.directories.datasets, 'dicom', self._dataset.id, 'data', 'patients')
+        dspath = os.path.join(config.directories.datasets, 'dicom', self.__dataset.id, 'data', 'patients')
         relpaths = list(index['filepath'])
         abspaths = [os.path.join(dspath, p) for p in relpaths]
         self.__filepaths = abspaths
@@ -38,7 +38,7 @@ class DicomMrSeries(DicomSeries):
         return self.__data
 
     @property
-    @ensure_loaded('__data', '__load_data')
+    @ensure_loaded('__dicoms', '__load_data')
     def dicoms(self) -> List[MrDicom]:
         return self.__dicoms
 
@@ -94,9 +94,9 @@ class DicomMrSeries(DicomSeries):
         self.__data = data
 
     @property
-    @ensure_loaded('__data', '__load_data')
+    @ensure_loaded('__affine', '__load_data')
     def origin(self) -> Point3D:
-        return self.__origin
+        return affine_origin(self.__affine)
 
     @property
     @ensure_loaded('__data', '__load_data')
@@ -104,9 +104,9 @@ class DicomMrSeries(DicomSeries):
         return self.__data.shape
 
     @property
-    @ensure_loaded('__data', '__load_data')
+    @ensure_loaded('__affine', '__load_data')
     def spacing(self) -> Spacing3D:
-        return self.__spacing
+        return affine_spacing(self.__affine)
 
     def __str__(self) -> str:
         return super().__str__(self.__class__.__name__)

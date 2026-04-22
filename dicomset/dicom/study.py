@@ -135,13 +135,13 @@ class DicomStudy(IndexWithErrorsMixin, Study):
             if self.__ct_from is not None:
                 return self.__ct_from.series(id, modality, **kwargs)
             else:
-                return DicomCtSeries(self._dataset, self._pat, self, id, index, index_policy, **kwargs)
+                return DicomCtSeries(self.__dataset, self.__patient, self, id, index, index_policy, **kwargs)
         elif modality == 'mr':
-            return DicomMrSeries(self._dataset, self._pat, self, id, index, index_policy, **kwargs)
+            return DicomMrSeries(self.__dataset, self.__patient, self, id, index, index_policy, **kwargs)
         elif modality == 'rtdose':
-            return DicomRtDoseSeries(self._dataset, self._pat, self, id, index, index_policy, **kwargs)
+            return DicomRtDoseSeries(self.__dataset, self.__patient, self, id, index, index_policy, **kwargs)
         elif modality == 'rtplan':
-            return DicomRtPlanSeries(self._dataset, self._pat, self, id, index, index_policy, **kwargs)
+            return DicomRtPlanSeries(self.__dataset, self.__patient, self, id, index, index_policy, **kwargs)
         elif modality == 'rtstruct':
             ref_study = self.__ct_from if self.__ct_from is not None else self
 
@@ -157,7 +157,7 @@ class DicomStudy(IndexWithErrorsMixin, Study):
                 else:
                     ref_ct = ref_study.default_series('ct')
 
-            return DicomRtStructSeries(self._dataset, self._pat, self, id, ref_ct, index, index_policy, config=self._config, region_map=self._region_map, **kwargs)
+            return DicomRtStructSeries(self.__dataset, self.__patient, self, id, ref_ct, index, index_policy, config=self.__config, region_map=self.__region_map, **kwargs)
 
     def series_modality(
         self,

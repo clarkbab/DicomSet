@@ -5,7 +5,7 @@ from typing import Any, Dict
 from .dataset import Dataset
 from .region_map import RegionMap
 from .typing import PatientID
-from .utils.python import wrap_quotes
+from .utils.python import get_private_attr, set_private_attr, wrap_quotes
 
 class Patient:
     def __init__(
@@ -16,27 +16,27 @@ class Patient:
         ct_from: Patient | None = None,
         region_map: RegionMap | None = None,
         ) -> None:
-        self._dataset = dataset
-        self._config = config
-        self._id = str(id)
-        self._ct_from = ct_from
-        self._region_map = region_map
+        set_private_attr(self, '__dataset', dataset)
+        set_private_attr(self, '__config', config)
+        set_private_attr(self, '__id', str(id))
+        set_private_attr(self, '__ct_from', ct_from)
+        set_private_attr(self, '__region_map', region_map)
 
     @property
     def ct_from(self) -> Patient | None:
-        return self._ct_from
+        return get_private_attr(self, '__ct_from')
 
     @property
     def dataset(self) -> Dataset:
-        return self._dataset
+        return get_private_attr(self, '__dataset')
 
     @property
     def id(self) -> PatientID:
-        return self._id
+        return get_private_attr(self, '__id')
 
     @property
     def region_map(self) -> RegionMap | None:
-        return self._region_map
+        return get_private_attr(self, '__region_map')
 
     def __repr__(self) -> str:
         return str(self)
@@ -46,9 +46,10 @@ class Patient:
         class_name: str,
         ) -> str:
         params = dict(
-            dataset_id=wrap_quotes(self._dataset.id),
-            id=wrap_quotes(self._id),
+            dataset_id=wrap_quotes(get_private_attr(self, '__dataset').id),
+            id=wrap_quotes(get_private_attr(self, '__id')),
         )
-        if self._ct_from is not None:
-            params['ct_from'] = self._ct_from.id
+        ct_from = get_private_attr(self, '__ct_from')
+        if ct_from is not None:
+            params['ct_from'] = ct_from.id
         return f"{class_name}({', '.join([f'{k}={v}' for k, v in params.items()])})"

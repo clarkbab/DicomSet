@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from ...mixins import IndexMixin
 from ...series import Series
 from ...typing import NiftiModality
+from ...utils.python import get_private_attr, set_private_attr
 if TYPE_CHECKING:
     from ...dicom.series import DicomSeries
 
@@ -25,8 +26,8 @@ class NiftiSeries(IndexMixin, Series):
         *args,
         **kwargs,
         ) -> None:
-        self._modality = modality
-        self.__dicom_modality = NIFTI_DICOM_MODALITY_MAP[self._modality]
+        set_private_attr(self, '__modality', modality)
+        self.__dicom_modality = NIFTI_DICOM_MODALITY_MAP[get_private_attr(self, '__modality')]
         super().__init__(*args, **kwargs)
 
     @property
@@ -40,4 +41,4 @@ class NiftiSeries(IndexMixin, Series):
 
     @property
     def modality(self) -> NiftiModality:
-        return self._modality
+        return get_private_attr(self, '__modality')

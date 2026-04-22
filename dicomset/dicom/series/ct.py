@@ -27,7 +27,7 @@ class DicomCtSeries(DicomSeries):
         index_policy: Dict[str, Any],
         ) -> None:
         super().__init__('ct', dataset, patient, study, id, index=index, index_policy=index_policy)
-        dspath = os.path.join(config.directories.datasets, 'dicom', self._dataset.id, 'data', 'patients')
+        dspath = os.path.join(config.directories.datasets, 'dicom', self.__dataset.id, 'data', 'patients')
         relpaths = list(index['filepath'])
         abspaths = [os.path.join(dspath, p) for p in relpaths]
         self.__filepaths = abspaths
@@ -74,7 +74,7 @@ class DicomCtSeries(DicomSeries):
         self.__data, self.__affine = from_ct_dicom(dicoms)
 
     @property
-    @ensure_loaded('__data', '__load_data')
+    @ensure_loaded('__affine', '__load_data')
     def origin(self) -> Point3D:
         return affine_origin(self.__affine)
 
@@ -84,7 +84,7 @@ class DicomCtSeries(DicomSeries):
         return self.__data.shape
 
     @property
-    @ensure_loaded('__data', '__load_data')
+    @ensure_loaded('__affine', '__load_data')
     def spacing(self) -> Spacing3D:
         return affine_spacing(self.__affine)
 

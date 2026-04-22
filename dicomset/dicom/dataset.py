@@ -15,7 +15,7 @@ from ..utils.io import load_csv, load_yaml
 from ..utils.logging import logger
 from ..utils.python import ensure_loaded
 from ..utils.regions import region_to_list
-from .index import ERROR_INDEX_COLS, INDEX_COLS, build_index as build_index_base, index_exists
+from .index import DICOM_ERROR_INDEX_COLS, DICOM_INDEX_COLS, build_index as build_index_base, index_exists
 from .patient import DicomPatient
 
 class DicomDataset(Dataset, IndexWithErrorsMixin):
@@ -38,9 +38,8 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         self,
         **kwargs,
         ) -> None:
-        build_index_base(self._id, **kwargs)
+        build_index_base(self.__id, **kwargs)
 
-    @ensure_loaded('__index', '__load_data')
     def has_patient(
         self,
         patient: PatientID | List[PatientID],
@@ -57,7 +56,10 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         ('p', 'patient_id'),
         ('r', 'region_id'),
     )
-    @ensure_loaded('__index', '__load_data')
+    @ensure_loaded(
+        ('__index', '__load_index'),
+        ('__groups', '__load_groups'),
+    )
     def list_patients(
         self,
         group_id: GroupID | List[GroupID] | Literal['all'] = 'all',
@@ -74,7 +76,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
             filename = 'regions.csv' if use_mapping else 'unmapped-regions.csv'
             filepath = os.path.join(self.__path, 'reports', filename)
             if os.path.exists(filepath):
-                region_ids = region_to_list(region_id)
+                region_ids = region_to_list(region_id, region_map=self.region_map)
                 df = pd.read_csv(filepath)
                 df = df[df['region'].isin(region_ids)]
                 ids = list(sorted(df['patient-id'].unique()))
@@ -112,7 +114,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         # Filter by group ID.
         if group_id != 'all':
             if self.__groups is None:
-                raise ValueError(f"File 'groups.csv' not found for dicom dataset '{self._id}'.")
+                raise ValueError(f"File 'groups.csv' not found for dicom dataset '{self.__id}'.")
             all_groups = self.list_groups()
             group_ids = arg_to_list(group_id, str, literals={ 'all': all_groups })
             for g in group_ids:
@@ -134,7 +136,6 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
 
         return ids
 
-    @ensure_loaded('__index', '__load_data')
     def list_regions(
         self,
         group_id: GroupID | List[GroupID] | Literal['all'] = 'all',
@@ -173,40 +174,43 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
 
         return ids
 
-    # Grouping all the data is easier - there's not many files.
-    def __load_data(self) -> None:
+    def __load_region_map(self) -> None:
+        self.__region_map = RegionMap.load(self.__path)
+
+    def __load_groups(self) -> None:
+        # Load groups.
+        filepath = os.path.join(self.__path, 'groups.csv')
+        self.__groups = load_csv(filepath) if os.path.exists(filepath) else None
+
+    def __load_index(self) -> None:
         # Trigger index build if necessary.
-        if not index_exists(self._id):
-            build_index_base(self._id) 
+        if not index_exists(self.__id):
+            build_index_base(self.__id) 
 
         # Load index.
         filepath = os.path.join(self.__path, 'index.csv')
         try:
-            self.__index = load_csv(filepath, eval_cols='mod-spec', map_types=INDEX_COLS)
-        except pd.errors.EmptyDataError:
-            logger.info(f"Index empty for dataset '{self}'.")
-            self.__index = pd.DataFrame(columns=INDEX_COLS.keys())
+            self.__index = load_csv(filepath, eval_cols='mod-spec', map_types=DICOM_INDEX_COLS)
+        except pd.errors.EmptyDataError as e:
+            logger.info(f"Index empty for dataset '{self}'. Error: {e}")
+            self.__index = pd.DataFrame(columns=DICOM_INDEX_COLS.keys())
 
         # Load error index.
         try:
             filepath = os.path.join(self.__path, 'index-errors.csv')
-            self.__index_errors = load_csv(filepath, eval_cols='mod-spec', map_types=ERROR_INDEX_COLS)
-        except pd.errors.EmptyDataError:
+            self.__index_errors = load_csv(filepath, eval_cols='mod-spec', map_types=DICOM_ERROR_INDEX_COLS)
+        except pd.errors.EmptyDataError as e:
             logger.info(f"Error index empty for dataset '{self}'.")
-            self.__index_errors = pd.DataFrame(columns=ERROR_INDEX_COLS.keys())
+            self.__index_errors = pd.DataFrame(columns=DICOM_ERROR_INDEX_COLS.keys())
 
         # Load index policy.
         filepath = os.path.join(self.__path, 'index-policy.yaml')
         self.__index_policy = load_yaml(filepath)
 
-        # Load region map.
-        self.__region_map = RegionMap.load(self.__path)
-
-        # Load groups.
-        filepath = os.path.join(self.__path, 'groups.csv')
-        self.__groups = load_csv(filepath) if os.path.exists(filepath) else None
-
-    @ensure_loaded('__index', '__load_data')
+    @ensure_loaded(
+        ('__index', '__load_index'),
+        ('__region_map', '__load_region_map'),
+    )
     def patient(
         self,
         id: PatientID,
@@ -218,10 +222,10 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
             raise ValueError(f"Patient '{id}' not found in dataset '{self}'.")
         index = self.__index[self.__index['patient-id'] == str(id)]
         index_errors = self.__index_errors[self.__index_errors['patient-id'] == str(id)]
-        ct_from = self._ct_from.patient(id) if self._ct_from is not None and self._ct_from.has_patient(id) else None
-        return DicomPatient(self, id, index, self.__index_policy, index_errors, config=self._config, ct_from=ct_from, region_map=self.__region_map, **kwargs)
+        ct_from = self.__ct_from.patient(id) if self.__ct_from is not None and self.__ct_from.has_patient(id) else None
+        return DicomPatient(self, id, index, self.__index_policy, index_errors, config=self.__config, ct_from=ct_from, region_map=self.__region_map, **kwargs)
 
-    @ensure_loaded('__region_map', '__load_data')
+    @ensure_loaded('__region_map', '__load_region_map')
     def region_map(self) -> RegionMap:
         return self.__region_map
 

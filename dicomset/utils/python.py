@@ -32,12 +32,16 @@ def deep_merge(
             
     return merged
 
-def ensure_loaded(attr: str, method: str) -> Callable:
+def ensure_loaded(*pairs) -> Callable:
+    # Accepts either ensure_loaded(attr, method) or ensure_loaded((attr, method), (attr, method), ...)
+    if len(pairs) == 2 and isinstance(pairs[0], str):
+        pairs = (pairs,)
     def decorator(fn: Callable) -> Callable:
         @functools.wraps(fn)
         def wrapper(self, *args, **kwargs):
-            if not has_private_attr(self, attr):
-                call_private_method(self, method)
+            for attr, method in pairs:
+                if not has_private_attr(self, attr):
+                    call_private_method(self, method)
             return fn(self, *args, **kwargs)
         return wrapper
     return decorator

@@ -147,8 +147,8 @@ class DicomPatient(IndexWithErrorsMixin, Patient):
             raise ValueError(f"Study '{id}' not found for patient '{self}'.")
         index = self.__index[self.__index['study-id'] == str(id)].copy()
         index_errors = self.__index_errors[self.__index_errors['study-id'] == str(id)].copy()
-        ct_from = self._ct_from.study(id) if self._ct_from is not None and self._ct_from.has_study(id) else None
-        return DicomStudy(self._dataset, self, id, index, self.__index_policy, index_errors, config=self._config, ct_from=ct_from, region_map=self._region_map)
+        ct_from = self.__ct_from.study(id) if self.__ct_from is not None and self.__ct_from.has_study(id) else None
+        return DicomStudy(self.__dataset, self, id, index, self.__index_policy, index_errors, config=self.__config, ct_from=ct_from, region_map=self.__region_map)
 
     @property
     def weight(self) -> str:

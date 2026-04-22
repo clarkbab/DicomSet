@@ -22,7 +22,7 @@ from ..utils.io import load_dicom
 filepath = os.path.join(os.path.dirname(__file__), 'default-policy.yaml')
 DEFAULT_POLICY = load_yaml(filepath)
 
-INDEX_COLS = {
+DICOM_INDEX_COLS = {
     'dataset': str,
     'patient-id': str,
     'study-id': str,
@@ -36,8 +36,8 @@ INDEX_COLS = {
     'mod-spec': object,
     'filepath': str,
 }
-ERROR_INDEX_COLS = INDEX_COLS.copy()
-ERROR_INDEX_COLS['error'] = str
+DICOM_ERROR_INDEX_COLS = DICOM_INDEX_COLS.copy()
+DICOM_ERROR_INDEX_COLS['error'] = str
  
 def build_index(
     dataset: DatasetID,
@@ -94,13 +94,13 @@ def build_index(
         # Use temporary index (before policy filtering applied) - must have been saved by previous indexing.
         if os.path.exists(tmp_filepath):
             logger.info(f"Skipping crawl of 'data/patients' folder, loading from temp index '{tmp_filepath}'.")
-            index = load_csv(tmp_filepath, eval_cols='mod-spec', map_types=INDEX_COLS)
+            index = load_csv(tmp_filepath, eval_cols='mod-spec', map_types=DICOM_INDEX_COLS)
         else:
             raise ValueError(f"Temporary index file '{tmp_filepath}' doesn't exist. Cannot skip crawl of 'data/patients' folder.")
     elif rebuild or not os.path.exists(filepath):
         if ct_from is None:
             # Create new index.
-            index = pd.DataFrame(columns=INDEX_COLS.keys())
+            index = pd.DataFrame(columns=DICOM_INDEX_COLS.keys())
         else:
             # Create index using 'ct_from' index as a starting point.
             logger.info(f"Using CT index from '{ct_from}'.")
@@ -110,10 +110,10 @@ def build_index(
             filepath = os.path.join(config.directories.datasets, 'dicom', ct_from, 'index.csv')
             if not os.path.exists(filepath):
                 raise ValueError(f"Index for 'ct_from={ct_from}' dataset doesn't exist. Filepath: '{filepath}'.")
-            index = load_csv(filepath, eval_cols='mod-spec', filters={ 'modality': 'ct' }, map_types=INDEX_COLS)
+            index = load_csv(filepath, eval_cols='mod-spec', filters={ 'modality': 'ct' }, map_types=DICOM_INDEX_COLS)
     else:
         # Load existing index.
-        index = load_csv(filepath, map_types=INDEX_COLS)
+        index = load_csv(filepath, map_types=DICOM_INDEX_COLS)
 
         # Remove files that are no longer present.
         for i, row in index.iterrows():
@@ -129,10 +129,10 @@ def build_index(
     # Additionally, policy changes could make an invalid series valid.
     filepath = os.path.join(dataset_path, 'index-errors.csv')
     # if rebuild or not os.path.exists(filepath):
-    #     index_errors = pd.DataFrame(columns=ERROR_INDEX_COLS.keys())
+    #     index_errors = pd.DataFrame(columns=DICOM_ERROR_INDEX_COLS.keys())
     # else:
-    #     index_errors = load_csv(filepath, map_types=ERROR_INDEX_COLS)
-    index_errors = pd.DataFrame(columns=ERROR_INDEX_COLS.keys())
+    #     index_errors = load_csv(filepath, map_types=DICOM_ERROR_INDEX_COLS)
+    index_errors = pd.DataFrame(columns=DICOM_ERROR_INDEX_COLS.keys())
 
     # Crawl for new files.
     if not skip_crawl:
@@ -428,13 +428,13 @@ def build_index(
 
     # Save index.
     if len(index) > 0:
-        index = index.astype(INDEX_COLS)
+        index = index.astype(DICOM_INDEX_COLS)
     filepath = os.path.join(dataset_path, 'index.csv')
     save_csv(index, filepath)
 
     # Save errors index.
     if len(index_errors) > 0:
-        index_errors = index_errors.astype(ERROR_INDEX_COLS)
+        index_errors = index_errors.astype(DICOM_ERROR_INDEX_COLS)
     filepath = os.path.join(dataset_path, 'index-errors.csv')
     save_csv(index_errors, filepath)
 

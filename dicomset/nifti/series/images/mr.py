@@ -27,14 +27,14 @@ class NiftiMrSeries(NiftiImageSeries):
         index: pd.DataFrame | None = None
         ) -> None:
         super().__init__('mr', dataset, pat, study, id, index=index)
-        basepath = os.path.join(config.directories.datasets, 'nifti', self._dataset.id, 'data', 'patients', self._pat.id, self._study.id, self._modality, self._id)
+        basepath = os.path.join(config.directories.datasets, 'nifti', self.__dataset.id, 'data', 'patients', self.__patient.id, self.__study.id, self.__modality, self.__id)
         filepath = None
         for e in IMAGE_EXTENSIONS:
             fpath = f"{basepath}{e}"
             if os.path.exists(fpath):
                 filepath = fpath
         if filepath is None:
-            raise ValueError(f"No nifti mr series found for study '{self._study.id}'. Filepath: {basepath}, with extensions {IMAGE_EXTENSIONS}.")
+            raise ValueError(f"No nifti mr series found for study '{self.__study.id}'. Filepath: {basepath}, with extensions {IMAGE_EXTENSIONS}.")
         self.__filepath = filepath
 
     @property
@@ -42,8 +42,8 @@ class NiftiMrSeries(NiftiImageSeries):
         if self.__index is None:
             raise ValueError(f"Dataset did not originate from dicom (no 'index.csv').")
         index = self.__index[['dataset', 'patient-id', 'study-id', 'series-id', 'modality', 'dicom-dataset', 'dicom-patient-id', 'dicom-study-id', 'dicom-series-id']]
-        index = index[(index['dataset'] == self._dataset.id) & (index['patient-id'] == self._pat.id) & (index['study-id'] == self._study.id) & (index['series-id'] == self._id) & (index['modality'] == 'mr')].drop_duplicates()
-        assert len(index) == 1, f"Expected 1 index entry for DICOM MR series '{self._id}', but found {len(index)}. Index: {index}"
+        index = index[(index['dataset'] == self.__dataset.id) & (index['patient-id'] == self.__patient.id) & (index['study-id'] == self.__study.id) & (index['series-id'] == self.__id) & (index['modality'] == 'mr')].drop_duplicates()
+        assert len(index) == 1, f"Expected 1 index entry for DICOM MR series '{self.__id}', but found {len(index)}. Index: {index}"
         row = index.iloc[0]
         return DicomDataset(row['dicom-dataset']).patient(row['dicom-patient-id']).study(row['dicom-study-id']).mr_series(row['dicom-series-id'])
 

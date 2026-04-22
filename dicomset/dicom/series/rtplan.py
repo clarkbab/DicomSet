@@ -27,11 +27,11 @@ class DicomRtPlanSeries(DicomSeries):
         index_policy: Dict[str, Any],
         ) -> None:
         super().__init__('rtplan', dataset, pat, study, id, index=index, index_policy=index_policy)
-        dspath = os.path.join(config.directories.datasets, 'dicom', self._dataset.id, 'data', 'patients')
+        dspath = os.path.join(config.directories.datasets, 'dicom', self.__dataset.id, 'data', 'patients')
         self.__filepath = os.path.join(dspath, index['filepath'])
 
     @property
-    @ensure_loaded('__data', '__load_data')
+    @ensure_loaded('__dicom', '__load_data')
     def dicom(self) -> RtPlanDicom:
         return self.__dicom
 

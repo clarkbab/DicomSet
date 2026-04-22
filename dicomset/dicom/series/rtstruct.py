@@ -78,8 +78,8 @@ class DicomRtStructSeries(DicomSeries):
 
     @property
     def landmark_regexp(self) -> str:
-        if self._config is not None and 'landmarks' in self._config and 'regexp' in self._config['landmarks']:
-            return self._config['landmarks']['regexp']
+        if self.__config is not None and 'landmarks' in self.__config and 'regexp' in self.__config['landmarks']:
+            return self.__config['landmarks']['regexp']
         else:
             return DEFAULT_LANDMARK_REGEXP
 
@@ -102,11 +102,11 @@ class DicomRtStructSeries(DicomSeries):
         # Add extra columns - in case we're concatenating landmarks from multiple patients/studies.
         if add_ids:
             if 'patient-id' not in landmarks_data.columns:
-                landmarks_data.insert(0, 'patient-id', self._patient.id)
+                landmarks_data.insert(0, 'patient-id', self.__patient.id)
             if 'study-id' not in landmarks_data.columns:
-                landmarks_data.insert(1, 'study-id', self._study.id)
+                landmarks_data.insert(1, 'study-id', self.__study.id)
             if 'series-id' not in landmarks_data.columns:
-                landmarks_data.insert(2, 'series-id', self._id)
+                landmarks_data.insert(2, 'series-id', self.__id)
 
         # Sort by landmark IDs - this means that 'n_landmarks' will be consistent between
         # Dicom/Nifti dataset types.

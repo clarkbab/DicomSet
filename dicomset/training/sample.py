@@ -19,20 +19,12 @@ class TrainingSample:
         id: SampleID,
         ) -> None:
         self.__split = split
-        self._id = int(id)     # Could be passed as a string by mistake.
+        self.__id = int(id)     # Could be passed as a string by mistake.
         self.__index = None
-        self.__global_id = f'{self.__split}:{self._id}'
+        self.__global_id = f'{self.__split}:{self.__id}'
 
         # Define paths.
-        self.__input_path = os.path.join(self.split.path, 'inputs', f"{self._id:03}.npz")
-
-    @staticmethod
-    def ensure_loaded(fn: Callable) -> Callable:
-        def wrapper(self, *args, **kwargs):
-            if not has_private_attr(self, '__input'):
-                self.__input = load_numpy(self.__input_path)
-            return fn(self, *args, **kwargs)
-        return wrapper
+        self.__input_path = os.path.join(self.split.path, 'inputs', f"{self.__id:03}.npz")
 
     def has_region(
         self,
@@ -54,10 +46,9 @@ class TrainingSample:
 
     @property
     def id(self) -> str:
-        return self._id
+        return self.__id
 
     @property
-    @ensure_loaded
     def input(self) -> np.ndarray:
         return self.__input
 
@@ -79,7 +70,7 @@ class TrainingSample:
         elif label_idx is None:
             raise ValueError("Multiple labels present - must specify 'label_idx'.")
         label_type = label_types[label_idx]
-        label_id = f'{self._id:03}-{label_idx}' if len(label_types) > 1 else f'{self._id:03}'  # Don't need suffix if single-label.
+        label_id = f'{self.__id:03}-{label_idx}' if len(label_types) > 1 else f'{self.__id:03}'  # Don't need suffix if single-label.
 
         if label_type == 'image':
             # Load image label.
@@ -103,7 +94,7 @@ class TrainingSample:
             
             # Raise error if sample has no requested regions - the label will be full of zeros.
             if not self.has_region(region_ids):
-                raise ValueError(f"Sample {self._id} has no regions {region_ids}.")
+                raise ValueError(f"Sample {self.__id} has no regions {region_ids}.")
 
             # Extract requested 'regions'.
             channels = [0]
@@ -140,7 +131,7 @@ class TrainingSample:
         if label_type != 'regions':
             raise ValueError(f"Mask only available for 'regions' labels, not '{label_type}'.")
 
-        label_id = f'{self._id:03}-{label_idx}' if len(label_types) > 1 else f'{self._id:03}'  # Don't need suffix if single-label.
+        label_id = f'{self.__id:03}-{label_idx}' if len(label_types) > 1 else f'{self.__id:03}'  # Don't need suffix if single-label.
         filepath = os.path.join(self.split.path, 'masks', f"{label_id}.npz")
         mask = np.load(filepath)['data']
         if region_id == 'all':
@@ -209,7 +200,6 @@ class TrainingSample:
         return regions
 
     @property
-    @ensure_loaded
     def size(self) -> Size3D:
         n_dims = len(self.__input.shape)
         if n_dims == 4:

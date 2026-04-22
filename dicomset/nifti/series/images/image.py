@@ -13,7 +13,7 @@ class NiftiImageSeries(NiftiSeries):
         super().__init__(*args, **kwargs)
 
     @property
-    @ensure_loaded('__data', '__load_data')
+    @ensure_loaded('__affine', '__load_data')
     def affine(self) -> AffineMatrix3D:
         return get_private_attr(self, '__affine')
 
@@ -27,10 +27,10 @@ class NiftiImageSeries(NiftiSeries):
         self,
         **kwargs,
         ) -> Box3D:
-        return fov(self.__data, self.__affine, **kwargs)
+        return fov(get_private_attr(self, '__data'), get_private_attr(self, '__affine'), **kwargs)
 
     @property
-    @ensure_loaded('__data', '__load_data')
+    @ensure_loaded('__affine', '__load_data')
     def origin(self) -> Point3D:
         return affine_origin(get_private_attr(self, '__affine'))
 
@@ -40,6 +40,6 @@ class NiftiImageSeries(NiftiSeries):
         return get_private_attr(self, '__data').shape
 
     @property
-    @ensure_loaded('__data', '__load_data')
+    @ensure_loaded('__affine', '__load_data')
     def spacing(self) -> Spacing3D:
         return affine_spacing(get_private_attr(self, '__affine'))

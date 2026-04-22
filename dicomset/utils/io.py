@@ -61,7 +61,7 @@ def load_csv(
     df = pd.read_csv(filepath, dtype=map_types, **kwargs)
 
     # Filter out nan rows - was messing with "ast.literal_eval".
-    df = df.dropna()
+    df = df.dropna(axis=0, how='all')
 
     # Map column names.
     df = df.rename(columns=map_cols)

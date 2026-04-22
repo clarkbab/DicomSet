@@ -35,7 +35,7 @@ class NiftiDataset(IndexMixin, Dataset):
     @property
     def dicom(self) -> DicomDataset:
         if self.__index is None:
-            raise ValueError(f"Missing 'index.csv' for dataset '{self._dataset.id}', cannot find corresponding dicom dataset.")
+            raise ValueError(f"Missing 'index.csv' for dataset '{self.id}', cannot find corresponding dicom dataset.")
         ds = self.__index['dicom-dataset'].unique().tolist()
         assert len(ds) == 1
         return DicomDataset(ds[0])
@@ -99,7 +99,7 @@ class NiftiDataset(IndexMixin, Dataset):
         # Filter by group ID.
         if group_id != 'all':
             if self.__groups is None:
-                raise ValueError(f"File 'groups.csv' not found for dicom dataset '{self._id}'.")
+                raise ValueError(f"File 'groups.csv' not found for dicom dataset '{self.__id}'.")
             all_groups = self.list_groups()
             group_ids = arg_to_list(group_id, str, literals={ 'all': all_groups })
             for g in group_ids:
@@ -251,8 +251,8 @@ class NiftiDataset(IndexMixin, Dataset):
         exc_df = self.__excluded_labels[self.__excluded_labels['patient-id'] == str(id)].copy() if self.__excluded_labels is not None else None
 
         # Get 'ct_from' patient.
-        if self._ct_from is not None and self._ct_from.has_patient(id):
-            ct_from = self._ct_from.patient(id)
+        if self.__ct_from is not None and self.__ct_from.has_patient(id):
+            ct_from = self.__ct_from.patient(id)
         else:
             ct_from = None
 

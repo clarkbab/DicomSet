@@ -28,9 +28,9 @@ class NiftiPatient(IndexMixin, Patient):
         region_map: RegionMap | None = None,
         ) -> None:
         super().__init__(dataset, id, ct_from=ct_from, index=index, region_map=region_map)
-        self.__path = os.path.join(config.directories.datasets, 'nifti', self._dataset.id, 'data', 'patients', self._id)
+        self.__path = os.path.join(config.directories.datasets, 'nifti', self.__dataset.id, 'data', 'patients', self.__id)
         if not os.path.exists(self.__path):
-            raise ValueError(f"No nifti patient '{self._id}' found at path: {self.__path}")
+            raise ValueError(f"No nifti patient '{self.__id}' found at path: {self.__path}")
 
     @property
     def default_study(self) -> NiftiStudy | None:
@@ -40,10 +40,10 @@ class NiftiPatient(IndexMixin, Patient):
     @property
     def dicom(self) -> DicomPatient:
         if self.__index is None:
-            raise ValueError(f"Missing 'index.csv' for dataset '{self._dataset.id}', cannot find corresponding dicom patient.")
+            raise ValueError(f"Missing 'index.csv' for dataset '{self.__dataset.id}', cannot find corresponding dicom patient.")
         index = self.__index[['dataset', 'patient-id', 'dicom-dataset', 'dicom-patient-id']]
-        index = index[(index['dataset'] == self._dataset.id) & (index['patient-id'] == self._id)].drop_duplicates()
-        assert len(index) == 1, f"Expected 1 index entry for DICOM patient '{self._id}', but found {len(index)}. Index: {index}"
+        index = index[(index['dataset'] == self.__dataset.id) & (index['patient-id'] == self.__id)].drop_duplicates()
+        assert len(index) == 1, f"Expected 1 index entry for DICOM patient '{self.__id}', but found {len(index)}. Index: {index}"
         row = index.iloc[0]
         return DicomDataset(row['dicom-dataset']).patient(row['dicom-patient-id'])
 
@@ -97,12 +97,12 @@ class NiftiPatient(IndexMixin, Patient):
         index = self.__index[self.__index['study-id'] == id].copy() if self.__index is not None else None
 
         # Get 'ct_from' study.
-        if self._ct_from is not None and self._ct_from.has_study(id):
-            ct_from = self._ct_from.study(id)
+        if self.__ct_from is not None and self.__ct_from.has_study(id):
+            ct_from = self.__ct_from.study(id)
         else:
             ct_from = None
 
-        return NiftiStudy(self._dataset, self, id, ct_from=ct_from, index=index, region_map=self._region_map, **kwargs)
+        return NiftiStudy(self.__dataset, self, id, ct_from=ct_from, index=index, region_map=self.__region_map, **kwargs)
 
 # Add properties/methods from 'default_study'.
 mods = ['ct', 'dose', 'landmarks', 'mr', 'regions']

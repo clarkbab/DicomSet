@@ -34,9 +34,9 @@ class NiftiLandmarksSeries(NiftiSeries):
         ref_dose: NiftiDoseSeries | None = None,
         ) -> None:
         super().__init__('landmarks', dataset, patient, study, id, index=index)
-        self.__filepath = os.path.join(config.directories.datasets, 'nifti', self._dataset.id, 'data', 'patients', self._pat.id, self._study.id, self._modality, f'{self._id}.csv')
+        self.__filepath = os.path.join(config.directories.datasets, 'nifti', self.__dataset.id, 'data', 'patients', self.__patient.id, self.__study.id, self.__modality, f'{self.__id}.csv')
         if not os.path.exists(self.__filepath):
-            raise ValueError(f"No NiftiLandmarksSeries '{self._id}' found for study '{self._study.id}'. Filepath: {self.__filepath}")
+            raise ValueError(f"No NiftiLandmarksSeries '{self.__id}' found for study '{self.__study.id}'. Filepath: {self.__filepath}")
         self.__ref_ct = ref_ct
         self.__ref_dose = ref_dose
 
@@ -90,11 +90,11 @@ class NiftiLandmarksSeries(NiftiSeries):
 
         # Add extra columns - in case we're concatenating landmarks from multiple patients/studies.
         if 'patient-id' not in landmarks_data.columns:
-            landmarks_data.insert(0, 'patient-id', self._pat.id)
+            landmarks_data.insert(0, 'patient-id', self.__patient.id)
         if 'study-id' not in landmarks_data.columns:
-            landmarks_data.insert(1, 'study-id', self._study.id)
+            landmarks_data.insert(1, 'study-id', self.__study.id)
         if 'series-id' not in landmarks_data.columns:
-            landmarks_data.insert(2, 'series-id', self._id)
+            landmarks_data.insert(2, 'series-id', self.__id)
 
         if points_only:
             return landmarks_data[range(3)].to_numpy().astype(np.float32)
@@ -106,8 +106,8 @@ class NiftiLandmarksSeries(NiftiSeries):
         if self.__index is None:
             raise ValueError(f"Dataset did not originate from dicom (no 'index.csv').")
         index = self.__index[['dataset', 'patient-id', 'study-id', 'series-id', 'modality', 'dicom-dataset', 'dicom-patient-id', 'dicom-study-id', 'dicom-series-id']]
-        index = index[(index['dataset'] == self._dataset.id) & (index['patient-id'] == self._pat.id) & (index['study-id'] == self._study.id) & (index['series-id'] == self._id) & (index['modality'] == 'landmarks')].drop_duplicates()
-        assert len(index) == 1, f"Expected 1 index entry for DICOM landmarks series '{self._id}', but found {len(index)}. Index: {index}"
+        index = index[(index['dataset'] == self.__dataset.id) & (index['patient-id'] == self.__patient.id) & (index['study-id'] == self.__study.id) & (index['series-id'] == self.__id) & (index['modality'] == 'landmarks')].drop_duplicates()
+        assert len(index) == 1, f"Expected 1 index entry for DICOM landmarks series '{self.__id}', but found {len(index)}. Index: {index}"
         row = index.iloc[0]
         return DicomDataset(row['dicom-dataset']).patient(row['dicom-patient-id']).study(row['dicom-study-id']).rtstruct_series(row['dicom-series-id'])
 
