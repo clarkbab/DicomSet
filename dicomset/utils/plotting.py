@@ -201,7 +201,7 @@ def plot_hist(
         return ax
 
 def plot_slice(
-    data: Image2D,
+    data: Image2D | None,
     affine: AffineMatrix2D | None = None,
     alpha: float = 0.3,
     ax: mpl.axes.Axes | None = None,
@@ -222,12 +222,19 @@ def plot_slice(
     y_label: str | None = None,
     y_origin: Literal['lower', 'upper'] | None = 'upper',
     ) -> mpl.axes.Axes | None:
+    if data is None:
+        assert labels is not None, "Labels must be provided if data is None."
+        data = np.zeros(labels.shape[-2:])
+
     # Resolve window to vmin/vmax.
     vmin, vmax = __resolve_window(window, vmin, vmax)
 
     # Normalise labels to batch form (B, X, Y).
     if labels is not None and labels.ndim == 2:
         labels = labels[np.newaxis]
+    if labels is not None and labels.dtype != bool:
+        if labels.min() < 0 or labels.max() > 1:
+            logger.warn(f"Labels values are outside the range [0, 1]. Got min={labels.min():.3f}, max={labels.max():.3f}.")
 
     if ax is None:
         if show_hist:
@@ -327,6 +334,7 @@ def plot_slice(
 def plot_volume(
     data: Image3D | None,
     affine: AffineMatrix3D | None = None,
+    ax: mpl.axes.Axes | List[mpl.axes.Axes] | None = None,
     cmap: str = 'gray',
     dose: Image3D | None = None,
     dose_alpha_min: float = 0.3,
@@ -363,6 +371,9 @@ def plot_volume(
     # Normalise labels to batch form (B, X, Y, Z).
     if labels is not None and labels.ndim == 3:
         labels = labels[np.newaxis]
+    if labels is not None and labels.dtype != bool:
+        if labels.min() < 0 or labels.max() > 1:
+            logger.warn(f"Labels values are outside the range [0, 1]. Got min={labels.min():.3f}, max={labels.max():.3f}.")
 
     # Check for empty points array - could be filtered by the transform.
     if points is not None:
@@ -388,8 +399,14 @@ def plot_volume(
 
     palette = sns.color_palette('colorblind', 20)
 
-    fig, axs = plt.subplots(1, len(views), figsize=figsize, squeeze=False)
-    axs = axs[0]
+    if ax is not None:
+        axs = arg_to_list(ax, mpl.axes.Axes)
+        assert len(axs) == len(views), f"Expected {len(views)} axes but got {len(axs)}."
+        show = False
+    else:
+        _, axs_grid = plt.subplots(1, len(views), figsize=figsize, squeeze=False)
+        axs = list(axs_grid[0])
+        show = True
 
     for col_ax, v in zip(axs, views):
         resolved_idx = _get_view_idx(v, data.shape, affine=affine, centre_method=centre_method, idx=idx, label_names=label_names, labels=labels, points=points)
@@ -483,8 +500,9 @@ def plot_volume(
         for p in ['right', 'top', 'bottom', 'left']:
             col_ax.spines[p].set_visible(False)
 
-    plt.tight_layout()
-    plt.show()
+    if show:
+        plt.tight_layout()
+        plt.show()
 
     if return_axis:
         return axs

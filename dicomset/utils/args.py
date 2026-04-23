@@ -185,8 +185,11 @@ def get_inner_args(
     return visitor.args, visitor.kwargs
 
 def resolve_filepath(filepath: FilePath) -> FilePath:
-    if filepath.startswith('files:'):
-        filepath = os.path.join(config.directories.files, filepath[6:])
+    file_options = ['f', 'file', 'files']
+    for f in file_options:
+        if filepath.startswith(f"{f}:"):
+            filepath = os.path.join(config.directories.files, filepath[len(f) + 1:])
+            break
     return filepath
 
 def resolve_id(

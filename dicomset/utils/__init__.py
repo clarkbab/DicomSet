@@ -12,7 +12,7 @@ LAZY_IMPORTS = {
         'foreground_fov', 'foreground_fov_centre', 'foreground_fov_width', 'fov', 'fov_centre', 'fov_width'
     ],
     'images': ['create_box_label'],
-    'io': ['load_csv', 'save_csv'],
+    'io': ['load_csv', 'load_nifti', 'load_numpy', 'save_csv', 'save_nifti', 'save_numpy'],
     'landmarks': ['landmarks_dim', 'landmarks_to_points', 'points_to_landmarks'],
     'load_utils': ['list', 'load'],
     'logging': ['logger'],

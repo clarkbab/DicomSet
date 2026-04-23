@@ -103,6 +103,7 @@ def load_numpy(
     filepath: FilePath,
     keys: str | List[str] = 'data',
     ) -> np.ndarray:
+    filepath = resolve_filepath(filepath)
     assert filepath.endswith('.npy') or filepath.endswith('.npz'), "Filepath must end with .npy or .npz"
     data = np.load(filepath)
     if filepath.endswith('.npz'):
