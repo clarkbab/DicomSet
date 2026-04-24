@@ -45,12 +45,11 @@ class NiftiRegionsSeries(NiftiImageSeries):
     def data(
         self,
         region_id: RegionID | List[RegionID] | Literal['all'] = 'all',
-        return_regions: bool = False,
         use_mapping: bool = True,
-        ) -> BatchLabelImage3D | Tuple[BatchLabelImage3D, List[RegionID]]:
-        region_ids = self.list_regions(region_id=region_id, use_mapping=use_mapping)
+        ) -> Tuple[List[RegionID], BatchLabelImage3D]:
         if self.__region_map is None:
             use_mapping = False
+        region_ids = self.list_regions(region_id=region_id, use_mapping=use_mapping)
 
         # Add regions data.
         regions_data = None    # We don't know the shape yet.
@@ -73,6 +72,9 @@ class NiftiRegionsSeries(NiftiImageSeries):
                             d, _ = load_nifti(filepath)
                         else:
                             d, _ = load_nrrd(filepath)
+                        # Check this because labels could be written by saving predictions
+                        # as labels can could have wrong dimensions.
+                        assert len(d.shape) == 3, f"Expected 3D region data but got {d.shape} at filepath: {filepath}"
                         reg_data.append(d)
                         break
             if len(reg_data) == 0:
@@ -84,10 +86,7 @@ class NiftiRegionsSeries(NiftiImageSeries):
                 regions_data = np.zeros((len(region_ids), *reg_data.shape), dtype=bool)
             regions_data[i] = reg_data
 
-        if return_regions:
-            return regions_data, region_ids
-        else:
-            return regions_data
+        return region_ids, regions_data
 
     @property
     def dicom(self) -> DicomRtStructSeries:

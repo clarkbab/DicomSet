@@ -225,8 +225,9 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         ct_from = self.__ct_from.patient(id) if self.__ct_from is not None and self.__ct_from.has_patient(id) else None
         return DicomPatient(self, id, index, self.__index_policy, index_errors, config=self.__config, ct_from=ct_from, region_map=self.__region_map, **kwargs)
 
+    @property
     @ensure_loaded('__region_map', '__load_region_map')
-    def region_map(self) -> RegionMap:
+    def region_map(self) -> RegionMap | None:
         return self.__region_map
 
     def __str__(self) -> str:

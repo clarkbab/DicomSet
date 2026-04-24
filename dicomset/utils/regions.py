@@ -7,7 +7,7 @@ from .args import arg_to_list
 # Converts to a list and resolves region lists ("rl:<name>").
 def region_to_list(
     region_id: RegionID | RegionList | List[RegionID | RegionList] | Literal['all'],
-    region_map: RegionMap | None,
+    region_map: RegionMap | None = None,
     **kwargs,
     ) -> List[RegionID]:
     region_ids = arg_to_list(region_id, str, **kwargs)

@@ -3,8 +3,7 @@ from __future__ import annotations
 import numpy as np
 import os
 import pandas as pd
-import re
-from typing import Any, Dict, List, Literal, TYPE_CHECKING
+from typing import Any, Dict, List, Literal, Tuple, TYPE_CHECKING
 
 from ... import config as conf
 from ...region_map import RegionMap
@@ -13,7 +12,7 @@ from ...utils.args import alias_kwargs, arg_to_list
 from ...utils.landmarks import landmarks_to_points
 from ...utils.python import ensure_loaded
 from ...utils.regions import region_to_list
-from ..utils.dicom import from_rtstruct_dicom, list_rtstruct_regions
+from ..utils.dicom import from_rtstruct_dicom, list_rtstruct_landmarks, list_rtstruct_regions
 from ..utils.io import load_dicom
 from .series import DicomSeries
 if TYPE_CHECKING:
@@ -87,17 +86,17 @@ class DicomRtStructSeries(DicomSeries):
     def landmarks_data(
         self,
         add_ids: bool = True,
-        points_only: bool = False,
-        landmark_id: LandmarkID | List[LandmarkID] = 'all',
+        landmark_id: LandmarkID | List[LandmarkID] | Literal['all'] = 'all',
         landmark_regexp: str | None = None,
+        return_points: bool = False,
         use_world_coords: bool = True,
         **kwargs,
-        ) -> Landmarks3D | Points3D | Voxels:
+        ) -> Tuple[List[LandmarkID], Landmarks3D | Points3D | Voxels]:
         # Load landmarks.
         landmark_ids = self.list_landmarks(landmark_id=landmark_id, landmark_regexp=landmark_regexp, **kwargs)
         _, landmarks_data = from_rtstruct_dicom(self.dicom, self.ref_ct.size, self.ref_ct.affine, landmark_id=landmark_ids, landmark_regexp=landmark_regexp, region_id=None)
         if landmarks_data is None:
-            return None
+            return None, None
 
         # Add extra columns - in case we're concatenating landmarks from multiple patients/studies.
         if add_ids:
@@ -120,25 +119,48 @@ class DicomRtStructSeries(DicomSeries):
         sort_cols += ['landmark-id']
         landmarks_data = landmarks_data.sort_values(sort_cols)
 
-        if points_only:
-            return landmarks_to_points(landmarks_data)
-        else:
-            return landmarks_data
+        # Extract points.
+        if return_points:
+            landmarks_data = landmarks_to_points(landmarks_data)
+
+        return landmark_ids, landmarks_data
 
     @ensure_loaded('__data', '__load_data')
     def list_landmarks(
         self,
         landmark_id: LandmarkID | List[LandmarkID] = 'all',
         landmark_regexp: str | None = None,
+        use_mapping: bool = True,
         ) -> List[LandmarkID]:
-        landmark_regexp = landmark_regexp or DEFAULT_LANDMARK_REGEXP
-        ids = self.list_regions(filter_landmarks=False)
-        # Both landmarks/regions are stored in rtstruct, but we only want objects like 'Marker 1' for example.
-        ids = [l for l in ids if re.match(landmark_regexp, l)]
-        if landmark_id != 'all':
+        if self.__region_map is None:
+            use_mapping = False
+
+        # Get disk landmarks.
+        # Don't pass 'landmark_id' here as "list_rtstruct_landmarks" doesn't know about region mapping.
+        all_disk_landmarks = list_rtstruct_landmarks(self.dicom, landmark_regexp=landmark_regexp)
+
+        # Map disk landmarks back to API landmarks.
+        if landmark_id == 'all':
+            if use_mapping:
+                # Map back to the API landmark names.
+                api_landmarks = [self.__region_map.map_disk_to_regions(r) for r in all_disk_landmarks]
+                api_landmarks = [r for rs in api_landmarks for r in (rs if isinstance(rs, list) else [rs])]
+            else:
+                api_landmarks = all_disk_landmarks
+        else:
             landmark_ids = region_to_list(landmark_id, region_map=self.__region_map)
-            ids = [i for i in ids if i in landmark_ids]
-        return ids
+            api_landmarks = []
+            for r in landmark_ids:
+                # Only keep landmarks that map to a one or more disk landmarks.
+                if use_mapping:
+                    disk_landmarks = self.__region_map.map_region_to_disk(r)
+                    if len(np.intersect1d(disk_landmarks, all_disk_landmarks)) > 0:
+                        api_landmarks.append(r)
+                else:
+                    if r in all_disk_landmarks:
+                        api_landmarks.append(r)
+
+        return list(sorted(set(api_landmarks)))
 
     @alias_kwargs(
         ('r', 'region_id'),
@@ -151,22 +173,21 @@ class DicomRtStructSeries(DicomSeries):
         region_id: RegionID | List[RegionID] | RegionList | Literal['all'] = 'all',
         use_mapping: bool = True,
         ) -> List[RegionID]:
-        if filter_landmarks and landmark_regexp is None:
-            landmark_regexp = self.landmark_regexp
         if self.__region_map is None:
             use_mapping = False
 
         # Get disk regions.
-        true_disk_regions = list_rtstruct_regions(self.dicom)
+        # Don't pass 'region_id' here as "list_rtstruct_regions" doesn't know about region mapping.
+        all_disk_regions = list_rtstruct_regions(self.dicom, landmark_regexp=landmark_regexp)
 
         # Map disk regions back to API regions.
         if region_id == 'all':
             if use_mapping:
                 # Map back to the API region names.
-                api_regions = [self.__region_map.map_disk_to_regions(r) for r in true_disk_regions]
+                api_regions = [self.__region_map.map_disk_to_regions(r) for r in all_disk_regions]
                 api_regions = [r for rs in api_regions for r in (rs if isinstance(rs, list) else [rs])]
             else:
-                api_regions = true_disk_regions
+                api_regions = all_disk_regions
         else:
             region_ids = region_to_list(region_id, region_map=self.__region_map)
             api_regions = []
@@ -174,16 +195,11 @@ class DicomRtStructSeries(DicomSeries):
                 # Only keep regions that map to a one or more disk regions.
                 if use_mapping:
                     disk_regions = self.__region_map.map_region_to_disk(r)
-                    if len(np.intersect1d(disk_regions, true_disk_regions)) > 0:
+                    if len(np.intersect1d(disk_regions, all_disk_regions)) > 0:
                         api_regions.append(r)
                 else:
-                    if r in true_disk_regions:
+                    if r in all_disk_regions:
                         api_regions.append(r)
-
-        # Filter landmarks. Currently at the region level, does this ever need to
-        # be at disk level?
-        if landmark_regexp is not None:
-            api_regions = [r for r in api_regions if not re.match(landmark_regexp, r)]
 
         return list(sorted(set(api_regions)))
 
@@ -199,17 +215,15 @@ class DicomRtStructSeries(DicomSeries):
 
     @alias_kwargs(
         ('r', 'region_id'),
-        ('rr', 'return_regions'),
         ('um', 'use_mapping'),
     )
     @ensure_loaded('__data', '__load_data')
     def regions_data(
         self,
         region_id: RegionID | List[RegionID] | RegionList | Literal['all'] = 'all',
-        return_regions: bool = False,
         use_mapping: bool = True,
         **kwargs,
-        ) -> BatchLabelImage3D:
+        ) -> Tuple[List[RegionID], BatchLabelImage3D]:
         if self.__region_map is None:
             use_mapping = False
 
@@ -234,11 +248,12 @@ class DicomRtStructSeries(DicomSeries):
                 mapped_regions[r] = [r]
 
         # Load up a unique set of disk regions.
-        unique_disk_regions = set()
-        for r in mapped_regions.values():
-            unique_disk_regions.update(r)
-        unique_disk_regions = list(unique_disk_regions)
-        labels, _ = from_rtstruct_dicom(self.dicom, self.ref_ct.size, self.ref_ct.affine, region_id=unique_disk_regions)
+        disk_regions = [ri for r in mapped_regions.values() for ri in r]
+        unique_disk_regions = list(sorted(np.unique(disk_regions).tolist()))
+
+        # We can assume all passed regions are loaded, as they come from 'list_regions' which is based on regions
+        # present in the rtstruct dicom.
+        _, labels = from_rtstruct_dicom(self.dicom, self.ref_ct.size, self.ref_ct.affine, landmark_id=None, region_id=unique_disk_regions)
 
         # Aggregate results for each API region.
         regions_data = None    # We don't know the shape yet.
@@ -255,10 +270,7 @@ class DicomRtStructSeries(DicomSeries):
                 regions_data = np.zeros((len(region_ids), *reg_data.shape), dtype=bool)
             regions_data[i] = reg_data
 
-        if return_regions:
-            return regions_data, region_ids
-        else:
-            return regions_data
+        return region_ids, regions_data
 
     def __str__(self) -> str:
         return super().__str__(self.__class__.__name__)

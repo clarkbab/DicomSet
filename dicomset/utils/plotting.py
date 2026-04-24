@@ -5,7 +5,7 @@ import pandas as pd
 import seaborn as sns
 from typing import List, Literal
 
-from ..typing import AffineMatrix, AffineMatrix2D, AffineMatrix3D, BatchLabelImage, BatchLabelImage2D, BatchLabelImage3D, Box, Box2D, Box3D, Image, Image2D, Image3D, LabelImage2D, LabelImage3D, Landmark3D, Landmarks3D, Number, Orientation, Pixel, PixelBox, Point, Point2D, Point3D, Points, Points2D, Points3D, RegionID, Size, View, Voxel, VoxelBox, Window
+from ..typing import AffineMatrix, AffineMatrix2D, AffineMatrix3D, BatchBox, BatchBox3D, BatchLabelImage, BatchLabelImage2D, BatchLabelImage3D, BatchVoxelBox, Box, Box2D, Box3D, Image, Image2D, Image3D, LabelImage, LabelImage2D, LabelImage3D, Landmark3D, Landmarks3D, Number, Orientation, Pixel, PixelBox, Point, Point2D, Point3D, Points, Points2D, Points3D, RegionID, Size, View, Voxel, VoxelBox, Window
 from .args import alias_kwargs, arg_to_list
 from .conversion import to_numpy
 from .geometry import affine_origin, affine_spacing, centre_of_mass, foreground_fov, foreground_fov_centre, to_image_coords
@@ -169,7 +169,7 @@ def plot_slice(
             assert points.shape[1] == 2, f"Expected points to have shape (N, 2) but got {points.shape}."
 
     # Resolve crop.
-    crop_box = _resolve_crop(crop, crop_margin, data.shape, affine, labels, None, points)
+    crop_box = __resolve_crop(crop, crop_margin, data.shape, affine=affine, label_names=None, labels=labels, points=points)
     print(crop_box)
 
     if ax is None:
@@ -265,6 +265,7 @@ def plot_slice(
 
 @alias_kwargs(
     ('a', 'affine'),
+    ('b', 'box'),
     ('c', 'crop'),
     ('ch', 'crosshairs'),
     ('cm', 'crop_margin'),
@@ -279,6 +280,7 @@ def plot_volume(
     data: Image3D | None,
     affine: AffineMatrix3D | None = None,
     ax: mpl.axes.Axes | List[mpl.axes.Axes] | None = None,
+    box: Box3D | BatchBox3D | RegionID | List[RegionID] | None = None,
     cmap: str = 'gray',
     crop: Box3D | Point3D | str | None = None,
     crop_margin: int = 100,
@@ -343,15 +345,18 @@ def plot_volume(
         else:
             assert points.shape[1] == 3, f"Expected points to have shape (N, 3) but got {points.shape}."
 
+
     # Resolve views.
     views = list(range(3)) if view == 'all' else (view if isinstance(view, list) else [view])
 
     # Resolve idx and crosshairs to 3D voxel points.
-    idx_vox = _resolve_point(idx, data.shape, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, points=points)
+    idx_vox = __resolve_point(idx, data.shape, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, points=points)
 
     # Resolve crop to a voxel bounding box.
-    crop_box = _resolve_crop(crop, crop_margin, data.shape, affine, labels, label_names, points)
-    print(crop_box)
+    crop_box = __resolve_crop(crop, crop_margin, data.shape, affine=affine, label_names=label_names, labels=labels, points=points)
+
+    # Resolve boxes for overlay.
+    boxes = __resolve_boxes(box, data.shape, affine=affine, label_names=label_names, labels=labels)
 
     palette = sns.color_palette('colorblind', 20)
 
@@ -381,6 +386,19 @@ def plot_volume(
         col_ax.imshow(image.T, aspect=aspect, cmap=cmap, origin=origin_y, vmax=vmax, vmin=vmin)
         if origin_x == 'upper':
             col_ax.invert_xaxis()
+
+        # Box overlays.
+        if boxes is not None:
+            # Get 2D boxes.
+            x_axis, y_axis = _get_view_xy(v, list(range(3)))
+            boxes2d = boxes[:, :, [x_axis, y_axis]]
+            box_palette = sns.color_palette('colorblind', len(boxes2d))
+            for bi, b in enumerate(boxes2d):
+                # Draw rectangle from min/max corners.
+                width = b[1][0] - b[0][0]
+                height = b[1][1] - b[0][1]
+                rect = mpl.patches.Rectangle((b[0][0], b[0][1]), width, height, edgecolor=box_palette[bi % len(box_palette)], facecolor='none', linestyle='dotted', linewidth=2, zorder=10)
+                col_ax.add_patch(rect)
 
         # Dose overlay.
         if dose is not None:
@@ -438,7 +456,7 @@ def plot_volume(
 
         # Crosshairs.
         if crosshairs is not None:
-            crosshairs_vox = _resolve_point(crosshairs, data.shape, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, points=points)
+            crosshairs_vox = __resolve_point(crosshairs, data.shape, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, points=points)
             ch_x, ch_y = _get_view_xy(v, crosshairs_vox)
             if view_crop_box is not None:
                 ch_x -= view_crop_box[0, 0]
@@ -504,15 +522,61 @@ def plot_volume(
     if return_axis:
         return axs
 
-def _resolve_crop(
+def __resolve_boxes(
+    box: Box | BatchBox | RegionID | List[RegionID] | None,
+    size: Size,
+    affine: AffineMatrix | None = None,
+    labels: LabelImage | BatchLabelImage | None = None,
+    label_names: List[RegionID] | None = None,
+    ) -> BatchVoxelBox | None:
+    if box is None:
+        return None
+
+    # Resolve foreground fov for region IDs.
+    if isinstance(box, (str, list)):
+        if labels is None:
+            raise ValueError("If box is a region ID, labels must be provided.")
+        if label_names is not None:
+            label_names_list = arg_to_list(label_names, str)
+        else:
+            label_names_list = None
+        region_ids = arg_to_list(box, str)
+        boxes = []
+        for r in region_ids:
+            if label_names_list is None:
+                raise ValueError("Label names must be provided for string region IDs.")
+            if r not in label_names_list:
+                raise ValueError(f"Region name '{r}' not found in label_names: {label_names_list}.")
+            idx = label_names_list.index(r)
+            fov = foreground_fov(labels[idx])
+            if fov is None:
+                continue
+            boxes.append(fov)
+        if not boxes:
+            return None
+        return np.stack(boxes)
+
+    # Convert single box to batch.
+    if box.ndim == 2:
+        boxes = box[None]
+
+    # Convert to image coords.
+    if affine is not None:
+        for i in range(len(boxes)):
+            boxes[i] = to_image_coords(boxes[i], affine)
+            boxes[i] = np.clip(boxes[i], 0, np.array(size) - 1)
+
+    return boxes
+
+def __resolve_crop(
     crop: Box | Point | str | None,
     crop_margin: int,
     size: Size,
-    affine: AffineMatrix | None,
-    labels: BatchLabelImage | None,
-    label_names: List[RegionID] | None,
-    points: Points | None,
-) -> PixelBox | VoxelBox | None:
+    affine: AffineMatrix | None = None,
+    labels: BatchLabelImage | None = None,
+    label_names: List[RegionID] | None = None,
+    points: Points | None = None,
+    ) -> PixelBox | VoxelBox | None:
     if crop is None:
         return None
 
@@ -589,7 +653,7 @@ def _resolve_crop(
     ])
     return box_vox
 
-def _resolve_point(
+def __resolve_point(
     idx: int | float | str | Point | None,
     size: Size,
     affine: AffineMatrix | None = None,

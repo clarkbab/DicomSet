@@ -60,9 +60,9 @@ def filter_lists(
     for l in lists:
         if len(l) != n_elements:
             raise ValueError('All lists must have the same length.')
-    lists = list(map(list, zip(*[i for i in list(zip(*lists)) if filt_fn(i)])))
+    lists = tuple(map(list, zip(*[i for i in list(zip(*lists)) if filt_fn(i)])))
     if len(lists) == 0:
-        return [[],] * n_lists
+        lists = ([],) * n_lists
     return lists
 
 def get_private_attr(obj, attr_name, *args):
@@ -136,6 +136,20 @@ def set_private_attr(obj, attr_name, value):
     if attr_name.startswith('__'):
         attr_name = f"_{obj.__class__.__name__}{attr_name}"
     setattr(obj, attr_name, value)
+
+def sort_lists(
+    lists: List[List[Any]],
+    key: Callable[[List[Any]], int],
+    ) -> List[List[Any]]:
+    n_lists = len(lists)
+    n_elements = len(lists[0])
+    for l in lists:
+        if len(l) != n_elements:
+            raise ValueError('All lists must have the same length.')
+    lists = tuple(map(list, zip(*sorted(zip(*lists), key=key))))
+    if len(lists) == 0:
+        lists = ([],) * n_lists
+    return lists
 
 def version(
     gte: str | None = None,

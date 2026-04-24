@@ -17,7 +17,7 @@ def landmarks_dim(
     return len(axes)
 
 def landmarks_to_points(
-    landmarks: Landmarks,
+    landmarks: Landmark | Landmarks,
     ) -> Points:
     dim = landmarks_dim(landmarks)
     # Need the 'astype' because pd.Series will have mixed types (e.g. landmark-id vs. axes).

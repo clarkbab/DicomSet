@@ -101,7 +101,7 @@ def convert_to_nifti(
 
     # Create NIFTI dataset.
     dest_dataset = dataset if dest_dataset is None else dest_dataset
-    nifti_set = create_nifti(dest_dataset, recreate=recreate_dataset)
+    nifti_set = create_nifti_dataset(dest_dataset, recreate=recreate_dataset)
 
     # Load all patients.
     dicom_set = DicomDataset(dataset)
@@ -153,15 +153,19 @@ def convert_to_nifti(
                 # Are recreate_patients/studies the same thing?
                 # Yes - plus recreate_patients is just a shortcut for recreate_ct/dose/landmarks/etc.
                 if recreate_patients:
+                    logger.info(f"Removing existing patient directory: {dirpath}")
                     shutil.rmtree(dirpath)
                 else:
+                    # Recreate specified modalities.
+                    mods = ['ct', 'dose', 'landmarks', 'regions']
+                    recreate_mods = [recreate_ct, recreate_dose, recreate_landmarks, recreate_regions]
+                    mods = [m for r, m in zip(recreate_mods, mods) if r]
                     study_ids = os.listdir(dirpath)
-                    for s in study_ids:
-                        recreate_mods = [recreate_ct, recreate_dose, recreate_landmarks, recreate_regions]
-                        mods = ['ct', 'dose', 'landmarks', 'regions']
-                        for r, m in zip(recreate_mods, mods):
+                    for m in mods:
+                        for s in study_ids:
                             series_dirpath = os.path.join(dirpath, s, m)
-                            if r and os.path.exists(series_dirpath):
+                            if os.path.exists(series_dirpath):
+                                logger.info(f"Removing existing series directory: {series_dirpath}")
                                 shutil.rmtree(series_dirpath)
 
     # Remove markers.
@@ -346,7 +350,7 @@ def convert_to_nifti(
                         create_index_entry = False
 
                         if p in patient_ids:
-                            landmarks_data = series.landmarks_data(add_ids=False, landmark_id=landmark_id)
+                            _, landmarks_data = series.landmarks_data(add_ids=False, landmark_id=landmark_id)
                             if landmarks_data is not None:
                                 if not os.path.exists(filepath):
                                     logger.info(f"Writing: {series} -> {filepath}")
@@ -399,7 +403,8 @@ def convert_to_nifti(
                                 # nifti dataset.
                                 # Realistically, this conversion will only be run once or maybe a few times at
                                 # the beginning of a project, so it doesn't have to be super efficient.
-                                region_data = series.regions_data(region_id=r)
+                                _, region_data = series.regions_data(region_id=r)
+                                region_data = region_data[0]    # Region data is a batch.
                                 if region_data is not None:
                                     if not os.path.exists(filepath):
                                         logger.info(f"Writing: {series} -> {filepath}")

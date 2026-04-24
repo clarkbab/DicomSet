@@ -19,9 +19,9 @@ LAZY_IMPORTS = {
     'metrics': ['centroid_error', 'distances', 'dice', 'tre', 'volume'],
     'pandas': ['append_row'],
     'plotting': ['plot_hist', 'plot_slice', 'plot_volume'],
-    'python': ['ensure_loaded', 'filter_lists'],
+    'python': ['ensure_loaded', 'filter_lists', 'sort_lists'],
     'regions': ['region_to_list'],
-    'transforms': ['minmax', 'resample', 'spatial_transpose'],
+    'transforms': ['from_sitk_image', 'minmax', 'resample', 'spatial_transpose', 'to_sitk_image'],
 }
 
 __all__ = [attr for attrs in LAZY_IMPORTS.values() for attr in attrs]

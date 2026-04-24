@@ -11,13 +11,12 @@ import seaborn as sns
 import skimage as ski
 from typing import Any, Dict, List, Literal, Tuple
 
-from ...typing import AffineMatrix3D, BatchLabelImage3D, DirPath, DiskRegionID, FilePath, Image2D, Image3D, LabelImage3D, Landmarks, PatientID, Point2D, Points2D, RegionID, RtStructDicom, Size2D, Size3D, Spacing2D, StudyID
+from ...typing import AffineMatrix3D, BatchLabelImage3D, DirPath, DiskLandmarkID, DiskRegionID, FilePath, Image2D, Image3D, LabelImage3D, LandmarkID, Landmarks, PatientID, Point2D, Point3D, Points2D, RegionID, RtStructDicom, Size2D, Size3D, Spacing2D, StudyID
 from ...utils.args import alias_kwargs, arg_to_list
 from ...utils.geometry import affine_origin, affine_spacing, create_affine, to_image_coords
 from ...utils.landmarks import points_to_landmarks
-from ...utils.logging import logger
 from ...utils.maths import round
-from ...utils.python import filter_lists
+from ...utils.python import filter_lists, sort_lists
 from ..utils.io import load_dicom
 
 CONTOUR_FORMATS = ['POINT', 'CLOSED_PLANAR']
@@ -222,7 +221,6 @@ def from_rtplan_dicom(
 
 @alias_kwargs(
     ('r', 'region_id'),
-    ('rr', 'return_regions'),
 )
 def from_rtstruct_dicom(
     rtstruct: FilePath | dcm.dataset.FileDataset,
@@ -230,123 +228,114 @@ def from_rtstruct_dicom(
     ct_affine: AffineMatrix3D, 
     landmark_id: DiskLandmarkID | List[DiskLandmarkID] | Literal['all'] | None = 'all',
     landmark_regexp: str | None = None,
+    landmarks_use_world_coords: bool = True,
     region_id: DiskRegionID | List[DiskRegionID] | Literal['all'] | None = 'all',    
-    use_world_coords: bool = True,
-    ) -> Tuple[BatchLabelImage3D | None, Landmarks | None]:
+    ) -> Tuple[List[RegionID] | BatchLabelImage3D] | Tuple[List[LandmarkID] | Landmarks] | Tuple[List[RegionID], BatchLabelImage3D, List[LandmarkID], Landmarks]:
     if isinstance(rtstruct, str):
         rtstruct = load_dicom(rtstruct)
     ct_spacing = affine_spacing(ct_affine)
     ct_origin = affine_origin(ct_affine)
     landmark_regexp = landmark_regexp or DEFAULT_LANDMARK_REGEXP
+    assert region_id is not None or landmark_id is not None, "Either 'region/landmark_id' must not be None."
 
-    # Determine the rois to load.
-    rois = rtstruct.StructureSetROISequence
-    all_ids = [r.ROIName for r in rois]
-    all_contours = rtstruct.ROIContourSequence
-    if len(all_contours) != len(all_ids):
-        raise ValueError(f"Length of 'StructureSetROISequence' and 'ROIContourSequence' must be the same, got '{len(all_ids)}' and '{len(all_contours)}' respectively.")
-    # if region_id == 'all':
-    #     region_ids = all_ids
-    #     region_contours = all_contours
-    # else:
-    #     region_ids = arg_to_list(region_id, str)
-    #     region_contours = [] 
-    #     for r in region_ids:
-    #         if r not in all_region_ids:
-    #             raise ValueError(f"RTSTRUCT doesn't contain region '{r}'.")
-    #         idx = all_region_ids.index(r)                   
-    #         region_contours.append(all_region_contours[idx])
+    # Get landmark/region names.
+    if region_id is not None:
+        region_ids, region_contours = list_rtstruct_regions(rtstruct, landmark_regexp=landmark_regexp, region_id=region_id, return_contours=True)
+    if landmark_id is not None:
+        landmark_ids, landmark_contours = list_rtstruct_landmarks(rtstruct, landmark_id=landmark_id, landmark_regexp=landmark_regexp, return_contours=True)
 
     # The data hierarchy is:
     # rtstruct -> roi_contours -> roi_contour -> contours -> contour -> contour_data.
 
-    # Filter regions with missing 'ContourSequence' - this happened occasionally and we ended
-    # up with blank masks.
-    tmp_ids = all_ids
-    all_ids, all_contours = filter_lists([all_ids, all_contours], lambda ic: getattr(ic[1], 'ContourSequence', None) is not None)
-    n_skipped = len(tmp_ids) - len(all_ids)
-    if n_skipped > 0:
-        skipped = [i for i in tmp_ids if i not in all_ids]
-        logger.warn(f"The following ({n_skipped}) rtstruct regions don't have contour data and will be skipped: {skipped}")
-
-    # Handle landmarks first.
-    if landmark_id is not None:
-        # Filter for landmark contours.
-        landmark_ids, landmark_contours = filter_lists([all_ids, all_contours], lambda ic: re.match(landmark_regexp, ic[0]) is not None)
-
-        # Load data.
-        points = []
-        for i, c in zip(landmark_ids, landmark_contours):
-            # Filter contours without data.
-            contours = c.ContourSequence
-            contours = list(filter(lambda c: hasattr(c, 'ContourData'), contours))
-
-            if len(contours) != 1:
-                raise ValueError(f"Expected contour sequence of length 1 for landmark '{i}', got {len(contours)}.")
-
-            # Load landmark.
-            contour = contours[0]
-            if contour.ContourGeometricType != 'POINT':
-                raise ValueError(f"Expected contour type 'POINT' for landmark data. Got '{contour.ContourGeometricType}'.")
-            points.append(contour.ContourData)
-
-        # Convert to dataframe.
-        if len(points) > 0:
-            points = np.stack(points, axis=0).astype(np.float32)
-            if not use_world_coords:
-                points = to_image_coords(points, ct_affine)
-            landmarks_data = points_to_landmarks(points, landmark_ids)
-        else:
-            landmarks_data = None
-    else:
-        landmarks_data = None
-
+    # Load regions data.
+    regions_data = None
     if region_id is not None:
-        # Filter for region contours.
-        region_ids, region_contours = filter_lists([all_ids, all_contours], lambda ic: re.match(landmark_regexp, ic[0]) is None)
+        regions_data = [__get_region_label(cs, ct_size, ct_affine) for cs in region_contours]
+        regions_data = np.stack(regions_data, axis=0)
 
-        # Create label placeholder.
-        regions_data = np.zeros((len(region_ids), *ct_size), dtype=bool)
+    # Process landmarks data.
+    landmarks_data = None
+    if landmark_id is not None:
+        landmarks_points = [__get_landmark_point(cs, ct_affine, use_world_coords=landmarks_use_world_coords) for cs in landmark_contours]
+        landmarks_points = np.stack(landmarks_points, axis=0)
+        landmarks_data = points_to_landmarks(landmarks_points, landmark_ids)
 
-        # Add regions data.
-        for i, (r, cs) in enumerate(zip(region_ids, region_contours)):
-            # Filter contours without data.
-            contours = cs.ContourSequence
-            contours = list(filter(lambda c: hasattr(c, 'ContourData'), contours))
-            contours = list(sorted(contours, key=lambda c: c.ContourData[2]))  # Sort by z position.
+    result = []
+    if region_id is not None:
+        result += [region_ids, regions_data]
+    if landmark_id is not None:
+        result += [landmark_ids, landmarks_data]
+    return tuple(result)
 
-            # Convert from boundary point cloud into binary mask. 
-            for j, c in enumerate(contours):
-                contour_data = np.array(c.ContourData)
-                if not c.ContourGeometricType in CONTOUR_FORMATS:
-                    raise ValueError(f"Expected one of '{CONTOUR_FORMATS}' ContourGeometricTypes, got '{c.ContourGeometricType}' for contour '{j}', region '{r}'.")
+def __get_landmark_point(
+    contours: List['Something dcm'],
+    ct_affine: AffineMatrix3D | None,
+    use_world_coords: bool = True,
+    ) -> Point3D:
+    # Filter contours without data.
+    contours = list(filter(lambda c: hasattr(c, 'ContourData'), contours.ContourSequence))
 
-                # Coords are stored in flat array.
-                if contour_data.size % 3 != 0:
-                    raise ValueError(f"Size of 'contour_data' (array of points in 3D) should be divisible by 3.")
-                points = np.array(contour_data).reshape(-1, 3)
+    if len(contours) != 1:
+        raise ValueError(f"Expected contour sequence of length 1 for landmark '{i}', got {len(contours)}.")
 
-                # Convert contour data to voxels.
-                points_2D = points[:, :2]
-                size_2D, spacing_2D, origin_2D = list(ct_size)[:2], list(ct_spacing)[:2], list(ct_origin)[:2]
-                slice_data = __get_slice_mask(points_2D, size_2D, spacing_2D, origin_2D)
+    # Load landmark.
+    contour = contours[0]
+    if contour.ContourGeometricType != 'POINT':
+        raise ValueError(f"Expected contour type 'POINT' for landmark data. Got '{contour.ContourGeometricType}'.")
+    point = contour.ContourData
 
-                # Get z index of slice.
-                z_idx = int((points[0, 2] - ct_origin[2]) / ct_spacing[2])
+    # Convert to image coords.
+    if not use_world_coords and ct_affine is not None:
+        point = to_image_coords(point, ct_affine)
 
-                # Filter slices that are outside of the CT FOV.
-                if z_idx < 0 or z_idx > ct_size[2] - 1: 
-                    # Happened with 'PMCC-COMP:PMCC_AI_GYN_011' - Kidney_L...
-                    continue
+    return point
 
-                # Write slice data to label, using XOR.
-                regions_data[i, :, :, z_idx][slice_data == True] = np.invert(regions_data[i, :, :, z_idx][slice_data == True])
-    else:
-        regions_data = None
+def __get_region_label(
+    contours: List['Something dcm'],
+    ct_size: Size3D,
+    ct_affine: AffineMatrix3D,
+    ) -> LabelImage3D:
+    # Create placeholder.
+    region_data = np.zeros(ct_size, dtype=bool)
 
-    return regions_data, landmarks_data
+    # Filter contours without data.
+    contours = list(filter(lambda c: hasattr(c, 'ContourData'), contours.ContourSequence))
+    contours = list(sorted(contours, key=lambda c: c.ContourData[2]))  # Sort by z position.
 
-def __get_slice_mask(
+    # Get axial geometry.
+    ct_spacing = affine_spacing(ct_affine)
+    ct_origin = affine_origin(ct_affine)
+    ct_size_2d, ct_spacing_2d, ct_origin_2d = list(ct_size)[:2], list(ct_spacing)[:2], list(ct_origin)[:2]
+
+    # Convert from boundary point cloud into binary mask. 
+    for j, c in enumerate(contours):
+        contour_data = np.array(c.ContourData)
+        if not c.ContourGeometricType in CONTOUR_FORMATS:
+            raise ValueError(f"Expected one of '{CONTOUR_FORMATS}' ContourGeometricTypes, got '{c.ContourGeometricType}' for contour '{j}', region '{r}'.")
+
+        # Coords are stored in flat array.
+        if contour_data.size % 3 != 0:
+            raise ValueError(f"Size of 'contour_data' (array of points in 3D) should be divisible by 3.")
+        points = np.array(contour_data).reshape(-1, 3)
+
+        # Convert contour data to voxels.
+        points_2D = points[:, :2]
+        slice_data = __get_region_slice_label(points_2D, ct_size_2d, ct_spacing_2d, ct_origin_2d)
+
+        # Get z index of slice.
+        z_idx = int((points[0, 2] - ct_origin[2]) / ct_spacing[2])
+
+        # Filter slices that are outside of the CT FOV.
+        if z_idx < 0 or z_idx > ct_size[2] - 1: 
+            # Happened with 'PMCC-COMP:PMCC_AI_GYN_011' - Kidney_L...
+            continue
+
+        # Write slice data to label, using XOR.
+        region_data[:, :, z_idx][slice_data == True] = np.invert(region_data[:, :, z_idx][slice_data == True])
+
+    return region_data
+
+def __get_region_slice_label(
     points: Points2D,
     size: Size2D,
     spacing: Spacing2D,
@@ -370,17 +359,71 @@ def __get_slice_mask(
 
     return slice_data
 
-def list_rtstruct_regions(
+def list_rtstruct_landmarks(
     rtstruct: FilePath | RtStructDicom,
-    ) -> List[DiskRegionID]:
+    landmark_id: DiskLandmarkID | List[DiskLandmarkID] | Literal['all'] = 'all',
+    landmark_regexp: str | None = None,
+    return_contours: bool = False,
+    ) -> List[DiskLandmarkID] | Tuple[List[DiskLandmarkID], List['Something dcm']]:
     if isinstance(rtstruct, str):
         rtstruct = load_dicom(rtstruct, force=False)
-    all_infos = rtstruct.StructureSetROISequence
+    landmark_regexp = landmark_regexp or DEFAULT_LANDMARK_REGEXP
+
+    # Load all regions and contours.
+    all_ids = [i.ROIName for i in rtstruct.StructureSetROISequence]
     all_contours = rtstruct.ROIContourSequence
-    all_ids = list(sorted(i.ROIName for i in all_infos))
+
+    # Filter out regions.
+    landmark_ids, landmark_contours = filter_lists([all_ids, all_contours], lambda ic: re.match(landmark_regexp, ic[0]) is not None)
+
     # Filter on the presence of a 'ContourSequence' - sometimes empty.
-    region_ids, _ = filter_lists([all_ids, all_contours], lambda ic: getattr(ic[1], 'ContourSequence', None) is not None)
-    return region_ids
+    landmark_ids, landmark_contours = filter_lists([landmark_ids, landmark_contours], lambda ic: getattr(ic[1], 'ContourSequence', None) is not None)
+
+    # Filter by 'landmark_id'.
+    if landmark_id != 'all':
+        req_landmark_ids = arg_to_list(landmark_id, str)
+        landmark_ids, landmark_contours = filter_lists([landmark_ids, landmark_contours], lambda ic: ic[0] in req_landmark_ids)
+
+    # Sort results.
+    landmark_ids, landmark_contours = sort_lists([landmark_ids, landmark_contours], key=lambda ic: ic[0])
+
+    if return_contours:
+        return landmark_ids, landmark_contours
+    else:
+        return landmark_ids
+
+def list_rtstruct_regions(
+    rtstruct: FilePath | RtStructDicom,
+    landmark_regexp: str | None = None,
+    region_id: DiskRegionID | List[DiskRegionID] | Literal['all'] = 'all',
+    return_contours: bool = False,
+    ) -> List[DiskRegionID] | Tuple[List[DiskRegionID], List['Something dcm']]:
+    if isinstance(rtstruct, str):
+        rtstruct = load_dicom(rtstruct, force=False)
+    landmark_regexp = landmark_regexp or DEFAULT_LANDMARK_REGEXP
+
+    # Load all regions and contours.
+    all_ids = [i.ROIName for i in rtstruct.StructureSetROISequence]
+    all_contours = rtstruct.ROIContourSequence
+
+    # Filter out regions.
+    region_ids, region_contours = filter_lists([all_ids, all_contours], lambda ic: re.match(landmark_regexp, ic[0]) is None)
+
+    # Filter on the presence of a 'ContourSequence' - sometimes empty.
+    region_ids, region_contours = filter_lists([region_ids, region_contours], lambda ic: getattr(ic[1], 'ContourSequence', None) is not None)
+
+    # Filter by 'region_id'.
+    if region_id != 'all':
+        req_region_ids = arg_to_list(region_id, str)
+        region_ids, region_contours = filter_lists([region_ids, region_contours], lambda ic: ic[0] in req_region_ids)
+
+    # Sort results.
+    region_ids, region_contours = sort_lists([region_ids, region_contours], key=lambda ic: ic[0])
+
+    if return_contours:
+        return region_ids, region_contours
+    else:
+        return region_ids
 
 def to_ct_dicom(
     data: Image3D, 

@@ -7,7 +7,7 @@ LAZY_IMPORTS = {
     'conversion': ['convert_to_nifti'],
     'dicom': [
         'from_ct_dicom', 'from_rtdose_dicom', 'from_rtplan_dicom', 'from_rtstruct_dicom',
-        'list_rtstruct_regions', 'to_ct_dicom', 'to_rtstruct_dicom',
+        'list_rtstruct_ids', 'list_rtstruct_landmarks', 'list_rtstruct_regions', 'to_ct_dicom', 'to_rtstruct_dicom',
     ],
     'io': ['load_dicom', 'save_dicom'],
     'load': ['dataset_exists', 'list_datasets', 'load_dataset'],

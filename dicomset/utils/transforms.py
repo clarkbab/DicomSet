@@ -4,10 +4,9 @@ import numpy as np
 import SimpleITK as sitk
 from typing import Callable, Literal, Tuple, TYPE_CHECKING
 
-from ..typing import AffineMatrix, BatchChannelImage, BatchImage, Image, Number, Size, SpatialDim
+from ..typing import AffineMatrix, BatchChannelImage, BatchImage, ChannelImage, Image, Number, Size, SpatialDim
 from .args import bubble_args
-from .conversion import from_sitk_image, to_sitk_image
-from .geometry import affine_origin, affine_spacing
+from .geometry import affine_origin, affine_spacing, create_affine
 from .logging import logger
 if TYPE_CHECKING:
     from ..dicom import DicomSeries
@@ -177,6 +176,18 @@ def compute_channel_or_spatial_transforms(
 
 # Pulls image data/affine from "data/affine" or "image" series.
 # Output size/affine is pulled from "output_size/affine" or "output_image" series. 
+def from_sitk_image(
+    img: sitk.Image,
+    ) -> Tuple[Image, AffineMatrix]:
+    data = sitk.GetArrayFromImage(img)
+    # SimpleITK always flips the data coordinates (x, y, z) -> (z, y, x) when converting to numpy.
+    # See C- (row-major) vs. Fortran- (column-major) style indexing.
+    data = data.transpose()
+    spacing = img.GetSpacing()
+    origin = img.GetOrigin()
+    affine = create_affine(spacing, origin)
+    return data, affine
+
 @bubble_args(__minmax)
 def minmax(
     data: Image | BatchImage,
@@ -184,6 +195,7 @@ def minmax(
     ) -> Image | BatchImage:
     return compute_channel_or_spatial_transforms(__minmax, data, **kwargs)
 
+# Transposes spatial coordinates, whilst maintaining initial batch/channel dimensions.
 @bubble_args(__spatial_resample)
 def resample(
     data: BatchImage | Image | None = None, 
@@ -191,7 +203,7 @@ def resample(
     ) -> BatchImage | Image:
     return compute_channel_or_spatial_transforms(__spatial_resample, data, **kwargs) if data is not None else __spatial_resample(**kwargs)
 
-# Transposes spatial coordinates, whilst maintaining initial batch/channel dimensions.
+# To/from sitk image need to be here for circular import reasons (spatial transpose).
 def spatial_transpose(
     data: BatchChannelImage | BatchImage | Image,
     dim: SpatialDim = 3,
@@ -199,3 +211,36 @@ def spatial_transpose(
     from_axes = tuple(range(data.ndim - dim, data.ndim))     
     to_axes = tuple(reversed(from_axes)) 
     return np.moveaxis(data, from_axes, to_axes)
+
+def to_sitk_image(
+    data: ChannelImage | Image,
+    affine: AffineMatrix | None = None,
+    dim: SpatialDim = 3,
+    ) -> sitk.Image:
+    # Multi-channel sitk images must be stored as vector images.
+    is_vector = True if data.ndim == dim + 1 else False
+
+    # Convert to SimpleITK data types.
+    if data.dtype == bool:
+        data = data.astype(np.uint8)
+    
+    # SimpleITK **sometimes** flips the data coordinates (x, y, z) -> (z, y, x) when converting from numpy.
+    # See C- (row-major) vs. Fortran- (column-major) style indexing.
+    # Preprocessing, such as np.transpose and np.moveaxis can change the numpy array indexing style
+    # from the default C-style to Fortran-style. SimpleITK will flip coordinates for C-style but not F-style.
+    data = spatial_transpose(data, dim=dim)
+    # We can use 'copy' to reset the indexing to C-style and ensure that SimpleITK flips coordinates. If we
+    # don't do this, code called before 'to_sitk' could affect the behaviour of 'GetImageFromArray', which
+    # was very confusing for me.
+    data = data.copy()
+    if is_vector:
+        # Sitk expects vector dimension to be last.
+        data = np.moveaxis(data, 0, -1)
+    img = sitk.GetImageFromArray(data, isVector=is_vector)
+    if affine is not None:
+        spacing = affine_spacing(affine)
+        origin = affine_origin(affine)
+        img.SetSpacing(spacing)
+        img.SetOrigin(origin)
+
+    return img
