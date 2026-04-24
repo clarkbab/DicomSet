@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 
 LAZY_IMPORTS = {
     'config': ['config_data'],
+    'dicom': ['DicomDataset', 'DicomPatient', 'DicomSeries', 'DicomStudy'],
+    'nifti': ['NiftiDataset', 'NiftiPatient', 'NiftiSeries', 'NiftiStudy'],
     'utils': ['load', 'list'],
 }
 

@@ -12,7 +12,7 @@ from .geometry import affine_origin, affine_spacing, create_affine
 def to_numpy(
     data: bool | Number | str | List[bool | Number | str] | np.ndarray | torch.Tensor | torch.Size,
     broadcast: int | None = None,
-    dtype: torch.dtype | None = None,
+    dtype: np.dtype | None = None,
     return_type: bool = False,
     ) -> np.ndarray | Tuple[np.ndarray | type] | None:
     if data is None:

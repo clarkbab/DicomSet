@@ -174,9 +174,6 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
 
         return ids
 
-    def __load_region_map(self) -> None:
-        self.__region_map = RegionMap.load(self.__path)
-
     def __load_groups(self) -> None:
         # Load groups.
         filepath = os.path.join(self.__path, 'groups.csv')
@@ -206,6 +203,9 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         # Load index policy.
         filepath = os.path.join(self.__path, 'index-policy.yaml')
         self.__index_policy = load_yaml(filepath)
+
+    def __load_region_map(self) -> None:
+        self.__region_map = RegionMap.load(self.__path)
 
     @ensure_loaded(
         ('__index', '__load_index'),

@@ -10,6 +10,11 @@ def call_private_method(obj, method_name, *args, **kwargs):
         method_name = f'_{obj.__class__.__name__}{method_name}'
     return getattr(obj, method_name)(*args, **kwargs)
 
+def call_private_method(obj, method_name, *args, **kwargs):
+    if method_name.startswith('__'):
+        method_name = f'_{obj.__class__.__name__}{method_name}'
+    return getattr(obj, method_name)(*args, **kwargs)
+
 def deep_merge(
     d: Dict[str, Any],
     default: Dict[str, Any],
@@ -70,16 +75,6 @@ def has_private_attr(obj, attr_name):
         attr_name = f"_{obj.__class__.__name__}{attr_name}"
     return hasattr(obj, attr_name)
 
-def set_private_attr(obj, attr_name, value):
-    if attr_name.startswith('__'):
-        attr_name = f"_{obj.__class__.__name__}{attr_name}"
-    setattr(obj, attr_name, value)
-
-def call_private_method(obj, method_name, *args, **kwargs):
-    if method_name.startswith('__'):
-        method_name = f'_{obj.__class__.__name__}{method_name}'
-    return getattr(obj, method_name)(*args, **kwargs)
-
 def is_generic(t: Any) -> bool:
     return get_origin(t) is not None
 
@@ -136,6 +131,11 @@ def isinstance_generic(
                 return False
             
     return True
+
+def set_private_attr(obj, attr_name, value):
+    if attr_name.startswith('__'):
+        attr_name = f"_{obj.__class__.__name__}{attr_name}"
+    setattr(obj, attr_name, value)
 
 def version(
     gte: str | None = None,

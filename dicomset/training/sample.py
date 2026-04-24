@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 import os
-from typing import Callable, List, Literal, Tuple, TYPE_CHECKING
+from typing import List, Literal, Tuple, TYPE_CHECKING
 
 from ..typing import LabelImage3D, LandmarkID, Point3D, RegionID, SampleID, Size3D, Spacing3D
 from ..utils.args import arg_to_list
-from ..utils.io import load_csv, load_numpy
-from ..utils.python import has_private_attr
+from ..utils.io import load_csv
 from ..utils.regions import region_to_list
 if TYPE_CHECKING:
     from .split import HoldoutSplit

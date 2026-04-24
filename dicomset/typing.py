@@ -52,6 +52,7 @@ Point3D = Tuple[float, float, float] | Float[np.ndarray, "3"]
 Points2D = Float[np.ndarray, "N 2"]
 Points3D = Float[np.ndarray, "N 3"]
 Pixel = Tuple[int, int] | Int[np.ndarray, "2"]
+PixelBox = Int[np.ndarray, "2 2"]
 Pixels = Int[np.ndarray, "N 2"]
 RegionID = str
 RegionList = str
@@ -66,6 +67,7 @@ SplitID = int
 StudyID = str
 View = Literal[0, 1, 2]
 Voxel = Tuple[int, int, int] | Int[np.ndarray, "3"]
+VoxelBox = Int[np.ndarray, "2 3"]
 Voxels = Int[np.ndarray, "N 3"]
 Window = Tuple[float, float]
 
