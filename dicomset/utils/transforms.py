@@ -6,7 +6,7 @@ from typing import Callable, Literal, Tuple, TYPE_CHECKING
 
 from ..typing import AffineMatrix, BatchChannelImage, BatchImage, ChannelImage, Image, Number, Size, SpatialDim
 from .args import bubble_args
-from .geometry import affine_origin, affine_spacing, create_affine
+from .geometry import affine_origin, affine_spacing, assert_box_width, create_affine, fov, to_image_coords
 from .logging import logger
 if TYPE_CHECKING:
     from ..dicom import DicomSeries
@@ -115,47 +115,48 @@ def __spatial_resample(
 def compute_channel_or_spatial_transforms(
     transform_fn: Callable,
     data: Image | BatchImage | BatchChannelImage,
+    *args,
     combine_channels: bool = False,
     dim: SpatialDim | None = None, 
     **kwargs,
     ) -> Image | BatchImage | BatchChannelImage:
     if data.ndim == 2:    # 2D image.
-        return transform_fn(data, **kwargs) 
+        return transform_fn(data, *args, **kwargs) 
     elif data.ndim == 3:  # 2D batch or 3D image.
         if dim is None or dim == 3: # 3D image.
             logger.warn(f"Transform function '{transform_fn.__name__}' received 3D array with no specified 'dim'. Assuming 3D labels. If these are batches of 2D labels, specify 'dim=2' to compute transform per image in batch.") 
-            return transform_fn(data, **kwargs)
+            return transform_fn(data, *args, **kwargs)
         elif dim == 2:                       # Batch of 2D images.
             # Assume that a dim=2, 3D array is (C, X, Y).
             if combine_channels:
-                return transform_fn(data, **kwargs)
+                return transform_fn(data, *args, **kwargs)
             else:
                 results = []
                 for d in data:
-                    results.append(transform_fn(d, **kwargs)) 
+                    results.append(transform_fn(d, *args, **kwargs))
                 return np.stack(results, axis=0)
     elif data.ndim == 4:  # 2D batch/channel or 3D batch.
         if dim is None or dim == 3:
             # Assume that a dim=3, 4D array is (C, X, Y, Z).
             logger.warn(f"Transform function '{transform_fn.__name__}' received 4D array with no specified 'dim'. Assuming batch of 3D labels. If these are batch/channels of 2D labels, specify 'dim=2' to compute transform per image in batch.")    
             if combine_channels:
-                return transform_fn(data, **kwargs)
+                return transform_fn(data, *args, **kwargs)
             else:
                 results = []
                 for d in data:
-                    results.append(transform_fn(d, **kwargs))
-                return np.stack(results, axis=0) 
+                    results.append(transform_fn(d, *args, **kwargs))
+                return np.stack(results, axis=0)
         elif dim == 2:
             results = []
             for b in data:
                 if combine_channels:
                     # Pass all channels to the transform function.
-                    results.append(transform_fn(b, **kwargs))
+                    results.append(transform_fn(b, *args, **kwargs))
                 else:
                     # Transform each channel separately.
                     channel_results = []
                     for c in b:
-                        channel_results.append(transform_fn(c, **kwargs))
+                        channel_results.append(transform_fn(c, *args, **kwargs))
                     results.append(np.stack(channel_results, axis=0))
             return np.stack(results, axis=0) 
     elif data.ndim == 5:  # 3D batch/channel.
@@ -163,12 +164,12 @@ def compute_channel_or_spatial_transforms(
         for b in data:
             # Pass all channels to the transform function.
             if combine_channels:
-                results.append(transform_fn(b, **kwargs))
+                results.append(transform_fn(b, *args, **kwargs))
                 continue
             # Transform each channel separately.
             channel_results = []
             for c in b:
-                channel_results.append(transform_fn(c, **kwargs))
+                channel_results.append(transform_fn(c, *args, **kwargs))
             results.append(np.stack(channel_results, axis=0))
         return np.stack(results, axis=0) 
     else:
@@ -244,3 +245,56 @@ def to_sitk_image(
         img.SetOrigin(origin)
 
     return img
+
+def __spatial_crop(
+    data: Image,
+    crop_box: Box,
+    affine: AffineMatrix | None = None,
+    ) -> ImageArray:
+    crop_box = __resolve_box(crop_box, data.shape, affine=affine)
+    assert_box_width(crop_box)
+
+    # Convert box to voxel coordinates.
+    if affine is not None:
+        crop_box = to_image_coords(crop_box, affine=affine)
+
+    # Perform cropping.
+    size = np.array(data.shape)
+    crop_min = np.array(crop_box[0]).clip(0)
+    crop_max = (size - np.array(crop_box[1])).clip(0)
+    slices = tuple(slice(min, s - max) for min, max, s in zip(crop_min, crop_max, size))
+    data = data[slices]
+
+    return data
+
+# Handle 'np.nan' values in box.
+def __resolve_box(
+    box: Box,
+    size: Size,
+    affine: AffineMatrix | None = None,
+    ) -> Box:
+    size_fov = fov(size, affine=affine)
+    box = np.where(np.isnan(box), size_fov, box)
+    return box
+
+# What if we want to pass image series? This is probably bad
+# design as we're then loading data and cropping in the same function.
+# Better to keep loading and processing separate.
+# We do this for spatial_resample though and it is convenient there due
+# to all the input/output params...
+@bubble_args(__spatial_crop)
+def crop(
+    data: BatchImage | Image,
+    *args,
+    **kwargs,
+    ) -> BatchImage | Image:
+    return compute_channel_or_spatial_transforms(__spatial_crop, data, *args, **kwargs)
+
+def crop_affine(
+    affine: AffineMatrix,
+    crop_box: Box,
+    ) -> AffineMatrix:
+    origin = affine_origin(affine)
+    spacing = affine_spacing(affine)
+    affine = create_affine(spacing, crop_box[0])
+    return affine

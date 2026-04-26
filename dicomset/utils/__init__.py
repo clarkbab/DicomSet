@@ -21,7 +21,7 @@ LAZY_IMPORTS = {
     'plotting': ['plot_hist', 'plot_slice', 'plot_volume'],
     'python': ['ensure_loaded', 'filter_lists', 'sort_lists'],
     'regions': ['region_to_list'],
-    'transforms': ['from_sitk_image', 'minmax', 'resample', 'spatial_transpose', 'to_sitk_image'],
+    'transforms': ['crop', 'crop_affine', 'from_sitk_image', 'minmax', 'resample', 'spatial_transpose', 'to_sitk_image'],
 }
 
 __all__ = [attr for attrs in LAZY_IMPORTS.values() for attr in attrs]
