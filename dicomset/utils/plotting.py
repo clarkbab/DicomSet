@@ -531,6 +531,7 @@ def __resolve_boxes(
     ) -> BatchVoxelBox | None:
     if box is None:
         return None
+    box = box.copy()    # Otherwise it modifies box passed to the plotting method.
 
     # Resolve foreground fov for region IDs.
     if isinstance(box, (str, list)):

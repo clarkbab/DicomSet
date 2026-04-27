@@ -13,15 +13,15 @@ LAZY_IMPORTS = {
     ],
     'images': ['create_box_label'],
     'io': ['load_csv', 'load_nifti', 'load_numpy', 'save_csv', 'save_nifti', 'save_numpy'],
-    'landmarks': ['landmarks_dim', 'landmarks_to_points', 'points_to_landmarks'],
-    'load_utils': ['list', 'load'],
+    'landmarks': ['landmarks_dim', 'landmarks_to_points', 'points_to_landmarks', 'replace_points'],
+    'load_utils': ['list_datasets', 'load_dataset'],
     'logging': ['logger'],
     'metrics': ['centroid_error', 'distances', 'dice', 'tre', 'volume'],
     'pandas': ['append_row'],
     'plotting': ['plot_hist', 'plot_slice', 'plot_volume'],
     'python': ['ensure_loaded', 'filter_lists', 'sort_lists'],
     'regions': ['region_to_list'],
-    'transforms': ['crop', 'crop_affine', 'from_sitk_image', 'minmax', 'resample', 'spatial_transpose', 'to_sitk_image'],
+    'transforms': ['crop', 'crop_affine', 'crop_points', 'from_sitk_image', 'minmax', 'resample', 'sample', 'spatial_transpose', 'to_sitk_image'],
 }
 
 __all__ = [attr for attrs in LAZY_IMPORTS.values() for attr in attrs]

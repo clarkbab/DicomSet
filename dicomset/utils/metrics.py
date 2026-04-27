@@ -186,32 +186,39 @@ def ncc(
 def tre(
     a: Point | Points | Landmarks,
     b: Point | Points | Landmarks,
-    return_frame: bool = False,
-    ) -> float | List[float] | pd.DataFrame:
+    ) -> List[float] | Landmarks:
     assert len(a) == len(b), f"Metric 'tre' expects inputs of equal length. Got '{len(a)}' and '{len(b)}'."
-
-    # Convert single points to array.
-    a, a_was_single = arg_to_list(a, tuple, return_expanded=True)
-    b, b_was_single = arg_to_list(b, tuple, return_expanded=True)
-    if isinstance(a, list):
-        a = to_numpy(a)
-    if isinstance(b, list):
-        b = to_numpy(b)
 
     # If either of the inputs are points arrays, promote to a dataframe as
     # we might want to return the tre x/y/z components.
+    was_frame = True
     if isinstance(a, np.ndarray) and isinstance(b, pd.DataFrame):
         landmark_ids = b['landmark-id'].values
+        # What about patient/study/series ID?
         a = points_to_landmarks(a, landmark_ids)
     elif isinstance(a, pd.DataFrame) and isinstance(b, np.ndarray):
-            landmark_ids = a['landmark-id'].values
-            b = points_to_landmarks(b, landmark_ids)
-    else:
+        landmark_ids = a['landmark-id'].values
+        b = points_to_landmarks(b, landmark_ids)
+    elif isinstance(a, np.ndarray) and isinstance(b, np.ndarray):
+        was_frame = False
         a = points_to_landmarks(a, list(range(len(a))))
         b = points_to_landmarks(b, list(range(len(b))))
 
     # Compute TRE - saving intermediate values in frame.
-    tre_df = a.merge(b, on='landmark-id')
+    on_cols = ['landmark-id']
+    # Don't merge on study/series IDs as the same landmark could
+    # be annotated on different studies or series.
+    # if 'series-id' in a.columns and 'series-id' in b.columns:
+    #     on_cols.insert(0, 'series-id')
+    # if 'study-id' in a.columns and 'study-id' in b.columns:
+    #     on_cols.insert(0, 'study-id')
+    if 'patient-id' in a.columns and 'patient-id' in b.columns:
+        on_cols.insert(0, 'patient-id')
+    print('=== merging ===')
+    print(a.head())
+    print(b.head())
+    print(on_cols)
+    tre_df = a.merge(b, on=on_cols)
     assert len(tre_df) == len(a), f"Expected {len(a)} corresponding landmarks, but got {len(tre_df)}."
     dim = landmarks_dim(a)
     for i in range(dim):
@@ -219,12 +226,12 @@ def tre(
     tre_ss = np.sum([tre_df[f'tre-{i}'] ** 2 for i in range(dim)], axis=0)
     tre_df['tre'] = np.sqrt(tre_ss)
 
-    if return_frame:
-        return tre_df
+    if was_frame:
+        result = tre_df
+    else:
+        result = to_list(tre_df['tre'].values)
 
-    if a_was_single and b_was_single:
-        return to_list(tre_df['tre'].values[0])
-    return to_list(tre_df['tre'].values)
+    return result
 
 @bubble_args(__spatial_volume)
 def volume(

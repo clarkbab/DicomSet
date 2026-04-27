@@ -3,8 +3,7 @@ from typing import List
 from ..dataset import Dataset
 from ..typing import DatasetID, DatasetType
 
-
-def list(
+def list_datasets(
     type: DatasetType,
     ) -> List[DatasetID]:
     lower_type = type.lower()
@@ -23,7 +22,7 @@ def list(
     else:
         raise ValueError(f"Dataset type '{type}' not found.")
 
-def load(
+def load_dataset(
     name: str,
     type: DatasetType,
     **kwargs,

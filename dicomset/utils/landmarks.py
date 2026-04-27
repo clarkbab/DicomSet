@@ -45,3 +45,11 @@ def points_to_landmarks(
     dtypes = dict((c, np.float32) for c in list(range(dim)))
     df = pd.DataFrame(data, columns=columns).astype(dtypes)
     return df
+
+def replace_points(
+    landmarks: Landmarks,
+    points: Points,
+    ) -> Landmarks:
+    dim = landmarks_dim(landmarks)
+    landmarks[list(range(dim))] = points
+    return landmarks

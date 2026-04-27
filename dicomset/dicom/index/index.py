@@ -43,7 +43,7 @@ def build_index(
     dataset: DatasetID,
     force_dicom_read: bool = False,
     n_crawl: int | None = None,  # For testing purposes.
-    rebuild: bool = False,     # Just in case the index reaches a bad state.
+    recreate: bool = False,     # Just in case the index reaches a bad state.
     skip_crawl: bool = False,
     ) -> None:
     start = time()
@@ -65,7 +65,7 @@ def build_index(
 
     # Create or load policy.
     filepath = os.path.join(dataset_path, 'index-policy.yaml')
-    if rebuild or not os.path.exists(filepath):
+    if recreate or not os.path.exists(filepath):
         # Load custom policy.
         filepath = os.path.join(dataset_path, 'custom-policy.yaml')
         custom_policy = load_yaml(filepath) if os.path.exists(filepath) else None
@@ -97,7 +97,7 @@ def build_index(
             index = load_csv(tmp_filepath, eval_cols='mod-spec', map_types=DICOM_INDEX_COLS)
         else:
             raise ValueError(f"Temporary index file '{tmp_filepath}' doesn't exist. Cannot skip crawl of 'data/patients' folder.")
-    elif rebuild or not os.path.exists(filepath):
+    elif recreate or not os.path.exists(filepath):
         if ct_from is None:
             # Create new index.
             index = pd.DataFrame(columns=DICOM_INDEX_COLS.keys())
@@ -128,7 +128,7 @@ def build_index(
     # to the index could then make other files valid (e.g. a CT series that requires RTSTRUCT in the study).
     # Additionally, policy changes could make an invalid series valid.
     filepath = os.path.join(dataset_path, 'index-errors.csv')
-    # if rebuild or not os.path.exists(filepath):
+    # if recreate or not os.path.exists(filepath):
     #     index_errors = pd.DataFrame(columns=DICOM_ERROR_INDEX_COLS.keys())
     # else:
     #     index_errors = load_csv(filepath, map_types=DICOM_ERROR_INDEX_COLS)
@@ -245,7 +245,7 @@ def build_index(
 
         # Map 'mod-spec' column to literal.
         def map_mod_spec(m: str | Dict[str, Any]) -> Dict[str, Any]:
-            # Index could have both dict (from loaded existing index, rebuild=False)
+            # Index could have both dict (from loaded existing index, recreate=False)
             # and string (from newly crawled files) mod-spec values.
             return ast.literal_eval(m) if isinstance(m, str) else m
         index['mod-spec'] = index['mod-spec'].apply(map_mod_spec)

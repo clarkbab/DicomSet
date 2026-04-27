@@ -9,6 +9,7 @@ from tqdm import tqdm
 from typing import Callable, List, Literal, TYPE_CHECKING
 
 from ...dataset import CT_FROM_REGEXP
+from ...nifti.utils.create import create_dataset as create_nifti_dataset
 from ...region_map import RegionMap
 from ...typing import GroupID, LandmarkID, PatientID, RegionID
 from ...utils.args import arg_to_list
@@ -51,6 +52,13 @@ if TYPE_CHECKING:
 # could place a new study last using custom sorting, rather than the default
 # sorting which is by datetime.
 
+# Can we do a similar thing to DicomDataset.build_index() here? Build_index
+# keeps the old index, but first removes entries that are no longer present on 
+# disk, before adding the new entries. This might be better than rebuilding
+# the entire index each time. For example, if we use "recreate_patient_id" to
+# limit the number of processed patients, it still has to loop through all the
+# files to build the index.
+
 def convert_to_nifti(
     dataset: str,
     anonymise_ct: bool = True,
@@ -73,13 +81,6 @@ def convert_to_nifti(
     group_id: GroupID | List[GroupID] | Literal['all'] = 'all',
     landmark_id: LandmarkID | List[LandmarkID] | Literal['all'] = 'all',
     patient_id: PatientID | List[PatientID] | Literal['all'] = 'all',
-    # These flags handle the case where you want CT (for example) to be present in the
-    # output dataset, but you don't want to convert it again.
-    reconvert_ct: bool = True,
-    reconvert_dose: bool = True,
-    reconvert_landmarks: bool = True,
-    reconvert_mr: bool = True,
-    reconvert_regions: bool = True,
     # These flags remove data before conversion. Maybe there was a bunch of
     # dose series that got out of sync and we only want to remove them.
     recreate_dataset: bool = False,
@@ -90,6 +91,8 @@ def convert_to_nifti(
     recreate_patient_id: PatientID | List[PatientID] | str | Literal['all'] = 'all',
     recreate_regions: bool = False,
     region_id: RegionID | List[RegionID] | Literal['all'] = 'all',
+    # These functions allow us to sort series by dicom tags before they
+    # are persisted to nifti series with static ordering by name.
     sort_cts: Callable[DicomCTSeries, int] | None = None,
     sort_doses: Callable[DicomRtDoseSeries, int] | None = None,
     sort_rtstructs: Callable[DicomRtStructSeries, int] | None = None, # Landmarks/regions are currently tied by rtstruct series ID.

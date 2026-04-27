@@ -10,13 +10,13 @@ from ...dataset import Dataset
 from ...dicom import DicomDataset
 from ...patient import Patient
 from ...study import Study
-from ...training import sample
 from ...typing import LandmarkID, Landmarks3D, SeriesID
 from ...utils.args import arg_to_list
 from ...utils.geometry import to_image_coords
 from ...utils.io import load_csv
 from ...utils.landmarks import landmarks_to_points
 from ...utils.python import get_private_attr
+from ...utils.transforms import sample
 from .series import NiftiSeries
 if TYPE_CHECKING:
     from ...dicom import DicomRtStructSeries

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import SimpleITK as sitk
 from typing import Callable, Literal, Tuple, TYPE_CHECKING
 
 from ..typing import AffineMatrix, BatchChannelImage, BatchImage, ChannelImage, Image, Number, Size, SpatialDim
 from .args import bubble_args
 from .geometry import affine_origin, affine_spacing, assert_box_width, create_affine, fov, to_image_coords
+from .landmarks import landmarks_to_points, points_to_landmarks, replace_points
 from .logging import logger
 if TYPE_CHECKING:
     from ..dicom import DicomSeries
@@ -290,6 +292,8 @@ def crop(
     ) -> BatchImage | Image:
     return compute_channel_or_spatial_transforms(__spatial_crop, data, *args, **kwargs)
 
+# We're not actually cropping the affine, it's just what would the new affine
+# before the image after a crop? Maybe crop should return this?
 def crop_affine(
     affine: AffineMatrix,
     crop_box: Box,
@@ -298,3 +302,113 @@ def crop_affine(
     spacing = affine_spacing(affine)
     affine = create_affine(spacing, crop_box[0])
     return affine
+
+# Cropping doesn't actually do anything to point locations, it just removes
+# points that are outside the box.
+def crop_points(
+    points: Point | Points | Landmark | Landmarks,
+    crop: Box,
+    ) -> Points | Landmarks:
+    was_landmarks = False
+    if isinstance(points, (pd.DataFrame, pd.Series)):
+        was_landmarks = True
+        landmarks_tmp = points.copy()
+        points = landmarks_to_points(landmarks_tmp)
+    if points.ndim == 1:
+        points = points[None, :]
+
+    # Get decision variables.
+    to_keep = np.stack((points >= crop[0], points < crop[1]), axis=1)
+    to_keep = np.all(to_keep, axis=(1, 2))
+
+    # Convert back to landmarks if necessary.
+    if was_landmarks:
+        points = replace_points(landmarks_tmp, points)
+
+    # Remove points.
+    points = points[to_keep]
+
+    return points
+
+# How is this different from "resample"?
+# This samples all the points passed to the image, and you can specify the region that is sampled
+# for each point by passing size/spacing - this creates a sampling grid centred on the point. 
+# Either returns a list of samples, or adds them to the dataframe using 'sample_col'.
+def __spatial_sample(
+    data: Image,
+    points: Point | Points | Landmark | Landmarks,
+    affine: AffineMatrix | None = None,
+    fill: Number | Literal['min'] = 'min',
+    sample_col: str = 'sample',
+    sample_size: Size | None = None,    # Defaults to point sample - e.g. (0, 0, 0) for 3D.
+    sample_spacing: Spacing | None = None,  # Defaults to 1.0 isotropic.
+    transform: sitk.Transform | None = None,
+    **kwargs,
+    ) -> List[float] | Landmarks:
+    was_landmarks = False
+    if isinstance(points, (pd.DataFrame, pd.Series)):
+        was_landmarks = True
+        landmarks_tmp = points.copy()
+        points = landmarks_to_points(landmarks_tmp)
+    if points.ndim == 1:
+        points = points[None, :]
+    dim = points.shape[1]
+    if sample_size is None:
+        sample_size = (1,) * dim
+    if sample_spacing is None:
+        sample_spacing = (1.0,) * dim
+
+    # Convert to sitk datatypes.
+    is_boolean = data.dtype == bool
+    if is_boolean:
+        data = data.astype(np.uint8) 
+    if sample_spacing is not None:
+        sample_spacing = tuple(float(s) for s in sample_spacing)
+
+    # Create 'sitk' image and set parameters.
+    img = to_sitk_image(data, affine=affine, dim=dim)
+
+    # Create resample filter.
+    filter = sitk.ResampleImageFilter()
+    if fill == 'min':
+        fill = float(data.min())
+    filter.SetDefaultPixelValue(fill)
+    if is_boolean:
+        filter.SetInterpolator(sitk.sitkNearestNeighbor)
+    if sample_size == (1, 1, 1):     # Sample a single point.
+        output_size = (1, 1, 1)
+    else:
+        output_size = tuple(int(np.ceil(f / s)) for f, s in zip(sample_size, sample_spacing))
+    filter.SetSize(output_size)
+    if transform is not None:
+        filter.SetTransform(transform)
+
+    # Perform resampling.
+    # It's hard to make this more efficient, as the resample image filter only accepts
+    # regular grids of sampling points.
+    samples = []
+    for p in points:
+        origin = tuple(np.array(p) - (np.array(sample_size) / 2))
+        filter.SetOutputOrigin(origin)
+        rimg = filter.Execute(img)
+        rimg, _ = from_sitk_image(rimg)
+        s = rimg.mean()    # Take average of sample grid.
+        # r = bool(r) if is_boolean else float(r)
+        samples.append(s)
+
+    # Convert to return format.
+    if was_landmarks:
+        result = landmarks_tmp
+        result[sample_col] = samples
+    else:
+        result = samples
+
+    return result
+
+@bubble_args(__spatial_sample)
+def sample(
+    data: BatchImage | Image,
+    *args,
+    **kwargs,
+    ) -> BatchImage | Image:
+    return compute_channel_or_spatial_transforms(__spatial_sample, data, *args, **kwargs)
