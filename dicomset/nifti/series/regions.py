@@ -45,6 +45,7 @@ class NiftiRegionsSeries(NiftiImageSeries):
     def data(
         self,
         region_id: RegionID | List[RegionID] | Literal['all'] = 'all',
+        return_regions: bool = True,
         use_mapping: bool = True,
         ) -> Tuple[List[RegionID], BatchLabelImage3D]:
         if self.__region_map is None:
@@ -86,7 +87,10 @@ class NiftiRegionsSeries(NiftiImageSeries):
                 regions_data = np.zeros((len(region_ids), *reg_data.shape), dtype=bool)
             regions_data[i] = reg_data
 
-        return region_ids, regions_data
+        if return_regions:
+            return region_ids, regions_data
+        else:
+            return regions_data
 
     @property
     def dicom(self) -> DicomRtStructSeries:

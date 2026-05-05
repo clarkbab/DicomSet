@@ -215,12 +215,14 @@ class DicomRtStructSeries(DicomSeries):
 
     @alias_kwargs(
         ('r', 'region_id'),
+        ('rr', 'return_regions'),
         ('um', 'use_mapping'),
     )
     @ensure_loaded('__data', '__load_data')
     def regions_data(
         self,
         region_id: RegionID | List[RegionID] | RegionList | Literal['all'] = 'all',
+        return_regions: bool = True,
         use_mapping: bool = True,
         **kwargs,
         ) -> Tuple[List[RegionID], BatchLabelImage3D]:
@@ -270,7 +272,10 @@ class DicomRtStructSeries(DicomSeries):
                 regions_data = np.zeros((len(region_ids), *reg_data.shape), dtype=bool)
             regions_data[i] = reg_data
 
-        return region_ids, regions_data
+        if return_regions:
+            return region_ids, regions_data
+        else:
+            return regions_data
 
     def __str__(self) -> str:
         return super().__str__(self.__class__.__name__)

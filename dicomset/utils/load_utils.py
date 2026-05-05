@@ -24,19 +24,27 @@ def list_datasets(
 
 def load_dataset(
     name: str,
-    type: DatasetType,
+    type: DatasetType | None = None,
     **kwargs,
     ) -> Dataset:
+    if type is None:
+        # Match by name only.
+        types = ['raw', 'dicom', 'nifti', 'training']
+        for t in types:
+            datasets = list_datasets(t)
+            if name in datasets:
+                return load_dataset(name, t, **kwargs)
+
     lower_type = type.lower()
-    if lower_type == 'dicom':
+    if lower_type == 'raw':
+        from ..raw import RawDataset
+        return RawDataset(name, **kwargs)
+    elif lower_type == 'dicom':
         from ..dicom import DicomDataset
         return DicomDataset(name, **kwargs)
     elif lower_type == 'nifti':
         from ..nifti import NiftiDataset
         return NiftiDataset(name, **kwargs)
-    elif lower_type == 'raw':
-        from ..raw import RawDataset
-        return RawDataset(name, **kwargs)
     elif lower_type == 'training':
         from ..training import TrainingDataset
         return TrainingDataset(name, **kwargs)

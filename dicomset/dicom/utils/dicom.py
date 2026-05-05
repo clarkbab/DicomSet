@@ -12,9 +12,10 @@ import skimage as ski
 from typing import Any, Dict, List, Literal, Tuple
 
 from ...typing import AffineMatrix3D, BatchLabelImage3D, DirPath, DiskLandmarkID, DiskRegionID, FilePath, Image2D, Image3D, LabelImage3D, LandmarkID, Landmarks, PatientID, Point2D, Point3D, Points2D, RegionID, RtStructDicom, Size2D, Size3D, Spacing2D, StudyID
-from ...utils.args import alias_kwargs, arg_to_list
+from ...utils.args import alias_kwargs, arg_to_list, resolve_filepath
 from ...utils.geometry import affine_origin, affine_spacing, create_affine, to_image_coords
 from ...utils.landmarks import points_to_landmarks
+from ...utils.logging import logger
 from ...utils.maths import round
 from ...utils.python import filter_lists, sort_lists
 from ..utils.io import load_dicom
@@ -55,7 +56,21 @@ def __add_slice_contours(
             contours_coords[i] = c
 
     elif CONTOUR_METHOD == 'SKIMAGE':
-        contours_coords = ski.measure.find_contours(data)
+        # Slicer didn't like this - didn't load the contours any more.
+        # 'find_contours' ignores pixels on the border of the image - which results in 
+        # weird and split contours. Pad the image, and then remove the padding from the
+        # resulting coords.
+        # data = np.pad(data, pad_width=1, mode='constant', constant_values=0)
+        # contours_coords = ski.measure.find_contours(data, level=0.5)
+        # contours_coords = [c - 1 for c in contours_coords]
+
+        # 'find_contours' doesn't handle border pixels, so erode these.
+        data[0, :] = 0
+        data[-1, :] = 0
+        data[:, 0] = 0
+        data[:, -1] = 0
+        contours_coords = ski.measure.find_contours(data, level=0.5)
+
         # Skimage needs no post-processing, as it returns (x, y) along the same
         # axes as the passed 'slice_data'. Also no strange intermediate dimensions.
     else:
@@ -66,12 +81,12 @@ def __add_slice_contours(
     # Velocity has an issue with loading contours that contain less than 3 points.
     for i, c in enumerate(contours_coords):
         if len(c) < 3:
-            raise ValueError(f"Contour {i} of slice {idx} contains only 3 points: {contours_coords}. Velocity will not like this.")
+            logger.warn(f"Contour {i} of slice {idx} contains only {len(c)} points: {c}. Velocity will not like this.")
 
     # 'contours_coords' is a list of contour coordinates, i.e. multiple contours are possible per slice,
     # - rtstruct masks can be disjoint in space.
     for coords in contours_coords:
-        # Translate to world coordinates.
+        # Convert to world coordinates.
         origin = ref_ct.ImagePositionPatient
         spacing = ref_ct.PixelSpacing
         coords = np.array(coords) * spacing + origin[:-1]
@@ -110,10 +125,12 @@ def from_ct_dicom(
     if isinstance(cts, str):
         if os.path.isfile(cts):
             # Load single CT slice.
-            cts = [load_dicom(cts, force=False)]
+            filepath = resolve_filepath(cts)
+            cts = [load_dicom(filepath, force=False)]
         else:
             # Load multiple CT slices.
-            cts = [load_dicom(os.path.join(cts, f), force=False) for f in os.listdir(cts) if f.endswith('.dcm')]
+            dirpath = resolve_filepath(cts)
+            cts = [load_dicom(os.path.join(dirpath, f), force=False) for f in os.listdir(dirpath) if f.endswith('.dcm')]
 
     # Check that standard orientation is used.
     # TODO: Handle non-standard orientation.
@@ -221,6 +238,7 @@ def from_rtplan_dicom(
 
 @alias_kwargs(
     ('r', 'region_id'),
+    ('rr', 'return_regions'),
 )
 def from_rtstruct_dicom(
     rtstruct: FilePath | dcm.dataset.FileDataset,
@@ -230,9 +248,11 @@ def from_rtstruct_dicom(
     landmark_regexp: str | None = None,
     landmarks_use_world_coords: bool = True,
     region_id: DiskRegionID | List[DiskRegionID] | Literal['all'] | None = 'all',    
+    return_regions: bool = True,
     ) -> Tuple[List[RegionID] | BatchLabelImage3D] | Tuple[List[LandmarkID] | Landmarks] | Tuple[List[RegionID], BatchLabelImage3D, List[LandmarkID], Landmarks]:
     if isinstance(rtstruct, str):
-        rtstruct = load_dicom(rtstruct)
+        filepath = resolve_filepath(rtstruct)
+        rtstruct = load_dicom(filepath)
     ct_spacing = affine_spacing(ct_affine)
     ct_origin = affine_origin(ct_affine)
     landmark_regexp = landmark_regexp or DEFAULT_LANDMARK_REGEXP
@@ -251,21 +271,30 @@ def from_rtstruct_dicom(
     regions_data = None
     if region_id is not None:
         regions_data = [__get_region_label(cs, ct_size, ct_affine) for cs in region_contours]
-        regions_data = np.stack(regions_data, axis=0)
+        if len(regions_data) != 0:
+            regions_data = np.stack(regions_data, axis=0)
+        else:
+            regions_data = None
 
     # Process landmarks data.
     landmarks_data = None
     if landmark_id is not None:
         landmarks_points = [__get_landmark_point(cs, ct_affine, use_world_coords=landmarks_use_world_coords) for cs in landmark_contours]
-        landmarks_points = np.stack(landmarks_points, axis=0)
-        landmarks_data = points_to_landmarks(landmarks_points, landmark_ids)
+        if len(landmarks_points) != 0:
+            landmarks_points = np.stack(landmarks_points, axis=0)
+            landmarks_data = points_to_landmarks(landmarks_points, landmark_ids)
+        else:
+            landmarks_data = None
 
     result = []
     if region_id is not None:
-        result += [region_ids, regions_data]
+        result += [region_ids, regions_data] if return_regions else [regions_data]
     if landmark_id is not None:
-        result += [landmark_ids, landmarks_data]
-    return tuple(result)
+        result += [landmark_ids, landmarks_data] if return_regions else [landmarks_data]
+    if len(result) == 1:
+        return result[0]
+    else:
+        return tuple(result)
 
 def __get_landmark_point(
     contours: List['Something dcm'],

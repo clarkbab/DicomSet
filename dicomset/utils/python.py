@@ -185,3 +185,6 @@ def with_makeitso(
 
 def wrap_quotes(s: str) -> str:
     return f"'{s}'"
+
+def unzip(zipped):
+    return tuple(map(tuple, zip(*zipped)))

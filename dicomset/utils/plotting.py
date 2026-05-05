@@ -5,12 +5,13 @@ import pandas as pd
 import seaborn as sns
 from typing import List, Literal
 
-from ..typing import AffineMatrix, AffineMatrix2D, AffineMatrix3D, BatchBox, BatchBox3D, BatchLabelImage, BatchLabelImage2D, BatchLabelImage3D, BatchVoxelBox, Box, Box2D, Box3D, Image, Image2D, Image3D, LabelImage, LabelImage2D, LabelImage3D, Landmark3D, Landmarks3D, Number, Orientation, Pixel, PixelBox, Point, Point2D, Point3D, Points, Points2D, Points3D, RegionID, Size, View, Voxel, VoxelBox, Window
+from ..typing import AffineMatrix, AffineMatrix2D, AffineMatrix3D, BatchBox, BatchBox2D, BatchBox3D, BatchLabelImage, BatchLabelImage2D, BatchLabelImage3D, BatchVoxelBox, Box, Box2D, Box3D, Image, Image2D, Image3D, LabelImage, LabelImage2D, LabelImage3D, Landmark3D, Landmarks3D, Number, Orientation, Pixel, PixelBox, Point, Point2D, Point3D, Points, Points2D, Points3D, RegionID, Size, View, Voxel, VoxelBox, Window
 from .args import alias_kwargs, arg_to_list
 from .conversion import to_numpy
 from .geometry import affine_origin, affine_spacing, centre_of_mass, foreground_fov, foreground_fov_centre, to_image_coords
 from .landmarks import landmarks_to_points
 from .logging import logger
+from .transforms import crop
 
 VIEWS = ['Sagittal', 'Coronal', 'Axial']
 
@@ -113,19 +114,32 @@ def plot_hist(
     if return_axis:
         return ax
 
+@alias_kwargs(
+    ('a', 'affine'),
+    ('c', 'crop'),
+    ('cm', 'crop_margin'),
+    ('l', 'labels'),
+    ('p', 'points'),
+    ('sl', 'show_labels'),
+    ('w', 'window'),
+)
 def plot_slice(
     data: Image2D | None,
     affine: AffineMatrix2D | None = None,
     alpha: float = 0.3,
+    aspect: float | None = None,
     ax: mpl.axes.Axes | None = None,
+    box: Box2D | BatchBox2D | RegionID | List[RegionID] | None = None,
     cmap: str = 'gray',
     crop: Box2D | Point2D | str | None = None,
     crop_margin: int = 100,
     labels: LabelImage2D | BatchLabelImage2D | None = None,
+    label_names: RegionID | List[RegionID] | None = None,
+    figsize: tuple[float, float] = (8, 8),
     points: Point2D | Points2D | None = None,
     points_colour: str = 'yellow',
     return_axis: bool = False,
-    show_hist: bool = False,
+    show_labels: bool = True,
     show_point_idxs: bool = False,
     title: str | None = None,
     use_image_coords: bool = False,
@@ -141,15 +155,15 @@ def plot_slice(
         assert labels is not None, "Labels must be provided if data is None."
         data = np.zeros(labels.shape[-2:])
 
-    # Resolve window to vmin/vmax.
-    vmin, vmax = __resolve_window(window, vmin, vmax)
-
     # Normalise labels to batch form (B, X, Y).
     if labels is not None and labels.ndim == 2:
         labels = labels[np.newaxis]
     if labels is not None and labels.dtype != bool:
         if labels.min() < 0 or labels.max() > 1:
             logger.warn(f"Labels values are outside the range [0, 1]. Got min={labels.min():.3f}, max={labels.max():.3f}.")
+
+    # Resolve window to vmin/vmax.
+    vmin, vmax = __resolve_window(window, affine=affine, data=data, labels=labels, vmin=vmin, vmax=vmax)
 
     # Check for empty points array - could be filtered by the transform.
     if points is not None:
@@ -170,19 +184,25 @@ def plot_slice(
 
     # Resolve crop.
     crop_box = __resolve_crop(crop, crop_margin, data.shape, affine=affine, label_names=None, labels=labels, points=points)
-    print(crop_box)
+
+    # Resolve boxes for overlay.
+    boxes = __resolve_boxes(box, data.shape, affine=affine, label_names=label_names, labels=labels)
 
     if ax is None:
-        ax = plt.gca()
+        _, axs = plt.subplots(1, 1, figsize=figsize)
+        ax = axs
         show = True
     else:
         show = False
 
     # Aspect ratio from affine.
-    aspect = None
-    if affine is not None:
+    if aspect is not None:
+        assert affine is None, "Cannot specify both aspect and affine."
+    elif affine is not None:
         spacing = affine_spacing(affine)
         aspect = float(spacing[1] / spacing[0])
+    else:
+        aspect = None
 
     # Plot the image.
     if crop_box is not None:
@@ -218,6 +238,17 @@ def plot_slice(
                 ax.annotate(str(pi), (p[0], p[1]),
                     color=p_colours[pi], fontsize=8,
                     textcoords='offset points', xytext=(5, 5), zorder=5)
+
+    # Box overlays.
+    if boxes is not None:
+        # Get 2D boxes.
+        box_palette = sns.color_palette('colorblind', len(boxes))
+        for bi, b in enumerate(boxes):
+            # Draw rectangle from min/max corners.
+            width = b[1][0] - b[0][0]
+            height = b[1][1] - b[0][1]
+            rect = mpl.patches.Rectangle((b[0][0], b[0][1]), width, height, edgecolor=box_palette[bi % len(box_palette)], facecolor='none', linestyle='dotted', linewidth=2, zorder=10)
+            ax.add_patch(rect)
 
     # Get tick positions in image coords.
     size = data.shape
@@ -275,6 +306,7 @@ def plot_slice(
     ('ln', 'label_names'),
     ('p', 'points'),
     ('scc', 'show_crosshairs_coords'),
+    ('sl', 'show_labels'),
 )
 def plot_volume(
     data: Image3D | None,
@@ -316,15 +348,15 @@ def plot_volume(
         assert labels is not None, "Labels must be provided if data is None."
         data = np.zeros(labels.shape[-3:])
 
-    # Resolve window to vmin/vmax.
-    vmin, vmax = __resolve_window(window, vmin, vmax)
-
     # Normalise labels to batch form (B, X, Y, Z).
     if labels is not None and labels.ndim == 3:
         labels = labels[np.newaxis]
     if labels is not None and labels.dtype != bool:
         if labels.min() < 0 or labels.max() > 1:
             logger.warn(f"Labels values are outside the range [0, 1]. Got min={labels.min():.3f}, max={labels.max():.3f}.")
+
+    # Resolve window to vmin/vmax.
+    vmin, vmax = __resolve_window(window, affine=affine, data=data, labels=labels, vmin=vmin, vmax=vmax)
 
     # Check for empty points array - could be filtered by the transform.
     if points is not None:
@@ -726,8 +758,12 @@ def __resolve_point(
 
 def __resolve_window(
     window: Window | None,
-    vmin: float | None,
-    vmax: float | None,
+    affine: AffineMatrix | None = None,
+    data: Image | None = None,
+    labels: BatchLabelImage | None = None,
+    label_margin: float = 100,
+    vmin: float | None = None,
+    vmax: float | None = None,
     ) -> tuple[float | None, float | None]:
     if window is not None:
         assert vmin is None, "vmin must be None if window is specified."
@@ -735,9 +771,26 @@ def __resolve_window(
     if window is None:
         return vmin, vmax
     if isinstance(window, str):
-        if window not in WINDOW_PRESETS:
-            raise ValueError(f"Unknown window preset '{window}'. Expected one of {list(WINDOW_PRESETS.keys())}.")
-        width, level = WINDOW_PRESETS[window]
+        if window in WINDOW_PRESETS:
+            width, level = WINDOW_PRESETS[window]
+        else:
+            source, value = window.split(':', 1)
+            if source in ('l', 'label', 'labels'):
+                if labels is None:
+                    raise ValueError(f"window='{window}' but no labels were provided.")
+                if value.lstrip('-').isdigit():
+                    label_idx = int(value)
+                else:
+                    raise ValueError(f"window='{window}' uses a label name but 'label_names' is not supported for window presets.")
+                label = labels[label_idx]
+                fov = foreground_fov(label, affine=affine)
+                fov[0] -= label_margin
+                fov[1] += label_margin
+                fov_data = crop(data, fov)
+                width = fov_data.max() - fov_data.min()
+                level = (fov_data.max() + fov_data.min()) / 2
+            else:
+                raise ValueError(f"Unknown window preset '{window}'. Expected one of {list(WINDOW_PRESETS.keys())}, or 'labels:<idx>'.")
     else:
         width, level = window
     vmin = level - width / 2

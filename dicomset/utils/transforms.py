@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import SimpleITK as sitk
+import skimage as ski
 from typing import Callable, Literal, Tuple, TYPE_CHECKING
 
 from ..typing import AffineMatrix, BatchChannelImage, BatchImage, ChannelImage, Image, Number, Size, SpatialDim
@@ -19,11 +20,27 @@ if TYPE_CHECKING:
 # merge data across channels - e.g. minmax normalisation.
 def __minmax(
     data: Image,
+    data_min: Number | Literal['min'] = 'min',
+    data_max: Number | Literal['max'] = 'max',
+    # Takes the data min/max and puts them at these values.
+    min: Number = 0.0,
+    max: Number = 1.0,
     ) -> Image:
-    data_width = data.max() - data.min()
+    if data_min == 'min':
+        data_min = float(data.min())
+    if data_max == 'max':
+        data_max = float(data.max())
+    data_width = data_max - data_min
     if data_width == 0:
         return data
-    data = (data - data.min()) / data_width
+    # Normalise to [0, 1].
+    data = (data - data_min) / data_width
+    # Scale to [min, max].
+    data = data * (max - min) + min
+
+    # Data min/max can result in values outside the [min, max] range - clip these.
+    data = np.clip(data, min, max)
+
     return data
 
 # Can be applied to spatial or channel image.
@@ -412,3 +429,8 @@ def sample(
     **kwargs,
     ) -> BatchImage | Image:
     return compute_channel_or_spatial_transforms(__spatial_sample, data, *args, **kwargs)
+
+def hist_eq(
+    data: Image,
+    ) -> Image:
+    return ski.exposure.equalize_hist(data)
