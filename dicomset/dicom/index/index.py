@@ -33,8 +33,9 @@ DICOM_INDEX_COLS = {
     'series-time': str,
     'modality': str,
     'sop-id': str,
-    'mod-spec': object,
+    'dicom-tags': object,
     'filepath': str,
+    'mod-time': float,
 }
 DICOM_ERROR_INDEX_COLS = DICOM_INDEX_COLS.copy()
 DICOM_ERROR_INDEX_COLS['error'] = str
@@ -94,7 +95,7 @@ def build_index(
         # Use temporary index (before policy filtering applied) - must have been saved by previous indexing.
         if os.path.exists(tmp_filepath):
             logger.info(f"Skipping crawl of 'data/patients' folder, loading from temp index '{tmp_filepath}'.")
-            index = load_csv(tmp_filepath, eval_cols='mod-spec', map_types=DICOM_INDEX_COLS)
+            index = load_csv(tmp_filepath, eval_cols='dicom-tags', map_types=DICOM_INDEX_COLS)
         else:
             raise ValueError(f"Temporary index file '{tmp_filepath}' doesn't exist. Cannot skip crawl of 'data/patients' folder.")
     elif recreate or not os.path.exists(filepath):
@@ -110,7 +111,7 @@ def build_index(
             filepath = os.path.join(config.directories.datasets, 'dicom', ct_from, 'index.csv')
             if not os.path.exists(filepath):
                 raise ValueError(f"Index for 'ct_from={ct_from}' dataset doesn't exist. Filepath: '{filepath}'.")
-            index = load_csv(filepath, eval_cols='mod-spec', filters={ 'modality': 'ct' }, map_types=DICOM_INDEX_COLS)
+            index = load_csv(filepath, eval_cols='dicom-tags', filters={ 'modality': 'ct' }, map_types=DICOM_INDEX_COLS)
     else:
         # Load existing index.
         index = load_csv(filepath, map_types=DICOM_INDEX_COLS)
@@ -157,8 +158,12 @@ def build_index(
                 rel_filepath = rel_filepath.replace('\\', '/')  # In case running on Windows filesystem.
                 # Don't exclude 'error-index' files here, we need to check if these
                 # files have become valid due to the inclusion of other series, or policy changes.
-                if rel_filepath in index['filepath'].values:
-                    continue
+                file_row = index[index['filepath'] == rel_filepath]
+                if not file_row.empty:
+                    mod_time = os.stat(filepath).st_mtime
+                    if file_row.iloc[0]['mod-time'] == mod_time:
+                        continue
+                    index.drop(file_row.index, inplace=True)
 
                 # Check if valid dicom file.
                 try:
@@ -190,13 +195,14 @@ def build_index(
                 # Get SOP UID.
                 sop_id = dicom.SOPInstanceUID
 
-                # Get modality-specific info.
+                # Get dicom tags required for other purposes, e.g. linking RTSTRUCTs
+                # to CT series.
                 if modality == 'ct' or modality == 'mr':
                     if not hasattr(dicom, 'ImageOrientationPatient'):
                         logger.error(f"No 'ImageOrientationPatient' found for {modality} dicom '{filepath}'.")
                         continue
 
-                    mod_spec = {
+                    dicom_tags = {
                         'ImageOrientationPatient': dicom.ImageOrientationPatient,
                         'ImagePositionPatient': dicom.ImagePositionPatient,
                         'InstanceNumber': dicom.InstanceNumber,
@@ -205,19 +211,22 @@ def build_index(
                 elif modality == 'rtdose':
                     # This key is conditionally required.
                     if hasattr(dicom, 'ReferencedRTPlanSequence') and len(dicom.ReferencedRTPlanSequence) > 0:
-                        mod_spec = {
+                        dicom_tags = {
                             DICOM_RTDOSE_REF_RTPLAN_KEY: dicom.ReferencedRTPlanSequence[0].ReferencedSOPInstanceUID
                         }
                     else:
-                        mod_spec = {}
+                        dicom_tags = {}
                 elif modality == 'rtplan':
-                    mod_spec = {
+                    dicom_tags = {
                         DICOM_RTPLAN_REF_RTSTRUCT_KEY: dicom.ReferencedStructureSetSequence[0].ReferencedSOPInstanceUID
                     }
                 elif modality == 'rtstruct':
-                    mod_spec = {
+                    dicom_tags = {
                         DICOM_RTSTRUCT_REF_CT_KEY: dicom.ReferencedFrameOfReferenceSequence[0].RTReferencedStudySequence[0].RTReferencedSeriesSequence[0].SeriesInstanceUID
                     }
+
+                # Get file modified time.
+                mod_time = os.stat(filepath).st_mtime
 
                 # Add index entry.
                 data = {
@@ -231,8 +240,9 @@ def build_index(
                     'series-time': series_time,
                     'modality': modality,
                     'sop-id': sop_id,
-                    'mod-spec': mod_spec,
+                    'dicom-tags': dicom_tags,
                     'filepath': rel_filepath,
+                    'mod-time': mod_time,
                 }
                 index = append_row(index, data)
 
@@ -243,12 +253,12 @@ def build_index(
         # Allows us to skip folder crawl step when iterating on policies.
         save_csv(index, tmp_filepath)
 
-        # Map 'mod-spec' column to literal.
-        def map_mod_spec(m: str | Dict[str, Any]) -> Dict[str, Any]:
+        # Map 'dicom-tags' column to literal.
+        def map_dicom_tags(m: str | Dict[str, Any]) -> Dict[str, Any]:
             # Index could have both dict (from loaded existing index, recreate=False)
-            # and string (from newly crawled files) mod-spec values.
+            # and string (from newly crawled files) dicom-tags values.
             return ast.literal_eval(m) if isinstance(m, str) else m
-        index['mod-spec'] = index['mod-spec'].apply(map_mod_spec)
+        index['dicom-tags'] = index['dicom-tags'].apply(map_dicom_tags)
 
     # Check that any files were found.
     if len(index) == 0:
@@ -270,7 +280,7 @@ def build_index(
         def has_standard_orientation(m: Dict) -> bool:
             orient = m['ImageOrientationPatient']
             return orient == [1, 0, 0, 0, 1, 0]
-        is_standard = ct_rows['mod-spec'].apply(has_standard_orientation)
+        is_standard = ct_rows['dicom-tags'].apply(has_standard_orientation)
         non_standard_rows = ct_rows[~is_standard].copy()
         non_standard_rows['error'] = 'NON-STANDARD-ORIENTATION'
         index_errors = concat_dataframes(index_errors, non_standard_rows)
@@ -284,7 +294,7 @@ def build_index(
             pos = series.apply(lambda m: pd.Series(m['PixelSpacing']))
             pos = pos.drop_duplicates()
             return len(pos) == 1
-        is_consistent = ct_rows[['series-id', 'mod-spec']].groupby('series-id')['mod-spec'].transform(has_consistent_xy_spacing)
+        is_consistent = ct_rows[['series-id', 'dicom-tags']].groupby('series-id')['dicom-tags'].transform(has_consistent_xy_spacing)
         incons_rows = ct_rows[~is_consistent].copy()
         incons_rows['error'] = 'INCONSISTENT-SPACING-XY'
         index_errors = concat_dataframes(index_errors, incons_rows)
@@ -299,7 +309,7 @@ def build_index(
             pos = series.apply(lambda m: pd.Series(m['ImagePositionPatient'][:2]))
             pos = pos.drop_duplicates()
             return len(pos) == 1
-        is_consistent = ct_rows[['series-id', 'mod-spec']].groupby('series-id')['mod-spec'].transform(has_consistent_xy_position)
+        is_consistent = ct_rows[['series-id', 'dicom-tags']].groupby('series-id')['dicom-tags'].transform(has_consistent_xy_position)
         incons_rows = ct_rows[~is_consistent].copy()
         incons_rows['error'] = 'INCONSISTENT-POSITION-XY'
         index_errors = concat_dataframes(index_errors, incons_rows)
@@ -314,7 +324,7 @@ def build_index(
             z_diffs = z_locs.diff().dropna().round(3)
             z_diffs = z_diffs.drop_duplicates()
             return len(z_diffs) == 1
-        is_consistent = ct_rows.groupby('series-id')['mod-spec'].transform(has_consistent_z_position)
+        is_consistent = ct_rows.groupby('series-id')['dicom-tags'].transform(has_consistent_z_position)
         incons_rows = ct_rows[~is_consistent].copy()
         incons_rows['error'] = 'INCONSISTENT-SPACING-Z'
         index_errors = concat_dataframes(index_errors, incons_rows)
@@ -327,7 +337,7 @@ def build_index(
     # }
     ct_serieses = list(index[index['modality'] == 'ct']['series-id'].unique())
     rtstruct_rows = index[index['modality'] == 'rtstruct']
-    has_ref_ct = rtstruct_rows['mod-spec'].apply(lambda m: m['RefCTSeriesInstanceUID']).isin(ct_serieses)
+    has_ref_ct = rtstruct_rows['dicom-tags'].apply(lambda m: m['RefCTSeriesInstanceUID']).isin(ct_serieses)
     no_ref_ct = rtstruct_rows[~has_ref_ct].copy()
 
     if not policy['rtstruct']['no-ref-ct']['allow']:
@@ -362,7 +372,7 @@ def build_index(
     # }
     rtstruct_sop_ids = list(index[index['modality'] == 'rtstruct']['sop-id'])
     rtplan_rows = index[index['modality'] == 'rtplan']
-    has_ref_rtstruct = rtplan_rows['mod-spec'].apply(lambda m: m['RefRTSTRUCTSOPInstanceUID']).isin(rtstruct_sop_ids)
+    has_ref_rtstruct = rtplan_rows['dicom-tags'].apply(lambda m: m['RefRTSTRUCTSOPInstanceUID']).isin(rtstruct_sop_ids)
     no_ref_rtstruct = rtplan_rows[~has_ref_rtstruct].copy()
 
     if not policy['rtplan']['no-ref-rtstruct']['allow']:
@@ -389,7 +399,7 @@ def build_index(
     # Remove RTDOSE series based on policy regarding referenced RTPLAN series.
     rtplan_sop_ids = list(index[index['modality'] == 'rtplan']['sop-id'])
     rtdose_rows = index[index['modality'] == 'rtdose']
-    has_ref_rtplan = rtdose_rows['mod-spec'].apply(lambda m: DICOM_RTDOSE_REF_RTPLAN_KEY in m and m[DICOM_RTDOSE_REF_RTPLAN_KEY]).isin(rtplan_sop_ids)
+    has_ref_rtplan = rtdose_rows['dicom-tags'].apply(lambda m: DICOM_RTDOSE_REF_RTPLAN_KEY in m and m[DICOM_RTDOSE_REF_RTPLAN_KEY]).isin(rtplan_sop_ids)
     no_ref_rtplan = rtdose_rows[~has_ref_rtplan].copy()
 
     # Check that RTDOSE references RTPLAN SOP instance in index.
