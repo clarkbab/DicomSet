@@ -3,11 +3,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from typing import List, Literal
+from typing import List, Literal, Tuple
 
 from ..dicom.series import DicomSeries
 from ..nifti.series import NiftiSeries
-from ..typing import AffineMatrix, AffineMatrix2D, AffineMatrix3D, BatchBox, BatchBox2D, BatchBox3D, BatchLabelImage, BatchLabelImage2D, BatchLabelImage3D, BatchVoxelBox, Box, Box2D, Box3D, Image, Image2D, Image3D, LabelImage, LabelImage2D, LabelImage3D, Landmark3D, Landmarks3D, Number, Orientation, Pixel, PixelBox, Point, Point2D, Point3D, Points, Points2D, Points3D, RegionID, Size, View, Voxel, VoxelBox, Window
+from ..typing import AffineMatrix, AffineMatrix2D, AffineMatrix3D, BatchBox, BatchBox2D, BatchBox3D, BatchLabelImage, BatchLabelImage2D, BatchLabelImage3D, BatchVoxelBox, Box, Box2D, Box3D, Image, Image2D, Image3D, LabelImage, LabelImage2D, LabelImage3D, Landmark, Landmarks, Landmark2D, Landmark3D, LandmarkID, Landmarks2D, Landmarks3D, Number, Orientation, Pixel, PixelBox, Point, Point2D, Point3D, Points, Points2D, Points3D, RegionID, Size, View, Voxel, VoxelBox, Window
 from .args import alias_kwargs, arg_to_list
 from .conversion import to_numpy
 from .geometry import affine_origin, affine_spacing, centre_of_mass, foreground_fov, foreground_fov_centre, to_image_coords
@@ -123,6 +123,7 @@ def plot_hist(
     ('l', 'labels'),
     ('p', 'points'),
     ('sl', 'show_labels'),
+    ('spn', 'show_point_names'),
     ('w', 'window'),
 )
 def plot_slice(
@@ -138,11 +139,12 @@ def plot_slice(
     labels: LabelImage2D | BatchLabelImage2D | None = None,
     label_names: RegionID | List[RegionID] | None = None,
     figsize: tuple[float, float] = (8, 8),
-    points: Point2D | Points2D | None = None,
+    points: Point2D | Points2D | Landmark2D | Landmarks2D | None = None,
     points_colour: str = 'yellow',
+    point_names: LandmarkID | List[LandmarkID] | None = None,
     return_axis: bool = False,
     show_labels: bool = True,
-    show_point_idxs: bool = False,
+    show_point_names: bool = False,
     title: str | None = None,
     use_image_coords: bool = False,
     vmin: float | None = None,
@@ -165,30 +167,16 @@ def plot_slice(
             logger.warn(f"Labels values are outside the range [0, 1]. Got min={labels.min():.3f}, max={labels.max():.3f}.")
 
     # Resolve window to vmin/vmax.
-    vmin, vmax = __resolve_window(window, affine=affine, data=data, labels=labels, vmin=vmin, vmax=vmax)
+    vmin, vmax = __resolve_window(window, affine=affine, data=data, labels=labels, vmax=vmax, vmin=vmin)
 
-    # Check for empty points array - could be filtered by the transform.
-    if points is not None:
-        if isinstance(points, (pd.DataFrame, pd.Series)):
-            points = landmarks_to_points(points)
-        elif not isinstance(points, np.ndarray):
-            points = to_numpy(points)
-
-        # Expand single points.
-        if points.ndim == 1:
-            points = points[np.newaxis, :]
-
-        if points.shape[0] == 0:
-            logger.warn("Points array is empty. No points will be plotted.")
-            points = None
-        else:
-            assert points.shape[1] == 2, f"Expected points to have shape (N, 2) but got {points.shape}."
+    # Resolve points and point names.
+    points, point_names = __resolve_points(points, point_names=point_names)
 
     # Resolve crop.
-    crop_box = __resolve_crop(crop, crop_margin, data.shape, affine=affine, label_names=None, labels=labels, points=points)
+    crop_box = __resolve_crop(crop, crop_margin, data.shape, affine=affine, label_names=None, labels=labels, point_names=point_names, points=points)
 
     # Resolve boxes for overlay.
-    boxes = __resolve_boxes(box, data.shape, affine=affine, label_names=label_names, labels=labels)
+    boxes = __resolve_boxes(box, data.shape, affine=affine, label_names=label_names, labels=labels, point_names=point_names, points=points)
 
     if ax is None:
         _, axs = plt.subplots(1, 1, figsize=figsize)
@@ -213,13 +201,13 @@ def plot_slice(
 
     # Plot labels.
     if labels is not None:
-        palette = sns.color_palette('colorblind', len(labels))
+        label_palette = sns.color_palette('colorblind', len(labels))
         for i, l in enumerate(labels):
             if crop_box is not None:
                 l = l[crop_box[0, 0]:crop_box[1, 0] + 1, crop_box[0, 1]:crop_box[1, 1] + 1]
-            cmap_label = mpl.colors.ListedColormap(((1, 1, 1, 0), palette[i]))
+            cmap_label = mpl.colors.ListedColormap(((1, 1, 1, 0), label_palette[i]))
             ax.imshow(l.T, alpha=alpha, cmap=cmap_label)
-            ax.contour(l.T, colors=[palette[i]], levels=[.5], linestyles='solid')
+            ax.contour(l.T, colors=[label_palette[i]], levels=[.5], linestyles='solid')
 
     # Plot points.
     if points is not None:
@@ -236,8 +224,8 @@ def plot_slice(
             if crop_box is not None:
                 p -= crop_box[0]
             ax.scatter(p[0], p[1], c=[p_colours[pi]], marker='o', s=20, zorder=5)
-            if show_point_idxs:
-                ax.annotate(str(pi), (p[0], p[1]),
+            if show_point_names and point_names is not None:
+                ax.annotate(point_names[pi], (p[0], p[1]),
                     color=p_colours[pi], fontsize=8,
                     textcoords='offset points', xytext=(5, 5), zorder=5)
 
@@ -309,6 +297,7 @@ def plot_slice(
     ('p', 'points'),
     ('scc', 'show_crosshairs_coords'),
     ('sl', 'show_labels'),
+    ('spn', 'show_point_names'),
 )
 def plot_volume(
     data: Image3D | DicomSeries | NiftiSeries | None,
@@ -332,13 +321,14 @@ def plot_volume(
     label_alpha: float = 0.3,
     points: Point3D | Points3D | Landmark3D | Landmarks3D | None = None,
     points_colour: str = 'yellow',
+    point_names: LandmarkID | List[LandmarkID] | None = None,
     crosshairs: Point3D | str | None = None,
     crosshairs_colour: str = 'yellow',
     return_axis: bool = False,
     show_crosshairs_coords: bool = True,
     show_labels: bool = True,
     show_points: bool = True,
-    show_point_idxs: bool = False,
+    show_point_names: bool = False,
     show_title: bool = True,
     use_image_coords: bool = False,
     view: int | list[int] | Literal['all'] = 'all',
@@ -363,41 +353,22 @@ def plot_volume(
             logger.warn(f"Labels values are outside the range [0, 1]. Got min={labels.min():.3f}, max={labels.max():.3f}.")
 
     # Resolve window to vmin/vmax.
-    vmin, vmax = __resolve_window(window, affine=affine, data=data, labels=labels, vmin=vmin, vmax=vmax)
+    vmin, vmax = __resolve_window(window, affine=affine, data=data, labels=labels, vmax=vmax, vmin=vmin)
 
-    # Check for empty points array - could be filtered by the transform.
-    if points is not None:
-        if isinstance(points, (pd.DataFrame, pd.Series)):
-            points = landmarks_to_points(points)
-        elif not isinstance(points, np.ndarray):
-            points = to_numpy(points)
-
-        # Expand single points.
-        if points.ndim == 1:
-            points = points[np.newaxis, :]
-
-        if points.shape[0] == 0:
-            logger.warn("Points array is empty. No points will be plotted.")
-            points = None
-            if isinstance(idx, str) and idx.startswith('points:'):
-                idx = None
-        else:
-            assert points.shape[1] == 3, f"Expected points to have shape (N, 3) but got {points.shape}."
-
+    # Resolve points and point names.
+    points, point_names = __resolve_points(points, point_names=point_names)
 
     # Resolve views.
     views = list(range(3)) if view == 'all' else (view if isinstance(view, list) else [view])
 
     # Resolve idx and crosshairs to 3D voxel points.
-    idx_vox = __resolve_point(idx, data.shape, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, points=points)
+    idx_vox = __resolve_point(idx, data.shape, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, point_names=point_names, points=points)
 
     # Resolve crop to a voxel bounding box.
-    crop_box = __resolve_crop(crop, crop_margin, data.shape, affine=affine, label_names=label_names, labels=labels, points=points)
+    crop_box = __resolve_crop(crop, crop_margin, data.shape, affine=affine, label_names=label_names, labels=labels, point_names=point_names, points=points)
 
     # Resolve boxes for overlay.
-    boxes = __resolve_boxes(box, data.shape, affine=affine, label_names=label_names, labels=labels)
-
-    palette = sns.color_palette('colorblind', 20)
+    boxes = __resolve_boxes(box, data.shape, affine=affine, label_names=label_names, labels=labels, point_names=point_names, points=points)
 
     if ax is not None:
         axs = arg_to_list(ax, mpl.axes.Axes)
@@ -457,18 +428,19 @@ def plot_volume(
 
         # Label overlays.
         if show_labels and labels is not None:
+            label_palette = sns.color_palette('colorblind', len(labels))
             label_names_list = arg_to_list(label_names, str) if label_names is not None else None
             for j, lab in enumerate(labels):
                 label_slice = _get_view_slice(v, lab, view_idx)
                 if view_crop_box is not None:
                     label_slice = label_slice[view_crop_box[0, 0]:view_crop_box[1, 0] + 1, view_crop_box[0, 1]:view_crop_box[1, 1] + 1]
-                cmap_label = mpl.colors.ListedColormap(((1, 1, 1, 0), palette[j]))
+                cmap_label = mpl.colors.ListedColormap(((1, 1, 1, 0), label_palette[j]))
                 col_ax.imshow(label_slice.T, alpha=label_alpha, aspect=aspect, cmap=cmap_label, origin=origin_y)
-                col_ax.contour(label_slice.T, colors=[palette[j]], levels=[0.5], linestyles='solid')
+                col_ax.contour(label_slice.T, colors=[label_palette[j]], levels=[0.5], linestyles='solid')
 
             # Add legend on first view only.
             if label_names_list is not None and v == views[0]:
-                handles = [mpl.patches.Patch(facecolor=palette[j], label=label_names_list[j]) for j in range(len(labels)) if j < len(label_names_list)]
+                handles = [mpl.patches.Patch(facecolor=label_palette[j], label=label_names_list[j]) for j in range(len(labels)) if j < len(label_names_list)]
                 col_ax.legend(fontsize='small', framealpha=0.7, handles=handles, loc='upper right')
 
         # Point overlays.
@@ -488,8 +460,8 @@ def plot_volume(
                     p_x -= view_crop_box[0, 0]
                     p_y -= view_crop_box[0, 1]
                 col_ax.scatter(p_x, p_y, c=[points_colours[pi]], marker='o', s=20, zorder=5)
-                if show_point_idxs:
-                    col_ax.annotate(str(pi), (p_x, p_y),
+                if show_point_names and point_names is not None:
+                    col_ax.annotate(point_names[pi], (p_x, p_y),
                         color=points_colours[pi], fontsize=8,
                         textcoords='offset points', xytext=(5, 5), zorder=5)
 
@@ -567,6 +539,8 @@ def __resolve_boxes(
     affine: AffineMatrix | None = None,
     labels: LabelImage | BatchLabelImage | None = None,
     label_names: List[RegionID] | None = None,
+    points: Points | None = None,
+    point_names: List[str] | None = None,
     ) -> BatchVoxelBox | None:
     if box is None:
         return None
@@ -616,6 +590,7 @@ def __resolve_crop(
     labels: BatchLabelImage | None = None,
     label_names: List[RegionID] | None = None,
     points: Points | None = None,
+    point_names: List[str] | None = None,
     ) -> PixelBox | VoxelBox | None:
     if crop is None:
         return None
@@ -655,7 +630,14 @@ def __resolve_crop(
         elif source in ('p', 'point', 'points'):
             if points is None:
                 raise ValueError(f"crop='{crop}' but no points were provided.")
-            point_world = points[int(value)]
+            if value.lstrip('-').isdigit():
+                point_world = points[int(value)]
+            else:
+                if point_names is None:
+                    raise ValueError(f"crop='{crop}' uses a point name but no 'point_names' were provided.")
+                if value not in point_names:
+                    raise ValueError(f"Point name '{value}' not found in point_names: {point_names}.")
+                point_world = points[point_names.index(value)]
             if affine is not None:
                 point_vox = (point_world - origin) / spacing
             else:
@@ -701,6 +683,7 @@ def __resolve_point(
     labels: BatchLabelImage | None = None,
     label_names: List[RegionID] | None = None,
     points: Points | None = None,
+    point_names: List[str] | None = None,
     ) -> Pixel | Voxel:
     if idx is None:
         idx = 'f:0.5'
@@ -749,7 +732,14 @@ def __resolve_point(
     elif source in ('p', 'point', 'points'):
         if points is None:
             raise ValueError(f"idx='{idx}' but no points were provided.")
-        point = points[int(value)]
+        if value.lstrip('-').isdigit():
+            point = points[int(value)]
+        else:
+            if point_names is None:
+                raise ValueError(f"idx='{idx}' uses a point name but no 'point_names' were provided.")
+            if value not in point_names:
+                raise ValueError(f"Point name '{value}' not found in point_names: {point_names}.")
+            point = points[point_names.index(value)]
 
     else:
         raise ValueError(f"Unknown idx prefix '{source}'. Expected 'f', 'labels', or 'points'.")
@@ -762,6 +752,37 @@ def __resolve_point(
     point = np.clip(point, 0, size - 1)
 
     return point
+
+def __resolve_points(
+    points: Point | Points | Landmark | Landmarks | None,
+    point_names: LandmarkID | List[LandmarkID] | None = None,
+    ) -> Tuple[Points, List[LandmarkID | int]]:
+    if points is None:
+        return None, None
+
+    # Get points and IDs.
+    if isinstance(points, (pd.DataFrame, pd.Series)):
+        if point_names is None:
+            point_names = points['landmark-id'].astype(str).tolist()
+        points = landmarks_to_points(points)
+    elif not isinstance(points, np.ndarray):
+        points = to_numpy(points)
+
+    # Expand single point.
+    if points.ndim == 1:
+        points = points[np.newaxis, :]
+
+    if points.shape[0] == 0:
+        logger.warn("Points array is empty. No points will be plotted.")
+        return None, None
+
+    # Use indices for point names.
+    if point_names is None:
+        point_names = [str(i) for i in range(len(points))]
+
+    assert len(point_names) == len(points), f"Expected point_names to have length {len(points)} but got {len(point_names)}."
+
+    return points, point_names
 
 def __resolve_window(
     window: Window | None,

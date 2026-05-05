@@ -6,15 +6,6 @@ from typing import List
 from ..typing import AffineMatrix, Box, Image, LabelImage, Landmarks, Pixel, Point, Points, Size, Spacing, SpatialDim, Voxel
 from .landmarks import landmarks_to_points, points_to_landmarks
 
-def assert_box_width(
-    box: Box,
-    ) -> None:
-    dim = box.shape[1]
-    for i in range(dim):
-        width = box[1, i] - box[0, i]
-        if width <= 0:
-            raise ValueError(f"Box width must be positive, got '{box}'.")
-
 def affine_origin(
     affine: AffineMatrix,
     ) -> Point:
@@ -38,6 +29,15 @@ def affine_spacing(
         spacing = (affine[0, 0], affine[1, 1], affine[2, 2])
 
     return spacing
+
+def assert_box_width(
+    box: Box,
+    ) -> None:
+    dim = box.shape[1]
+    for i in range(dim):
+        width = box[1, i] - box[0, i]
+        if width <= 0:
+            raise ValueError(f"Box width must be positive, got '{box}'.")
 
 def centre_of_mass(
     data: Image,

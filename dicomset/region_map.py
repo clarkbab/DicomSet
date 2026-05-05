@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import numpy as np
 import os
 import re
 from typing import Any, Dict, List
 
 from .typing import DirPath, DiskRegionID, FilePath, RegExp, RegionID, RegionList
 from .utils.args import arg_to_list
+from .utils.conversion import to_list
 from .utils.io import load_yaml
 from .utils.python import ensure_loaded
 
@@ -38,65 +40,27 @@ class RegionMap:
         self.__data = data
 
     @property
+    def filepath(self) -> FilePath:
+        return self.__filepath
+
+    @property
+    def landmark_regexps(self) -> List[RegExp] | None:
+        regexps = []
+        for k, v in self.landmarks.items():
+            for vi in v:
+                if isinstance(vi, str) and vi.startswith('re:'):
+                    regexps.append(vi[3:])
+        return to_list(np.unique(regexps))
+
+    @property
     @ensure_loaded('__landmarks', '__load_landmarks')
     def landmarks(self) -> Dict[str, Any]:
         return self.__landmarks
 
     @property
-    @ensure_loaded('__mappings', '__load_mappings')
-    def mappings(self) -> Dict[str, Any]:
-        return self.__mappings
-
-    def __load_landmarks(self) -> None:
-        if 'landmarks' not in self.__data:
-            self.__landmarks = None
-            return
-        self.__landmarks = self.__data['landmarks']
-
-    def __load_mappings(self) -> None:
-        if 'mappings' not in self.__data:
-            self.__mappings = None
-            return
-        self.__mappings = self.__data['mappings']
-
-    def __load_lists(self) -> None:
-        if 'lists' not in self.__data:
-            self.__lists = None
-            return
-
-        self.__lists = {}
-        lists = self.__data['lists']
-        def __map_list(l: List[RegionList | RegionID]) -> List[RegionID]:
-            assert isinstance(l, list), f"Expected list for input, got {type(l).__name__}"
-            mapped_list = []
-            for li in l:
-                if li in lists:
-                    v = lists[li]
-                    mapped_list.extend(__map_list(v))
-                else:
-                    mapped_list.append(li)
-            return mapped_list
-        for k, v in lists.items():
-            assert isinstance(v, list), f"Expected list for key '{k}', got {type(v).__name__}"
-            self.__lists[k] = __map_list(v)
-
-    @property
-    @ensure_loaded('__lists', '__load_lists')
-    def lists(self) -> Dict[RegionList, List[RegionID]]:
-        return self.__lists
-
-    @property
-    def landmark_regexps(self) -> List[RegExp] | None:
-        landmarks_data = self.landmarks
-        regexps = []
-        for k, v in landmarks_data.items():
-            if isinstance(v, str) and v.startswith('re:'):
-                regexps.append(v[3:])
-        return regexps
-
-    @property
-    def filepath(self) -> FilePath:
-        return self.__filepath
+    @ensure_loaded('__regions', '__load_regions')
+    def regions(self) -> Dict[RegionList, List[RegionID]]:
+        return self.__regions
 
     @classmethod
     def load(
@@ -111,8 +75,48 @@ class RegionMap:
         data = load_yaml(filepath)
         return cls(data, filepath)
 
-    # Takes API regions and returns actual disk regions - these are the leaf nodes
-    # of the regions map chains.
+    def __resolve_list(
+        self,
+        l: List[RegionID | LandmarkID | RegionList | RegExp],
+        all_lists: Dict[str, List[RegionID | LandmarkID | RegionList | RegExp]],
+    ) -> List[RegionID]:
+        resolved = []
+        for li in l:
+            if li in all_lists:
+                v = arg_to_list(all_lists[li], str)
+                resolved.extend(self.__resolve_list(v, all_lists))
+            else:
+                resolved.append(li)
+        return resolved
+
+    def __load_landmarks(self) -> None:
+        if 'landmarks' not in self.__data:
+            self.__landmarks = None
+            return
+
+        landmarks = self.__data['landmarks']
+        self.__landmarks = {}
+        for k, v in landmarks.items():
+            v = arg_to_list(v, str)
+            self.__landmarks[k] = self.__resolve_list(v, landmarks)
+
+    def __load_regions(self) -> None:
+        if 'regions' not in self.__data:
+            self.__regions = None
+            return
+
+        self.__regions = {}
+        regions = self.__data['regions']
+        for k, v in regions.items():
+            v = arg_to_list(v, str)
+            self.__regions[k] = self.__resolve_list(v, regions)
+
+    def __load_mappings(self) -> None:
+        if 'mappings' not in self.__data:
+            self.__mappings = None
+            return
+        self.__mappings = self.__data['mappings']
+
     def map_disk_to_regions(
         self,
         region_id: DiskRegionID | List[DiskRegionID],
@@ -146,6 +150,8 @@ class RegionMap:
 
         return list(sorted(set(api_regions)))
 
+    # Takes API regions and returns actual disk regions - these are the leaf nodes
+    # of the regions map chains.
     def map_regions_to_disk(
         self,
         region_id: RegionID | List[RegionID],
@@ -183,14 +189,19 @@ class RegionMap:
 
         return list(sorted(set(disk_regions)))
 
+    @property
+    @ensure_loaded('__mappings', '__load_mappings')
+    def mappings(self) -> Dict[str, Any]:
+        return self.__mappings
+
     def region_list(
         self,
         name: RegionList,
         ) -> List[RegionID]:
-        lists = self.lists
-        if lists is None or not name in lists:
+        regions = self.regions
+        if regions is None or not name in regions:
             raise ValueError(f"Region list '{name}' not found.")
-        return lists[name]
+        return regions[name]
 
     def __repr__(self) -> str:
         return str(self)
@@ -198,4 +209,4 @@ class RegionMap:
     # Takes disk regions and maps them to all possible API regions that they are
     # a part of, including themselves.
     def __str__(self) -> str:
-        return f"{self.__class__.__name__}({self.__data})"
+        return f"{self.__class__.__name__}(landmarks={self.landmarks}, mappings={self.mappings}, regions={self.regions})"

@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Literal, Tuple, TYPE_CHECKING
 
 from ... import config as conf
 from ...region_map import RegionMap
-from ...typing import BatchLabelImage3D, FilePath, LandmarkID, Landmarks3D, Points3D, RegionID, RegionList, RtStructDicom, SeriesID, Voxels
+from ...typing import BatchLabelImage3D, FilePath, LandmarkID, Landmarks3D, RegExp, RegionID, RegionList, RtStructDicom, SeriesID
 from ...utils.args import alias_kwargs, arg_to_list
 from ...utils.landmarks import landmarks_to_points
 from ...utils.python import ensure_loaded
@@ -71,7 +71,8 @@ class DicomRtStructSeries(DicomSeries):
         **kwargs,
         ) -> bool:
         all_ids = self.list_regions(**kwargs)
-        region_ids = region_to_list(region_id, region_map=self.__region_map, **kwargs)
+        disk_regions = list_rtstruct_regions(self.dicom, landmark_regexp=landmark_regexp)
+        region_ids = region_to_list(region_id, disk_regions=disk_regions, region_map=self.__region_map, **kwargs)
         n_overlap = len(np.intersect1d(region_ids, all_ids))
         return n_overlap > 0 if any else n_overlap == len(region_ids)
 
@@ -100,7 +101,7 @@ class DicomRtStructSeries(DicomSeries):
         landmark_ids = self.list_landmarks(landmark_id=landmark_id, landmark_regexp=landmark_regexp, **kwargs)
         _, landmarks_data = from_rtstruct_dicom(self.dicom, self.ref_ct.size, self.ref_ct.affine, landmark_id=landmark_ids, landmark_regexp=landmark_regexp, region_id=None)
         if landmarks_data is None:
-            return None, None
+            return None
 
         # Add extra columns - in case we're concatenating landmarks from multiple patients/studies.
         if add_ids:
@@ -129,6 +130,11 @@ class DicomRtStructSeries(DicomSeries):
 
         return landmarks_data
 
+    @alias_kwargs(
+        ('l', 'landmark_id'),
+        ('lr', 'landmark_regexp'),
+        ('um', 'use_mapping'),
+    )
     @ensure_loaded('__data', '__load_data')
     def list_landmarks(
         self,
@@ -156,10 +162,10 @@ class DicomRtStructSeries(DicomSeries):
             else:
                 api_landmarks = true_disk_landmarks
         else:
-            landmark_ids = region_to_list(landmark_id, region_map=self.__region_map)
+            landmark_ids = region_to_list(landmark_id, disk_regions=true_disk_landmarks, region_map=self.__region_map)
             api_landmarks = []
             for r in landmark_ids:
-                # Only keep landmarks that map to a one or more disk landmarks.
+                # Only keep landmarks that map to one or more disk landmarks.
                 if use_mapping:
                     disk_landmarks = self.__region_map.map_regions_to_disk(r, disk_regions=true_disk_landmarks)
                     if len(np.intersect1d(disk_landmarks, true_disk_landmarks)) > 0:
@@ -171,7 +177,9 @@ class DicomRtStructSeries(DicomSeries):
         return list(sorted(set(api_landmarks)))
 
     @alias_kwargs(
+        ('lr', 'landmark_regexp'),
         ('r', 'region_id'),
+        ('um', 'use_mapping'),
     )
     @ensure_loaded('__data', '__load_data')
     def list_regions(
@@ -201,7 +209,7 @@ class DicomRtStructSeries(DicomSeries):
             else:
                 api_regions = true_disk_regions
         else:
-            region_ids = region_to_list(region_id, region_map=self.__region_map)
+            region_ids = region_to_list(region_id, disk_regions=true_disk_regions, region_map=self.__region_map)
             api_regions = []
             for r in region_ids:
                 # Only keep regions that map to a one or more disk regions.
@@ -247,7 +255,7 @@ class DicomRtStructSeries(DicomSeries):
             landmark_regexp = self.__region_map.landmark_regexps
 
         # Get required regions.
-        region_ids = self.list_regions(region_id=region_id, landmark_regexp=landmark_regexp, use_mapping=use_mapping, **kwargs)
+        region_ids = self.list_regions(landmark_regexp=landmark_regexp, region_id=region_id, use_mapping=use_mapping, **kwargs)
 
         # Get disk regions.
         # These are need for matching regexps from the region map.

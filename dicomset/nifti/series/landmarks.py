@@ -11,7 +11,7 @@ from ...dicom import DicomDataset
 from ...patient import Patient
 from ...study import Study
 from ...typing import LandmarkID, Landmarks3D, SeriesID
-from ...utils.args import arg_to_list
+from ...utils.args import alias_kwargs, arg_to_list
 from ...utils.geometry import to_image_coords
 from ...utils.io import load_csv
 from ...utils.landmarks import landmarks_to_points
@@ -122,6 +122,9 @@ class NiftiLandmarksSeries(NiftiSeries):
         n_overlap = len(np.intersect1d(landmark_ids, all_ids))
         return n_overlap > 0 if any else n_overlap == len(landmark_ids)
 
+    @alias_kwargs(
+        ('l', 'landmark_id'),
+    )
     def list_landmarks(
         self,
         landmark_id: LandmarkID | List[LandmarkID] | Literal['all'] = 'all',

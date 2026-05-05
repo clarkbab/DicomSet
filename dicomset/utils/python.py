@@ -52,11 +52,6 @@ def ensure_loaded(*pairs) -> Callable:
     return decorator
 
 # E.g: a = [1, 2, [3, 4], [5, [6, 7]], 8, 9]
-def flatten_list(
-    l: List[Any | List[Any]],
-    ) -> List[Any]:
-    return [i for sublist in l for i in (flatten_list(sublist) if isinstance(sublist, list) else [sublist])]
-
 def filter_lists(
     lists: List[List[Any]],
     filt_fn: Callable,
@@ -70,6 +65,11 @@ def filter_lists(
     if len(lists) == 0:
         lists = ([],) * n_lists
     return lists
+
+def flatten_list(
+    l: List[Any | List[Any]],
+    ) -> List[Any]:
+    return [i for sublist in l for i in (flatten_list(sublist) if isinstance(sublist, list) else [sublist])]
 
 def get_private_attr(obj, attr_name, *args):
     if attr_name.startswith('__'):
@@ -157,6 +157,9 @@ def sort_lists(
         lists = ([],) * n_lists
     return lists
 
+def unzip(zipped):
+    return tuple(map(tuple, zip(*zipped)))
+
 def version(
     gte: str | None = None,
     ) -> Tuple[int, int, int] | bool:
@@ -191,6 +194,3 @@ def with_makeitso(
 
 def wrap_quotes(s: str) -> str:
     return f"'{s}'"
-
-def unzip(zipped):
-    return tuple(map(tuple, zip(*zipped)))
