@@ -51,6 +51,12 @@ def ensure_loaded(*pairs) -> Callable:
         return wrapper
     return decorator
 
+# E.g: a = [1, 2, [3, 4], [5, [6, 7]], 8, 9]
+def flatten_list(
+    l: List[Any | List[Any]],
+    ) -> List[Any]:
+    return [i for sublist in l for i in (flatten_list(sublist) if isinstance(sublist, list) else [sublist])]
+
 def filter_lists(
     lists: List[List[Any]],
     filt_fn: Callable,

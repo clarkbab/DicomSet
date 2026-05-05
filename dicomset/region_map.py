@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 from .typing import DirPath, DiskRegionID, FilePath, RegExp, RegionID, RegionList
 from .utils.args import arg_to_list
 from .utils.io import load_yaml
+from .utils.python import ensure_loaded
 
 RM_FILENAME_REGEXP = r"regions?[-_]map\.ya?ml"
 
@@ -34,36 +35,64 @@ class RegionMap:
         data: Dict[str, Any],
         filepath: FilePath,
         ) -> None:
-        self.__landmarks_data = data['landmarks'] if 'landmarks' in data else None
-        self.__lists_data = data['lists'] if 'lists' in data else None
-        self.__mappings_data = data['mappings'] if 'mappings' in data else None
-        self.__filepath = filepath
+        self.__data = data
 
     @property
-    def landmarks_data(self) -> Dict[str, Any]:
-        return self.__landmarks_data
+    @ensure_loaded('__landmarks', '__load_landmarks')
+    def landmarks(self) -> Dict[str, Any]:
+        return self.__landmarks
 
     @property
-    def lists_data(self) -> Dict[str, Any]:
-        return self.__lists_data
+    @ensure_loaded('__mappings', '__load_mappings')
+    def mappings(self) -> Dict[str, Any]:
+        return self.__mappings
+
+    def __load_landmarks(self) -> None:
+        if 'landmarks' not in self.__data:
+            self.__landmarks = None
+            return
+        self.__landmarks = self.__data['landmarks']
+
+    def __load_mappings(self) -> None:
+        if 'mappings' not in self.__data:
+            self.__mappings = None
+            return
+        self.__mappings = self.__data['mappings']
+
+    def __load_lists(self) -> None:
+        if 'lists' not in self.__data:
+            self.__lists = None
+            return
+
+        self.__lists = {}
+        lists = self.__data['lists']
+        def __map_list(l: List[RegionList | RegionID]) -> List[RegionID]:
+            assert isinstance(l, list), f"Expected list for input, got {type(l).__name__}"
+            mapped_list = []
+            for li in l:
+                if li in lists:
+                    v = lists[li]
+                    mapped_list.extend(__map_list(v))
+                else:
+                    mapped_list.append(li)
+            return mapped_list
+        for k, v in lists.items():
+            assert isinstance(v, list), f"Expected list for key '{k}', got {type(v).__name__}"
+            self.__lists[k] = __map_list(v)
 
     @property
-    def mappings_data(self) -> Dict[str, Any]:
-        return self.__mappings_data
+    @ensure_loaded('__lists', '__load_lists')
+    def lists(self) -> Dict[RegionList, List[RegionID]]:
+        return self.__lists
 
     @property
     def landmark_regexps(self) -> List[RegExp] | None:
-        if self.__landmarks_data is None:
-            return None
+        landmarks_data = self.landmarks
         regexps = []
-        for k, v in self.__landmarks_data.items():
+        for k, v in landmarks_data.items():
             if isinstance(v, str) and v.startswith('re:'):
                 regexps.append(v[3:])
         return regexps
-
-    @property
-    def landmarks_data(self) -> Dict[str, Any]:
-        return self.__landmarks_data
 
     @property
     def filepath(self) -> FilePath:
@@ -93,8 +122,8 @@ class RegionMap:
         api_regions = [] 
         for r in region_ids:
             # Check mappings.
-            if self.__mappings_data is not None:
-                for k, v in self.__mappings_data.items():
+            if self.mappings is not None:
+                for k, v in self.mappings.items():
                     if v.startswith('re:'):
                         regex = re.compile(v[3:], flags=re.IGNORECASE)
                         if regex.match(r):
@@ -128,8 +157,8 @@ class RegionMap:
         for r in region_ids:
             # Check mappings.
             matched = False
-            if self.__mappings_data is not None:
-                for k, v in self.__mappings_data.items():
+            if self.mappings is not None:
+                for k, v in self.mappings.items():
                     if v.startswith('re:'):
                         assert disk_regions is not None, "Disk regions must be provided for regex mapping."
                         v = v[3:]
@@ -158,9 +187,10 @@ class RegionMap:
         self,
         name: RegionList,
         ) -> List[RegionID]:
-        if self.__lists_data is None or not name in self.__lists_data:
+        lists = self.lists
+        if lists is None or not name in lists:
             raise ValueError(f"Region list '{name}' not found.")
-        return self.__lists_data[name]
+        return lists[name]
 
     def __repr__(self) -> str:
         return str(self)

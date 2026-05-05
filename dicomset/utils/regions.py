@@ -15,12 +15,11 @@ def region_to_list(
     # Expand regions.
     regions = []
     for r in region_ids:
-        if r.startswith('l:'): 
-            # Load region list.
-            list_name = r.split(':')[-1]
-            if region_map is None:
-                raise ValueError(f"Used region list '{list_name}' without a region map.")
-            regions += region_map.region_list(list_name)
+        if region_map is not None:
+            for k, v in region_map.lists.items(): 
+                if r == k:
+                    regions += v
+                    break
         else:
             regions.append(r)
 
