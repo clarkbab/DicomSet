@@ -90,7 +90,7 @@ class NiftiPatient(IndexMixin, Patient):
 
     def study(
         self,
-        id: StudyID,
+        id: StudyID | int,
         **kwargs,
         ) -> NiftiStudy:
         id = resolve_id(id, self.list_studies)

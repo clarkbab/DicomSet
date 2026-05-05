@@ -111,7 +111,7 @@ class DicomStudy(IndexWithErrorsMixin, Study):
 
     def series(
         self,
-        id: SeriesID,
+        id: SeriesID | int,
         modality: DicomModality | None = None,
         **kwargs: Dict,
         ) -> DicomSeries:

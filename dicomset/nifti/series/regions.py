@@ -57,7 +57,7 @@ class NiftiRegionsSeries(NiftiImageSeries):
         for i, r in enumerate(region_ids):
             # Get disk regions.
             if use_mapping:
-                disk_regions = self.__region_map.map_region_to_disk(r)
+                disk_regions = self.__region_map.map_regions_to_disk(r)
             else:
                 disk_regions = [r]
 
@@ -162,7 +162,7 @@ class NiftiRegionsSeries(NiftiImageSeries):
             for r in region_ids:
                 # Only keep regions that map to a one or more disk regions.
                 if use_mapping:
-                    disk_regions = self.__region_map.map_region_to_disk(r)
+                    disk_regions = self.__region_map.map_regions_to_disk(r)
                     if len(np.intersect1d(disk_regions, true_disk_regions)) > 0:
                         api_regions.append(r)
                 else:

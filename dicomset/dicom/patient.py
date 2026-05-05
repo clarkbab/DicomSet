@@ -139,7 +139,7 @@ class DicomPatient(IndexWithErrorsMixin, Patient):
 
     def study(
         self,
-        id: StudyID,
+        id: StudyID | int,
         sort: Callable[DicomStudy, int] | None = None,
         ) -> DicomStudy:
         id = resolve_id(id, lambda: self.list_studies(sort=sort))

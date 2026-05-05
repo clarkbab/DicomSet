@@ -42,9 +42,9 @@ class NiftiLandmarksSeries(NiftiSeries):
 
     def data(
         self,
-        points_only: bool = False,
         landmark_id: LandmarkID | List[LandmarkID] | Literal['all'] = 'all',
         n: int | None = None,
+        points_only: bool = False,
         sample_ct: bool = False,
         sample_dose: bool = False,
         use_world_coords: bool = True,
@@ -97,9 +97,9 @@ class NiftiLandmarksSeries(NiftiSeries):
             landmarks_data.insert(2, 'series-id', self.__id)
 
         if points_only:
-            return landmarks_data[range(3)].to_numpy().astype(np.float32)
-        else:
-            return landmarks_data
+            landmarks_data = landmarks_to_points(landmarks_data)
+
+        return landmarks_data
 
     @property
     def dicom(self) -> DicomRtStructSeries:

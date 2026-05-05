@@ -234,7 +234,7 @@ class NiftiDataset(IndexMixin, Dataset):
     @ensure_loaded('__index', '__load_data')
     def patient(
         self,
-        id: PatientID | None = None,
+        id: PatientID | int | None = None,
         group_id: GroupID | List[GroupID] | Literal['all'] = 'all',
         n: int | None = None,
         **kwargs) -> NiftiPatient:

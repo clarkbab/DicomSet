@@ -11,7 +11,7 @@ import seaborn as sns
 import skimage as ski
 from typing import Any, Dict, List, Literal, Tuple
 
-from ...typing import AffineMatrix3D, BatchLabelImage3D, DirPath, DiskLandmarkID, DiskRegionID, FilePath, Image2D, Image3D, LabelImage3D, LandmarkID, Landmarks, PatientID, Point2D, Point3D, Points2D, RegionID, RtStructDicom, Size2D, Size3D, Spacing2D, StudyID
+from ...typing import AffineMatrix3D, BatchLabelImage3D, DirPath, DiskLandmarkID, DiskRegionID, FilePath, Image2D, Image3D, LabelImage3D, LandmarkID, Landmarks, PatientID, Point2D, Point3D, Points2D, RegExp, RegionID, RtStructDicom, Size2D, Size3D, Spacing2D, StudyID
 from ...utils.args import alias_kwargs, arg_to_list, resolve_filepath
 from ...utils.geometry import affine_origin, affine_spacing, create_affine, to_image_coords
 from ...utils.landmarks import points_to_landmarks
@@ -391,19 +391,22 @@ def __get_region_slice_label(
 def list_rtstruct_landmarks(
     rtstruct: FilePath | RtStructDicom,
     landmark_id: DiskLandmarkID | List[DiskLandmarkID] | Literal['all'] = 'all',
-    landmark_regexp: str | None = None,
+    landmark_regexp: RegExp | List[RegExp] | None = None,
     return_contours: bool = False,
     ) -> List[DiskLandmarkID] | Tuple[List[DiskLandmarkID], List['Something dcm']]:
     if isinstance(rtstruct, str):
         rtstruct = load_dicom(rtstruct, force=False)
     landmark_regexp = landmark_regexp or DEFAULT_LANDMARK_REGEXP
+    landmark_regexps = arg_to_list(landmark_regexp, str)
 
     # Load all regions and contours.
     all_ids = [i.ROIName for i in rtstruct.StructureSetROISequence]
     all_contours = rtstruct.ROIContourSequence
 
     # Filter out regions.
-    landmark_ids, landmark_contours = filter_lists([all_ids, all_contours], lambda ic: re.match(landmark_regexp, ic[0]) is not None)
+    def is_landmark(r: str) -> bool:
+        return any(re.match(regex, r) for regex in landmark_regexps)
+    landmark_ids, landmark_contours = filter_lists([all_ids, all_contours], lambda ic: is_landmark(ic[0]))
 
     # Filter on the presence of a 'ContourSequence' - sometimes empty.
     landmark_ids, landmark_contours = filter_lists([landmark_ids, landmark_contours], lambda ic: getattr(ic[1], 'ContourSequence', None) is not None)
@@ -423,20 +426,23 @@ def list_rtstruct_landmarks(
 
 def list_rtstruct_regions(
     rtstruct: FilePath | RtStructDicom,
-    landmark_regexp: str | None = None,
+    landmark_regexp: RegExp | List[RegExp] | None = None,
     region_id: DiskRegionID | List[DiskRegionID] | Literal['all'] = 'all',
     return_contours: bool = False,
     ) -> List[DiskRegionID] | Tuple[List[DiskRegionID], List['Something dcm']]:
     if isinstance(rtstruct, str):
         rtstruct = load_dicom(rtstruct, force=False)
     landmark_regexp = landmark_regexp or DEFAULT_LANDMARK_REGEXP
+    landmark_regexps = arg_to_list(landmark_regexp, str)
 
     # Load all regions and contours.
     all_ids = [i.ROIName for i in rtstruct.StructureSetROISequence]
     all_contours = rtstruct.ROIContourSequence
 
-    # Filter out regions.
-    region_ids, region_contours = filter_lists([all_ids, all_contours], lambda ic: re.match(landmark_regexp, ic[0]) is None)
+    # Filter out landmarks.
+    def is_region(r: str) -> bool:
+        return not any(re.match(regex, r) for regex in landmark_regexps)
+    region_ids, region_contours = filter_lists([all_ids, all_contours], lambda ic: is_region(ic[0]))
 
     # Filter on the presence of a 'ContourSequence' - sometimes empty.
     region_ids, region_contours = filter_lists([region_ids, region_contours], lambda ic: getattr(ic[1], 'ContourSequence', None) is not None)

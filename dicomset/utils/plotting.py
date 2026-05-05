@@ -5,6 +5,8 @@ import pandas as pd
 import seaborn as sns
 from typing import List, Literal
 
+from ..dicom.series import DicomSeries
+from ..nifti.series import NiftiSeries
 from ..typing import AffineMatrix, AffineMatrix2D, AffineMatrix3D, BatchBox, BatchBox2D, BatchBox3D, BatchLabelImage, BatchLabelImage2D, BatchLabelImage3D, BatchVoxelBox, Box, Box2D, Box3D, Image, Image2D, Image3D, LabelImage, LabelImage2D, LabelImage3D, Landmark3D, Landmarks3D, Number, Orientation, Pixel, PixelBox, Point, Point2D, Point3D, Points, Points2D, Points3D, RegionID, Size, View, Voxel, VoxelBox, Window
 from .args import alias_kwargs, arg_to_list
 from .conversion import to_numpy
@@ -309,7 +311,7 @@ def plot_slice(
     ('sl', 'show_labels'),
 )
 def plot_volume(
-    data: Image3D | None,
+    data: Image3D | DicomSeries | NiftiSeries | None,
     affine: AffineMatrix3D | None = None,
     ax: mpl.axes.Axes | List[mpl.axes.Axes] | None = None,
     box: Box3D | BatchBox3D | RegionID | List[RegionID] | None = None,
@@ -347,6 +349,11 @@ def plot_volume(
     if data is None:
         assert labels is not None, "Labels must be provided if data is None."
         data = np.zeros(labels.shape[-3:])
+    elif isinstance(data, (DicomSeries, NiftiSeries)):
+        # This saves passing affine - just pass the image series.
+        series = data
+        data = series.data
+        affine = series.affine
 
     # Normalise labels to batch form (B, X, Y, Z).
     if labels is not None and labels.ndim == 3:

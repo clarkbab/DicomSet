@@ -6,7 +6,7 @@ import textwrap
 from typing import Any, Callable, Dict, List, Tuple
 
 from .. import config
-from ..typing import FilePath
+from ..typing import FilePath, ID
 from .python import isinstance_generic, version
 
 class CallVisitor(ast.NodeVisitor):
@@ -193,12 +193,15 @@ def resolve_filepath(filepath: FilePath) -> FilePath:
     return filepath
 
 def resolve_id(
-    id: str,
-    all_ids: List[str] | Callable[[], List[str]],
+    id: ID | int,
+    all_ids: List[ID] | Callable[[], List[ID]],
     ) -> str:
-    if id.startswith('i:'):
-        idx = int(id.split(':')[1])
-        ids = all_ids() 
+    if isinstance(id, int) or id.startswith('i:'):
+        if isinstance(id, int):
+            idx = id
+        else:
+            idx = int(id.split(':')[1])
+        ids = all_ids()
         if idx > len(ids) - 1:
             raise ValueError(f"Index ({idx}) was larger than list (len={len(ids)}).")
         id = ids[idx]

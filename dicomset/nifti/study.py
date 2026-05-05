@@ -108,7 +108,7 @@ class NiftiStudy(IndexMixin, Study):
 
     def series(
         self,
-        id: SeriesID,
+        id: SeriesID | int,
         modality: NiftiModality,
         ) -> NiftiImageSeries | NiftiLandmarksSeries | NiftiRegionsSeries:
         if modality == 'ct':

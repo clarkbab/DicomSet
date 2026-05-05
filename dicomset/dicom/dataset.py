@@ -213,7 +213,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
     )
     def patient(
         self,
-        id: PatientID,
+        id: PatientID | int,
         group_id: GroupID | List[GroupID] | Literal['all'] = 'all',
         **kwargs,
         ) -> DicomPatient:
