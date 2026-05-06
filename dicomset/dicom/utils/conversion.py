@@ -10,7 +10,7 @@ from typing import Callable, List, Literal, TYPE_CHECKING
 
 from ...dataset import CT_FROM_REGEXP
 from ...nifti.utils.create import create_dataset as create_nifti_dataset
-from ...region_map import RegionMap
+from ...struct_map import StructMap
 from ...typing import GroupID, LandmarkID, PatientID, RegionID
 from ...utils.args import arg_to_list
 from ...utils.io import save_csv, save_nifti
@@ -199,9 +199,9 @@ def convert_to_nifti(
         open(filepath, 'w').close()
 
     # Copy region map.
-    region_map = RegionMap.load(dicom_set.path)
-    if region_map is not None:
-        filepath = region_map.filepath
+    struct_map = StructMap.load(dicom_set.path)
+    if struct_map is not None:
+        filepath = struct_map.filepath
         destpath = os.path.join(nifti_set.path, os.path.basename(filepath))
         shutil.copy(filepath, destpath)
 

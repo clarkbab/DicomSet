@@ -6,11 +6,10 @@ import pandas as pd
 from typing import List, Literal, Tuple, TYPE_CHECKING
 
 from ...dicom import DicomDataset
-from ...region_map import RegionMap
+from ...struct_map import StructMap
 from ...typing import BatchLabelImage3D, FilePath, RegionID, SeriesID
-from ...utils.args import alias_kwargs, arg_to_list
+from ...utils.args import alias_kwargs, arg_to_list, regions_to_list
 from ...utils.io import load_nifti, load_nrrd
-from ...utils.regions import region_to_list
 from .. import config
 from .images.image import NiftiImageSeries
 from .shared import IMAGE_EXTENSIONS
@@ -28,14 +27,14 @@ class NiftiRegionsSeries(NiftiImageSeries):
         study: NiftiStudy,
         id: SeriesID,
         index: pd.DataFrame | None = None,
-        region_map: RegionMap | None = None,
+        struct_map: StructMap | None = None,
         ) -> None:
         super().__init__('regions', dataset, patient, study, id, index=index)
         dirpath = os.path.join(config.directories.datasets, 'nifti', self.__dataset.id, 'data', 'patients', self.__patient.id, self.__study.id, self.__modality, self.__id)
         if not os.path.exists(dirpath):
             raise ValueError(f"No regions series '{self.__id}' found for study '{self.__study.id}'. Dirpath: {dirpath}")
         self.__path = dirpath
-        self.__region_map = region_map
+        self.__struct_map = struct_map
 
     @alias_kwargs(
         ('r', 'region_id'),
@@ -48,16 +47,19 @@ class NiftiRegionsSeries(NiftiImageSeries):
         return_regions: bool = True,
         use_mapping: bool = True,
         ) -> Tuple[List[RegionID], BatchLabelImage3D]:
-        if self.__region_map is None:
+        if self.__struct_map is None:
             use_mapping = False
         region_ids = self.list_regions(region_id=region_id, use_mapping=use_mapping)
+
+        # Required for region mapping with regexps.
+        true_disk_regions = self.__list_disk_regions()
 
         # Add regions data.
         regions_data = None    # We don't know the shape yet.
         for i, r in enumerate(region_ids):
             # Get disk regions.
             if use_mapping:
-                disk_regions = self.__region_map.map_regions_to_disk(r)
+                disk_regions = self.__struct_map.map_api_to_disk(r, disk_ids=true_disk_regions)
             else:
                 disk_regions = [r]
 
@@ -107,12 +109,12 @@ class NiftiRegionsSeries(NiftiImageSeries):
         region_id: RegionID | List[RegionID] | Literal['all'] = 'all',
         regions_ignore_missing: bool = True,
         ) -> List[FilePath]:
-        region_ids = region_to_list(region_id, literals={ 'all': self.list_regions }, region_map=self.__region_map)
+        region_ids = regions_to_list(region_id, literals={ 'all': self.list_regions }, struct_map=self.__struct_map)
         if not regions_ignore_missing and not self.has_region(region_ids):
             raise ValueError(f'Regions {region_ids} not found in series {self.id}.')
         region_ids = [r for r in region_ids if self.has_region(r)]  # Filter out missing regions.
         # Region mapping is many-to-one, so we could get multiple files on disk for the same mapped region.
-        disk_ids = self.__region_map.inv_map_region(region_ids, disk_regions=self.list_regions(use_mapping=False)) if self.__region_map is not None else region_ids
+        disk_ids = self.__struct_map.inv_map_region(region_ids, disk_regions=self.list_regions(use_mapping=False)) if self.__struct_map is not None else region_ids
         disk_ids = arg_to_list(disk_ids, str)
         # Check all possible file extensions.
         filepaths = [os.path.join(self.__path, f'{i}{e}') for i in disk_ids for e in IMAGE_EXTENSIONS if os.path.exists(os.path.join(self.__path, f'{i}{e}'))]
@@ -125,7 +127,7 @@ class NiftiRegionsSeries(NiftiImageSeries):
         **kwargs,
         ) -> bool:
         all_ids = self.list_regions(**kwargs)
-        region_ids = region_to_list(region_id, literals={ 'all': all_ids }, region_map=self.__region_map)
+        region_ids = regions_to_list(region_id, literals={ 'all': all_ids }, struct_map=self.__struct_map)
         n_overlap = len(np.intersect1d(region_ids, all_ids))
         return n_overlap > 0 if any else n_overlap == len(region_ids)
 
@@ -143,7 +145,7 @@ class NiftiRegionsSeries(NiftiImageSeries):
         region_id: RegionID | List[RegionID] | Literal['all'] = 'all',
         use_mapping: bool = True,
         ) -> List[RegionID]:
-        if self.__region_map is None:
+        if self.__struct_map is None:
             use_mapping = False
 
         true_disk_regions = self.__list_disk_regions()
@@ -152,17 +154,17 @@ class NiftiRegionsSeries(NiftiImageSeries):
         if region_id == 'all':
             if use_mapping:
                 # Map back to the API region names.
-                api_regions = [self.__region_map.map_disk_to_regions(r) for r in true_disk_regions]
+                api_regions = [self.__struct_map.map_disk_to_api(r) for r in true_disk_regions]
                 api_regions = [r for rs in api_regions for r in (rs if isinstance(rs, list) else [rs])]
             else:
                 api_regions = true_disk_regions
         else:
-            region_ids = region_to_list(region_id, literals={ 'all': self.list_regions }, region_map=self.__region_map)
+            region_ids = regions_to_list(region_id, literals={ 'all': self.list_regions }, struct_map=self.__struct_map)
             api_regions = []
             for r in region_ids:
                 # Only keep regions that map to a one or more disk regions.
                 if use_mapping:
-                    disk_regions = self.__region_map.map_regions_to_disk(r)
+                    disk_regions = self.__struct_map.map_api_to_disk(r, disk_ids=true_disk_regions)
                     if len(np.intersect1d(disk_regions, true_disk_regions)) > 0:
                         api_regions.append(r)
                 else:

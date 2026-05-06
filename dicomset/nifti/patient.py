@@ -9,7 +9,7 @@ from .. import config
 from ..dicom.dataset import DicomDataset
 from ..mixins import IndexMixin
 from ..patient import Patient
-from ..region_map import RegionMap
+from ..struct_map import StructMap
 from ..typing import PatientID, StudyID
 from ..utils.args import arg_to_list, resolve_id
 from .study import NiftiStudy
@@ -25,9 +25,9 @@ class NiftiPatient(IndexMixin, Patient):
         ct_from: NiftiPatient | None = None,
         index: pd.DataFrame | None = None,
         excluded_labels: List[str] | None = None,
-        region_map: RegionMap | None = None,
+        struct_map: StructMap | None = None,
         ) -> None:
-        super().__init__(dataset, id, ct_from=ct_from, index=index, region_map=region_map)
+        super().__init__(dataset, id, ct_from=ct_from, index=index, struct_map=struct_map)
         self.__path = os.path.join(config.directories.datasets, 'nifti', self.__dataset.id, 'data', 'patients', self.__id)
         if not os.path.exists(self.__path):
             raise ValueError(f"No nifti patient '{self.__id}' found at path: {self.__path}")
@@ -102,7 +102,7 @@ class NiftiPatient(IndexMixin, Patient):
         else:
             ct_from = None
 
-        return NiftiStudy(self.__dataset, self, id, ct_from=ct_from, index=index, region_map=self.__region_map, **kwargs)
+        return NiftiStudy(self.__dataset, self, id, ct_from=ct_from, index=index, struct_map=self.__struct_map, **kwargs)
 
 # Add properties/methods from 'default_study'.
 mods = ['ct', 'dose', 'landmarks', 'mr', 'regions']

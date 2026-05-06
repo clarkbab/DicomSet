@@ -8,13 +8,12 @@ from typing import Callable, List, Literal
 from .. import config
 from ..dataset import CT_FROM_REGEXP, Dataset
 from ..mixins import IndexWithErrorsMixin
-from ..region_map import RegionMap
+from ..struct_map import StructMap
 from ..typing import DatasetID, GroupID, PatientID, RegionID
-from ..utils.args import alias_kwargs, arg_to_list, resolve_id
+from ..utils.args import alias_kwargs, arg_to_list, regions_to_list, resolve_id
 from ..utils.io import load_csv, load_yaml
 from ..utils.logging import logger
 from ..utils.python import ensure_loaded
-from ..utils.regions import region_to_list
 from .index import DICOM_ERROR_INDEX_COLS, DICOM_INDEX_COLS, build_index as build_index_base, index_exists
 from .patient import DicomPatient
 
@@ -76,7 +75,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
             filename = 'regions.csv' if use_mapping else 'unmapped-regions.csv'
             filepath = os.path.join(self.__path, 'reports', filename)
             if os.path.exists(filepath):
-                region_ids = region_to_list(region_id, region_map=self.region_map)
+                region_ids = regions_to_list(region_id, literals={ 'all': self.list_regions }, struct_map=self.__struct_map)
                 df = pd.read_csv(filepath)
                 df = df[df['region'].isin(region_ids)]
                 ids = list(sorted(df['patient-id'].unique()))
@@ -204,12 +203,12 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         filepath = os.path.join(self.__path, 'index-policy.yaml')
         self.__index_policy = load_yaml(filepath)
 
-    def __load_region_map(self) -> None:
-        self.__region_map = RegionMap.load(self.__path)
+    def __load_struct_map(self) -> None:
+        self.__struct_map = StructMap.load(self.__path)
 
     @ensure_loaded(
         ('__index', '__load_index'),
-        ('__region_map', '__load_region_map'),
+        ('__struct_map', '__load_struct_map'),
     )
     def patient(
         self,
@@ -223,12 +222,12 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         index = self.__index[self.__index['patient-id'] == str(id)]
         index_errors = self.__index_errors[self.__index_errors['patient-id'] == str(id)]
         ct_from = self.__ct_from.patient(id) if self.__ct_from is not None and self.__ct_from.has_patient(id) else None
-        return DicomPatient(self, id, index, self.__index_policy, index_errors, config=self.__config, ct_from=ct_from, region_map=self.__region_map, **kwargs)
+        return DicomPatient(self, id, index, self.__index_policy, index_errors, config=self.__config, ct_from=ct_from, struct_map=self.__struct_map, **kwargs)
 
     @property
-    @ensure_loaded('__region_map', '__load_region_map')
-    def region_map(self) -> RegionMap | None:
-        return self.__region_map
+    @ensure_loaded('__struct_map', '__load_struct_map')
+    def struct_map(self) -> StructMap | None:
+        return self.__struct_map
 
     def __str__(self) -> str:
         return super().__str__(self.__class__.__name__)

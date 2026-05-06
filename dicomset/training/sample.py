@@ -7,7 +7,7 @@ from typing import List, Literal, Tuple, TYPE_CHECKING
 from ..typing import LabelImage3D, LandmarkID, Point3D, RegionID, SampleID, Size3D, Spacing3D
 from ..utils.args import arg_to_list
 from ..utils.io import load_csv
-from ..utils.regions import region_to_list
+from ..utils.regions import regions_to_list
 if TYPE_CHECKING:
     from .split import HoldoutSplit
 
@@ -33,7 +33,7 @@ class TrainingSample:
         if isinstance(region_id, str) and region_id == 'all':
             return True
 
-        region_ids = region_to_list(region_id)
+        region_ids = regions_to_list(region_id)
         n_matching = len(np.intersect1d(region_ids, self.regions()))
 
         if n_matching == len(region_ids):
@@ -89,7 +89,7 @@ class TrainingSample:
             # present for this sample, as otherwise our label volumes will have different numbers
             # of channels between samples.
             all_regions = self.split.dataset.regions
-            region_ids = region_to_list(region_id, literals={ 'all': all_regions })
+            region_ids = regions_to_list(region_id, literals={ 'all': all_regions })
             
             # Raise error if sample has no requested regions - the label will be full of zeros.
             if not self.has_region(region_ids):
@@ -141,7 +141,7 @@ class TrainingSample:
         # present for this sample, as otherwise our masks will have different numbers
         # of channels between samples.
         all_regions = self.split.dataset.regions
-        region_ids = region_to_list(region_id, literals={ 'all': all_regions })
+        region_ids = regions_to_list(region_id, literals={ 'all': all_regions })
 
         # Extract requested 'regions'.
         channels = [0]

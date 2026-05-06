@@ -6,12 +6,11 @@ import pandas as pd
 from typing import Any, Dict, List, Literal, Tuple, TYPE_CHECKING
 
 from ... import config as conf
-from ...region_map import RegionMap
+from ...struct_map import StructMap
 from ...typing import BatchLabelImage3D, FilePath, LandmarkID, Landmarks3D, RegExp, RegionID, RegionList, RtStructDicom, SeriesID
-from ...utils.args import alias_kwargs, arg_to_list
+from ...utils.args import alias_kwargs, arg_to_list, landmarks_to_list, regions_to_list
 from ...utils.landmarks import landmarks_to_points
 from ...utils.python import ensure_loaded
-from ...utils.regions import region_to_list
 from ..utils.dicom import from_rtstruct_dicom, list_rtstruct_landmarks, list_rtstruct_regions
 from ..utils.io import load_dicom
 from .series import DicomSeries
@@ -35,12 +34,12 @@ class DicomRtStructSeries(DicomSeries):
         index: pd.Series,
         index_policy: Dict[str, Any],
         config: Dict[str, Any] | None = None,
-        region_map: RegionMap | None = None,
+        struct_map: StructMap | None = None,
         ) -> None:
         super().__init__('rtstruct', dataset, patient, study, id, config=config)
         self.__filepath = os.path.join(conf.directories.datasets, 'dicom', dataset.id, 'data', 'patients', index['filepath'])
         self.__ref_ct = ref_ct
-        self.__region_map = region_map
+        self.__struct_map = struct_map
 
     @property
     @ensure_loaded('__dicom', '__load_data')
@@ -59,7 +58,8 @@ class DicomRtStructSeries(DicomSeries):
         **kwargs,
         ) -> bool:
         all_ids = self.list_landmarks(**kwargs)
-        landmark_ids = arg_to_list(landmark_id, str, literals={ 'all': all_ids })
+        disk_landmarks = list_rtstruct_landmarks(self.dicom, landmark_regexp=self.landmark_regexp)
+        landmark_ids = landmarks_to_list(landmark_id, disk_landmarks=disk_landmarks, literals={ 'all': all_ids }, struct_map=self.__struct_map)
         n_overlap = len(np.intersect1d(landmark_ids, all_ids))
         return n_overlap > 0 if any else n_overlap == len(landmark_ids)
 
@@ -72,7 +72,7 @@ class DicomRtStructSeries(DicomSeries):
         ) -> bool:
         all_ids = self.list_regions(**kwargs)
         disk_regions = list_rtstruct_regions(self.dicom, landmark_regexp=landmark_regexp)
-        region_ids = region_to_list(region_id, disk_regions=disk_regions, region_map=self.__region_map, **kwargs)
+        region_ids = regions_to_list(region_id, disk_regions=disk_regions, literals={ 'all': all_ids }, struct_map=self.__struct_map)
         n_overlap = len(np.intersect1d(region_ids, all_ids))
         return n_overlap > 0 if any else n_overlap == len(region_ids)
 
@@ -94,8 +94,8 @@ class DicomRtStructSeries(DicomSeries):
         **kwargs,
         ) -> Landmarks3D:
         # Get landmarks regexps.
-        if landmark_regexp is None and self.__region_map is not None:
-            landmark_regexp = self.__region_map.landmark_regexps
+        if landmark_regexp is None and self.__struct_map is not None:
+            landmark_regexp = self.__struct_map.landmark_regexps
 
         # Load landmarks.
         landmark_ids = self.list_landmarks(landmark_id=landmark_id, landmark_regexp=landmark_regexp, **kwargs)
@@ -142,12 +142,12 @@ class DicomRtStructSeries(DicomSeries):
         landmark_regexp: str | None = None,
         use_mapping: bool = True,
         ) -> List[LandmarkID]:
-        if self.__region_map is None:
+        if self.__struct_map is None:
             use_mapping = False
 
         # Get landmarks regexps.
-        if landmark_regexp is None and self.__region_map is not None:
-            landmark_regexp = self.__region_map.landmark_regexps
+        if landmark_regexp is None and self.__struct_map is not None:
+            landmark_regexp = self.__struct_map.landmark_regexps
 
         # Get disk landmarks.
         # Don't pass 'landmark_id' here as "list_rtstruct_landmarks" doesn't know about region mapping.
@@ -157,17 +157,17 @@ class DicomRtStructSeries(DicomSeries):
         if landmark_id == 'all':
             if use_mapping:
                 # Map back to the API landmark names.
-                api_landmarks = [self.__region_map.map_disk_to_regions(r) for r in true_disk_landmarks]
+                api_landmarks = [self.__struct_map.map_disk_to_api(r) for r in true_disk_landmarks]
                 api_landmarks = [r for rs in api_landmarks for r in (rs if isinstance(rs, list) else [rs])]
             else:
                 api_landmarks = true_disk_landmarks
         else:
-            landmark_ids = region_to_list(landmark_id, disk_regions=true_disk_landmarks, region_map=self.__region_map)
+            landmark_ids = landmarks_to_list(landmark_id, disk_landmarks=true_disk_landmarks, literals={ 'all': self.list_landmarks }, struct_map=self.__struct_map)
             api_landmarks = []
             for r in landmark_ids:
                 # Only keep landmarks that map to one or more disk landmarks.
                 if use_mapping:
-                    disk_landmarks = self.__region_map.map_regions_to_disk(r, disk_regions=true_disk_landmarks)
+                    disk_landmarks = self.__struct_map.map_api_to_disk(r, disk_ids=true_disk_landmarks)
                     if len(np.intersect1d(disk_landmarks, true_disk_landmarks)) > 0:
                         api_landmarks.append(r)
                 else:
@@ -189,12 +189,12 @@ class DicomRtStructSeries(DicomSeries):
         region_id: RegionID | List[RegionID] | RegionList | Literal['all'] = 'all',
         use_mapping: bool = True,
         ) -> List[RegionID]:
-        if self.__region_map is None:
+        if self.__struct_map is None:
             use_mapping = False
 
         # Get landmarks regexps.
-        if landmark_regexp is None and self.__region_map is not None:
-            landmark_regexp = self.__region_map.landmark_regexps
+        if landmark_regexp is None and self.__struct_map is not None:
+            landmark_regexp = self.__struct_map.landmark_regexps
 
         # Get disk regions.
         # Don't pass 'region_id' here as "list_rtstruct_regions" doesn't know about region mapping.
@@ -204,17 +204,17 @@ class DicomRtStructSeries(DicomSeries):
         if region_id == 'all':
             if use_mapping:
                 # Map back to the API region names.
-                api_regions = [self.__region_map.map_disk_to_regions(r) for r in true_disk_regions]
+                api_regions = [self.__struct_map.map_disk_to_api(r) for r in true_disk_regions]
                 api_regions = [r for rs in api_regions for r in (rs if isinstance(rs, list) else [rs])]
             else:
                 api_regions = true_disk_regions
         else:
-            region_ids = region_to_list(region_id, disk_regions=true_disk_regions, region_map=self.__region_map)
+            region_ids = regions_to_list(region_id, disk_regions=true_disk_regions, literals={ 'all': self.list_regions }, struct_map=self.__struct_map)
             api_regions = []
             for r in region_ids:
                 # Only keep regions that map to a one or more disk regions.
                 if use_mapping:
-                    disk_regions = self.__region_map.map_regions_to_disk(r, disk_regions=true_disk_regions)
+                    disk_regions = self.__struct_map.map_api_to_disk(r, disk_ids=true_disk_regions)
                     if len(np.intersect1d(disk_regions, true_disk_regions)) > 0:
                         api_regions.append(r)
                 else:
@@ -247,12 +247,12 @@ class DicomRtStructSeries(DicomSeries):
         use_mapping: bool = True,
         **kwargs,
         ) -> Tuple[List[RegionID], BatchLabelImage3D]:
-        if self.__region_map is None:
+        if self.__struct_map is None:
             use_mapping = False
 
         # Get landmarks regexps.
-        if landmark_regexp is None and self.__region_map is not None:
-            landmark_regexp = self.__region_map.landmark_regexps
+        if landmark_regexp is None and self.__struct_map is not None:
+            landmark_regexp = self.__struct_map.landmark_regexps
 
         # Get required regions.
         region_ids = self.list_regions(landmark_regexp=landmark_regexp, region_id=region_id, use_mapping=use_mapping, **kwargs)
@@ -270,29 +270,24 @@ class DicomRtStructSeries(DicomSeries):
         # to disk regions (we already have) and just load the unique disk regions and then map the results
         # back for the region aggregation.
 
-        # Map to disk regions.
-        mapped_regions = {}
+        # Map API regions, i.e. get the required disk regions for each API region.
+        disk_regions = {}
         for r in region_ids:
-            if use_mapping and self.__region_map is not None:
-                mapped_regions[r] = self.__region_map.map_regions_to_disk(r, disk_regions=true_disk_regions)
+            if use_mapping and self.__struct_map is not None:
+                disk_regions[r] = self.__struct_map.map_api_to_disk(r, disk_ids=true_disk_regions)
             else:
-                mapped_regions[r] = [r]
+                disk_regions[r] = [r]
 
         # Load up a unique set of disk regions.
-        disk_regions = [ri for r in mapped_regions.values() for ri in r]
-        unique_disk_regions = list(sorted(np.unique(disk_regions).tolist()))
-
-        # We can assume all passed regions are loaded, as they come from 'list_regions' which is based on regions
-        # present in the rtstruct dicom.
-        _, labels = from_rtstruct_dicom(self.dicom, self.ref_ct.size, self.ref_ct.affine, landmark_id=None, region_id=unique_disk_regions)
+        unique_disk_regions = [ri for r in disk_regions.values() for ri in r]
+        unique_disk_regions = list(sorted(set(unique_disk_regions)))
+        _, labels = from_rtstruct_dicom(self.dicom, self.ref_ct.size, self.ref_ct.affine, landmark_id=None, region_id=disk_regions)
 
         # Aggregate results for each API region.
         regions_data = None    # We don't know the shape yet.
         for i, r in enumerate(region_ids):
-            disk_regions = mapped_regions[r]
-
             # Load and sum multiple regions.
-            indices = [unique_disk_regions.index(dr) for dr in disk_regions]
+            indices = [unique_disk_regions.index(dr) for dr in disk_regions[r]]
             rlabels = labels[indices]
             reg_data = np.sum(rlabels, axis=0).clip(0, 1).astype(bool)
 

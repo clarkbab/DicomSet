@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, List, Literal, TYPE_CHECKING
 
 from ..mixins import IndexWithErrorsMixin
 from ..patient import Patient
-from ..region_map import RegionMap
+from ..struct_map import StructMap
 from ..typing import PatientID, StudyID
 from ..utils.args import arg_to_list, resolve_id
 from ..utils.pandas import append_row
@@ -25,9 +25,9 @@ class DicomPatient(IndexWithErrorsMixin, Patient):
         index_errors: pd.DataFrame,
         config: Dict[str, Any] | None = None,
         ct_from: DicomPatient | None = None,
-        region_map: RegionMap | None = None,
+        struct_map: StructMap | None = None,
         ) -> None:
-        super().__init__(dataset, id, config=config, ct_from=ct_from, region_map=region_map)
+        super().__init__(dataset, id, config=config, ct_from=ct_from, struct_map=struct_map)
         self.__index_errors = index_errors
         self.__index = index
         self.__index_policy = index_policy
@@ -148,7 +148,7 @@ class DicomPatient(IndexWithErrorsMixin, Patient):
         index = self.__index[self.__index['study-id'] == str(id)].copy()
         index_errors = self.__index_errors[self.__index_errors['study-id'] == str(id)].copy()
         ct_from = self.__ct_from.study(id) if self.__ct_from is not None and self.__ct_from.has_study(id) else None
-        return DicomStudy(self.__dataset, self, id, index, self.__index_policy, index_errors, config=self.__config, ct_from=ct_from, region_map=self.__region_map)
+        return DicomStudy(self.__dataset, self, id, index, self.__index_policy, index_errors, config=self.__config, ct_from=ct_from, struct_map=self.__struct_map)
 
     @property
     def weight(self) -> str:

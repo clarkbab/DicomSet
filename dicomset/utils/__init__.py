@@ -4,7 +4,7 @@ import importlib
 from typing import TYPE_CHECKING
 
 LAZY_IMPORTS = {
-    'args': ['arg_to_list', 'bubble_args', 'resolve_filepath'],
+    'args': ['arg_to_list', 'bubble_args', 'landmarks_to_list', 'regions_to_list', 'resolve_filepath'],
     'conversion': ['to_list', 'to_numpy', 'to_tensor'],
     'debug': ['from_desc'],
     'geometry': [
@@ -20,7 +20,6 @@ LAZY_IMPORTS = {
     'pandas': ['append_row'],
     'plotting': ['plot_hist', 'plot_slice', 'plot_volume'],
     'python': ['ensure_loaded', 'filter_lists', 'flatten_list', 'sort_lists', 'unzip'],
-    'regions': ['region_to_list'],
     'transforms': ['crop', 'crop_affine', 'crop_points', 'from_sitk_image', 'hist_eq', 'minmax', 'resample', 'sample', 'spatial_transpose', 'to_sitk_image'],
 }
 

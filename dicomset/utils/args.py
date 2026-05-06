@@ -1,13 +1,18 @@
+from __future__ import annotations
+
 import ast
 from functools import wraps
 import inspect
 import os
 import textwrap
-from typing import Any, Callable, Dict, List, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Tuple
 
 from .. import config
-from ..typing import FilePath, ID
+from ..typing import DiskLandmarkID, DiskRegionID, FilePath, ID, LandmarkID, LandmarkList, RegionID, RegionList
 from .python import isinstance_generic, version
+
+if TYPE_CHECKING:
+    from ..struct_map import StructMap
 
 class CallVisitor(ast.NodeVisitor):
     def __init__(
@@ -184,6 +189,29 @@ def get_inner_args(
     visitor.visit(tree)
     return visitor.args, visitor.kwargs
 
+def landmarks_to_list(
+    landmark_id: LandmarkID | LandmarkList | List[LandmarkID | LandmarkList] | Literal['all'],
+    disk_landmarks: List[DiskLandmarkID] | None = None,
+    struct_map: StructMap | None = None,
+    **kwargs,
+    ) -> List[LandmarkID]:
+    landmark_ids = arg_to_list(landmark_id, str, **kwargs)
+    if struct_map is not None:
+        landmark_ids = struct_map.expand_list(landmark_ids, disk_ids=disk_landmarks)
+    return list(sorted(set(landmark_ids)))
+
+def regions_to_list(
+    region_id: RegionID | RegionList | List[RegionID | RegionList] | Literal['all'],
+    disk_regions: List[DiskRegionID] | None = None,
+    struct_map: StructMap | None = None,
+    **kwargs,
+    ) -> List[RegionID]:
+    region_ids = arg_to_list(region_id, str, **kwargs)
+    if struct_map is not None:
+        region_ids = struct_map.expand_list(region_ids, disk_ids=disk_regions)
+    return list(sorted(set(region_ids)))
+
+# Can't move this to StructMap because we don't want literal='all' behaviour in there.
 def resolve_filepath(filepath: FilePath) -> FilePath:
     file_options = ['f', 'file', 'files']
     for f in file_options:
@@ -192,6 +220,7 @@ def resolve_filepath(filepath: FilePath) -> FilePath:
             break
     return filepath
 
+# Can't move this to StructMap because we don't want literal='all' behaviour in there.
 def resolve_id(
     id: ID | int,
     all_ids: List[ID] | Callable[[], List[ID]],

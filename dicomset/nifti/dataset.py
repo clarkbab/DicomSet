@@ -8,7 +8,7 @@ from .. import config
 from ..dataset import CT_FROM_REGEXP, Dataset
 from ..dicom import DicomDataset
 from ..mixins import IndexMixin
-from ..region_map import RegionMap
+from ..struct_map import StructMap
 from ..typing import DatasetID, GroupID, PatientID, RegionID
 from ..utils.args import alias_kwargs, arg_to_list, resolve_id
 from ..utils.io import load_csv
@@ -208,7 +208,7 @@ class NiftiDataset(IndexMixin, Dataset):
         self.__groups = load_csv(filepath) if os.path.exists(filepath) else None
 
         # Load region map.
-        self.__region_map = RegionMap.load(self.__path)
+        self.__struct_map = StructMap.load(self.__path)
 
     # Copied from 'mymi/reports/dataset/nift.py' to avoid circular dependency.
     def __load_patient_regions_report(
@@ -255,12 +255,12 @@ class NiftiDataset(IndexMixin, Dataset):
         else:
             ct_from = None
 
-        return NiftiPatient(self, id, ct_from=ct_from, excluded_labels=exc_df, index=index, region_map=self.__region_map, **kwargs)
+        return NiftiPatient(self, id, ct_from=ct_from, excluded_labels=exc_df, index=index, struct_map=self.__struct_map, **kwargs)
 
     @property
-    @ensure_loaded('__region_map', '__load_data')
-    def region_map(self) -> RegionMap | None:
-        return self.__region_map
+    @ensure_loaded('__struct_map', '__load_data')
+    def struct_map(self) -> StructMap | None:
+        return self.__struct_map
 
     def __str__(self) -> str:
         return super().__str__(self.__class__.__name__)

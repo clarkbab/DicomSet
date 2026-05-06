@@ -426,6 +426,9 @@ def list_rtstruct_landmarks(
 
 def list_rtstruct_regions(
     rtstruct: FilePath | RtStructDicom,
+    # TODO: Expand this to handle landmark IDs also.
+    # Can we just treatment landmarks (e.g. "Marker 1") as regexps
+    # and match using the same logic?
     landmark_regexp: RegExp | List[RegExp] | None = None,
     region_id: DiskRegionID | List[DiskRegionID] | Literal['all'] = 'all',
     return_contours: bool = False,

@@ -7,7 +7,7 @@ from typing import Dict, List, Literal, TYPE_CHECKING
 from .. import config
 from ..dicom.dataset import DicomDataset
 from ..mixins import IndexMixin
-from ..region_map import RegionMap
+from ..struct_map import StructMap
 from ..study import Study
 from ..typing import NiftiModality, SeriesID, StudyID
 from ..utils.args import arg_to_list, resolve_id
@@ -28,9 +28,9 @@ class NiftiStudy(IndexMixin, Study):
         id: StudyID,
         ct_from: NiftiStudy | None = None,
         index: pd.DataFrame | None = None,
-        region_map: RegionMap | None = None,
+        struct_map: StructMap | None = None,
         ) -> None:
-        super().__init__(dataset, patient, id, ct_from=ct_from, index=index, region_map=region_map)
+        super().__init__(dataset, patient, id, ct_from=ct_from, index=index, struct_map=struct_map)
         self.__path = os.path.join(config.directories.datasets, 'nifti', self.__dataset.id, 'data', 'patients', self.__patient.id, self.__id)
         if not os.path.exists(self.__path):
             raise ValueError(f"No nifti study '{self.__id}' found at path: {self.__path}")
@@ -136,7 +136,7 @@ class NiftiStudy(IndexMixin, Study):
         elif modality == 'regions':
             id = resolve_id(id, lambda: self.list_series('regions'))
             index = self.__index[(self.__index['dataset'] == self.__dataset.id) & (self.__index['patient-id'] == self.__patient.id) & (self.__index['study-id'] == self.__id) & (self.__index['series-id'] == id) & (self.__index['modality'] == 'regions')].copy() if self.__index is not None else None
-            return NiftiRegionsSeries(self.__dataset, self.__patient, self, id, index=index, region_map=self.__region_map)
+            return NiftiRegionsSeries(self.__dataset, self.__patient, self, id, index=index, struct_map=self.__struct_map)
         else:
             raise ValueError(f"Unknown NiftiSeries modality '{modality}'.")
 

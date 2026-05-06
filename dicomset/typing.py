@@ -47,6 +47,7 @@ Landmark3D = pd.Series
 Landmarks2D = pd.DataFrame
 Landmarks3D = pd.DataFrame
 LandmarkID = str
+LandmarkList = str
 ModelID = str
 NiftiModality = Literal['ct', 'dose', 'landmarks', 'mr', 'plan', 'regions']
 Number = int | float

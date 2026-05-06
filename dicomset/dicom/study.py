@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, List, Literal, TYPE_CHECKING
 from ..dataset import Dataset
 from ..mixins import IndexWithErrorsMixin
 from ..patient import Patient
-from ..region_map import RegionMap
+from ..struct_map import StructMap
 from ..study import Study
 from ..typing import DicomModality, SeriesID, StudyID
 from ..utils.args import alias_kwargs, arg_to_list, resolve_id
@@ -30,9 +30,9 @@ class DicomStudy(IndexWithErrorsMixin, Study):
         index_errors: pd.DataFrame,
         config: Dict[str, Any] | None = None,
         ct_from: DicomStudy | None = None,
-        region_map: RegionMap | None = None,
+        struct_map: StructMap | None = None,
         ) -> None:
-        super().__init__(dataset, patient, id, config=config, ct_from=ct_from, region_map=region_map)
+        super().__init__(dataset, patient, id, config=config, ct_from=ct_from, struct_map=struct_map)
         self.__ct_from = ct_from
         self.__index = index
         self.__index_errors = index_errors
@@ -157,7 +157,7 @@ class DicomStudy(IndexWithErrorsMixin, Study):
                 else:
                     ref_ct = ref_study.default_series('ct')
 
-            return DicomRtStructSeries(self.__dataset, self.__patient, self, id, ref_ct, index, index_policy, config=self.__config, region_map=self.__region_map, **kwargs)
+            return DicomRtStructSeries(self.__dataset, self.__patient, self, id, ref_ct, index, index_policy, config=self.__config, struct_map=self.__struct_map, **kwargs)
 
     def series_modality(
         self,

@@ -1,0 +1,36 @@
+# Mappings: 
+# - Disk regions that match the values in the 'mappings' dict are mapped to the keys (API regions).
+#   This mapping could be recursive, e.g. Brainstem -> BrainStem -> HN_OARs.
+# - Allows renaming, e.g. Brainstem -> BrainStem.
+# - Allows combining, e.g. [Lung_L, Lung_R] -> Lung.
+# - Allows renaming/combining via regexp, e.g. "^Lung(\s_)?L$" -> Lung_L, and "^Lung_(L|R)$" -> Lung.
+# - These are all kind of the same recipe, all matching disk regions should be mapped to the API
+#   region key, combining masks if there are multiple matches.
+# Lists:
+# - Allows user to define lists of regions so that these can be passed in the API instead of the
+#   full list, e.g. series.data(region_id='hn'). These should be unique names, i.e. shouldn't match
+#   an actual region ID.
+# - Allows recursive definitions, e.g. hn+lung: [hn, lung].
+# - Similarly to 'mappings', values may be regexps (or lists of strings with regexps and region IDs)
+#   and these will be matched to disk regions and expanded to lists.
+# - Should only define lists using API regions.
+# Landmarks:
+# - Allows us to differentiate between regions and landmarks which have very different data formats.
+#   For mappings/lists landmarks and regions can both be used.
+
+mappings:
+  BrainStem: Brainstem
+  Parotid_L: re:^Parotid(\s|_)L$
+  HN_OARs: [BrainStem, Parotid_L]
+lists:
+  hn+lung: [hn, lung]
+  hn: [A_Carotid_L, A_Carotid_R, Bone_Mandible, BrachialPlex_L, BrachialPlex_R, Brainstem, Cavity_Oral, Esophagus_S, Larynx_SG, Parotid_L, Parotid_R, SpinalCord]
+  lung: [BrachialPlex_L, BrachialPlex_R, Bronchus_Prox, Duodenum, Esophagus, GreatVessels, Heart, Lung_L, Lung_R, SpinalCanal]
+  lm_all: [lm_guide, lm_eval]
+  lm_guide: re:^LM [0-9]+$
+  lm_eval: re:^Marker [0-9]+$
+landmarks:
+  - Marker 1
+  - Marker 2
+  - re:^Marker [0-9]+$
+  - re:^LM [0-9]+$

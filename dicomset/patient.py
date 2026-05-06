@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from .dataset import Dataset
-from .region_map import RegionMap
+from .struct_map import StructMap
 from .typing import PatientID
 from .utils.python import get_private_attr, set_private_attr, wrap_quotes
 
@@ -14,13 +14,13 @@ class Patient:
         id: PatientID,
         config: Dict[str, Any] | None = None,
         ct_from: Patient | None = None,
-        region_map: RegionMap | None = None,
+        struct_map: StructMap | None = None,
         ) -> None:
         set_private_attr(self, '__dataset', dataset)
         set_private_attr(self, '__config', config)
         set_private_attr(self, '__id', str(id))
         set_private_attr(self, '__ct_from', ct_from)
-        set_private_attr(self, '__region_map', region_map)
+        set_private_attr(self, '__struct_map', struct_map)
 
     @property
     def ct_from(self) -> Patient | None:
@@ -35,8 +35,8 @@ class Patient:
         return get_private_attr(self, '__id')
 
     @property
-    def region_map(self) -> RegionMap | None:
-        return get_private_attr(self, '__region_map')
+    def struct_map(self) -> StructMap | None:
+        return get_private_attr(self, '__struct_map')
 
     def __repr__(self) -> str:
         return str(self)
