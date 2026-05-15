@@ -20,13 +20,13 @@ Rules
 Usage
 -----
     # Dry run — report unsorted methods without modifying files:
-    python scripts/lint/sort_methods.py augmed/
+    python scripts/lint/sort_methods.py dicomset/
 
     # Fix in-place:
-    python scripts/lint/sort_methods.py augmed/ --fix
+    python scripts/lint/sort_methods.py dicomset/ --fix
 
     # Fix a single file:
-    python scripts/lint/sort_methods.py augmed/transforms/spatial/elastic.py --fix
+    python scripts/lint/sort_methods.py dicomset/dicom/series/ct.py --fix
 
 Exit codes
 ----------

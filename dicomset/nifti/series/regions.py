@@ -90,7 +90,7 @@ class NiftiRegionsSeries(NiftiImageSeries):
             regions_data[i] = reg_data
 
         if return_regions:
-            return region_ids, regions_data
+            return regions_data, region_ids
         else:
             return regions_data
 

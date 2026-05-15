@@ -1,7 +1,7 @@
 import re
 from typing import Any
 
-from .load import load
+from .load_utils import load_dataset
 
 def from_desc(desc: str) -> Any:
     class_name = desc.split("(")[0]
@@ -31,7 +31,7 @@ def from_desc(desc: str) -> Any:
 
     # Load dataset.
     dataset_id_kwarg = 'id' if class_type == 'dataset' else 'dataset_id'
-    dataset = load(kwargs[dataset_id_kwarg], dataset_class_name)
+    dataset = load_dataset(kwargs[dataset_id_kwarg], dataset_class_name)
     if class_type == 'dataset':
         assert str(dataset) == desc
         return dataset

@@ -42,6 +42,14 @@ class Dataset:
         return group_ids
 
     @property
+    def params(self) -> Dict[str, Any]:
+        filepath = os.path.join(get_private_attr(self, '__path'), 'params.yaml')
+        if os.path.exists(filepath):
+            return load_yaml(filepath)
+        else:
+            raise ValueError(f"Params not found for dicom dataset '{get_private_attr(self, '__id')}' at filepath: {filepath}.")
+
+    @property
     def path(self) -> DirPath:
         return get_private_attr(self, '__path')
 

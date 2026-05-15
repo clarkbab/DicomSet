@@ -12,7 +12,7 @@ LAZY_IMPORTS = {
         'foreground_fov', 'foreground_fov_centre', 'foreground_fov_width', 'fov', 'fov_centre', 'fov_width'
     ],
     'images': ['create_box_label'],
-    'io': ['load_csv', 'load_nifti', 'load_numpy', 'save_csv', 'save_nifti', 'save_numpy'],
+    'io': ['load_csv', 'load_json', 'load_nifti', 'load_numpy', 'save_csv', 'save_nifti', 'save_numpy'],
     'landmarks': ['landmarks_dim', 'landmarks_to_points', 'points_to_landmarks', 'replace_points'],
     'load_utils': ['list_datasets', 'load_dataset'],
     'logging': ['logger'],
@@ -20,7 +20,7 @@ LAZY_IMPORTS = {
     'pandas': ['append_row'],
     'plotting': ['plot_hist', 'plot_slice', 'plot_volume'],
     'python': ['ensure_loaded', 'filter_lists', 'flatten_list', 'sort_lists', 'unzip'],
-    'transforms': ['crop', 'crop_affine', 'crop_points', 'from_sitk_image', 'hist_eq', 'minmax', 'resample', 'sample', 'spatial_transpose', 'to_sitk_image'],
+    'transforms': ['crop', 'crop_affine', 'crop_points', 'from_sitk_image', 'hist_eq', 'minmax', 'resample', 'sample', 'spatial_transpose', 'standardise', 'to_sitk_image'],
 }
 
 __all__ = [attr for attrs in LAZY_IMPORTS.values() for attr in attrs]

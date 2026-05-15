@@ -11,7 +11,7 @@ import yaml
 
 from ..typing import AffineMatrix3D, DirPath, FilePath, Image3D
 from .args import arg_to_list, resolve_filepath
-from .geometry import create_eye
+from .geometry import create_affine
 
 def assert_writeable(filepath: FilePath | List[FilePath]) -> None:
     filepaths = arg_to_list(filepath, str)
@@ -78,6 +78,11 @@ def load_csv(
 
     return df
 
+def load_json(filepath: FilePath) -> Any:
+    filepath = resolve_filepath(filepath)
+    with open(filepath, 'r') as f:
+        return json.load(f)
+
 def load_nifti(
     filepath: FilePath,
     ) -> Tuple[Image3D, AffineMatrix3D]:
@@ -93,7 +98,7 @@ def load_nrrd(
     ) -> Tuple[Image3D, AffineMatrix3D]:
     filepath = resolve_filepath(filepath)
     data, header = nrrd.read(filepath)
-    affine = create_eye(3)
+    affine = create_affine(dim=3)
     affine[:3, :3] = header['space directions']
     affine[:3, 3] = header['space origin']
     affine[3, 3] = 1.0
@@ -102,7 +107,7 @@ def load_nrrd(
 def load_numpy(
     filepath: FilePath,
     keys: str | List[str] = 'data',
-    ) -> np.ndarray:
+    ) -> np.ndarray | List[np.ndarray]:
     filepath = resolve_filepath(filepath)
     assert filepath.endswith('.npy') or filepath.endswith('.npz'), "Filepath must end with .npy or .npz"
     data = np.load(filepath)
@@ -139,7 +144,7 @@ def save_csv(
     data: pd.DataFrame,
     filepath: FilePath,
     index: bool = False,
-    overwrite: bool = True,
+    overwrite: bool = False,
     ) -> None:
     filepath = resolve_filepath(filepath)
     if os.path.exists(filepath) and not overwrite:
@@ -150,7 +155,7 @@ def save_csv(
 def save_json(
     data: Any,
     filepath: FilePath,
-    overwrite: bool = True,
+    overwrite: bool = False,
     ) -> None:
     filepath = resolve_filepath(filepath)
     if os.path.exists(filepath) and not overwrite:
@@ -164,9 +169,12 @@ def save_nifti(
     data: Image3D,
     affine: AffineMatrix3D,
     filepath: FilePath,
+    overwrite: bool = False,
     ) -> None:
     filepath = resolve_filepath(filepath)
     assert filepath.endswith('.nii.gz') or filepath.endswith('.nii'), "Filepath must end with .nii or .nii.gz"
+    if os.path.exists(filepath) and not overwrite:
+        raise ValueError(f"File '{filepath}' already exists, use overwrite=True.")
     if data.dtype == bool:
         data = data.astype(np.uint32)
     img = nib.nifti1.Nifti1Image(data, affine)
@@ -174,12 +182,15 @@ def save_nifti(
     nib.save(img, filepath)
 
 def save_numpy(
-    data: np.ndarray | List[np.ndarray] | Dict[str, np.ndarray],
+    data: np.ndarray | List[np.ndarray],
     filepath: FilePath,
     keys: str | List[str] = 'data',
+    overwrite: bool = False,
     ) -> None:
     filepath = resolve_filepath(filepath)
     assert filepath.endswith('.npy') or filepath.endswith('.npz'), "Filepath must end with .npy or .npz"
+    if os.path.exists(filepath) and not overwrite:
+        raise ValueError(f"File '{filepath}' already exists, use overwrite=True.")
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     if filepath.endswith('.npz'):
         keys = arg_to_list(keys, str)
@@ -194,7 +205,7 @@ def save_numpy(
 def save_transform(
     transform: sitk.Transform,
     filepath: FilePath,
-    overwrite: bool = True,
+    overwrite: bool = False,
     ) -> None:
     filepath = resolve_filepath(filepath)
     if os.path.exists(filepath) and not overwrite:
@@ -205,8 +216,12 @@ def save_transform(
 def save_yaml(
     data: Any,
     filepath: FilePath,
+    overwrite: bool = False,
     ) -> None:
     filepath = resolve_filepath(filepath)
+    if os.path.exists(filepath) and not overwrite:
+        raise ValueError(f"File '{filepath}' already exists, use overwrite=True.")
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    data = make_serialisable(data)
     with open(filepath, 'w') as f:
         yaml.dump(data, f)

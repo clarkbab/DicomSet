@@ -7,6 +7,11 @@ from typing import List, Tuple
 from ..typing import Number
 from .args import bubble_args
 
+# TODO:
+# Only import torch when required, i.e. if one of the inputs is a torch.Tensor
+# or to_tensor is called. This means that the user doesn't require torch for
+# this library.
+
 def to_numpy(
     data: bool | Number | str | List[bool | Number | str] | np.ndarray | torch.Tensor | torch.Size,
     broadcast: int | None = None,

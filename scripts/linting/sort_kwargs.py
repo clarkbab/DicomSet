@@ -9,13 +9,13 @@ them in-place.
 Usage
 -----
     # Dry run — report unsorted calls without modifying files:
-    python scripts/lint/sort_kwargs.py augmed/
+    python scripts/lint/sort_kwargs.py dicomset/
 
     # Fix in-place:
-    python scripts/lint/sort_kwargs.py augmed/ --fix
+    python scripts/lint/sort_kwargs.py dicomset/ --fix
 
     # Fix a single file:
-    python scripts/lint/sort_kwargs.py augmed/transforms/spatial/elastic.py --fix
+    python scripts/lint/sort_kwargs.py dicomset/dicom/series/ct.py --fix
 
 Exit codes
 ----------

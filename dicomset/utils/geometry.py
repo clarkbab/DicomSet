@@ -61,11 +61,23 @@ def combine_boxes(
     return np.stack([min, max])
 
 def create_affine(
-    spacing: Spacing,
-    origin: Point,
+    spacing: Spacing | None = None,
+    origin: Point | None = None,
+    dim: SpatialDim | None = None,
     ) -> AffineMatrix:
-    dim = len(spacing)
-    affine = create_eye(dim)
+    # Resolve dim.
+    if dim is None:
+        if spacing is not None:
+            dim = len(spacing)
+        elif origin is not None:
+            dim = len(origin)
+        else:
+            raise ValueError("Must provide 'dim' if 'spacing' and 'origin' are not provided.")
+    if spacing is None:
+        spacing = np.ones(dim)
+    if origin is None:
+        origin = np.zeros(dim)
+    affine = np.eye(dim + 1)
     if dim == 2:
         affine[0, 0] = spacing[0]
         affine[1, 1] = spacing[1]
@@ -79,11 +91,6 @@ def create_affine(
         affine[1, 3] = origin[1]
         affine[2, 3] = origin[2]
     return affine
-
-def create_eye(
-    dim: SpatialDim,
-    ) -> np.ndarray:
-    return np.eye(dim + 1)
 
 def foreground_fov(
     data: LabelImage,
@@ -131,7 +138,7 @@ def foreground_fov_width(
     if fov_fg is None:
         return None
     min, max = fov_fg
-    fov_w = max - min
+    fov_w = max - min + 1
 
     return fov_w
 
@@ -143,7 +150,7 @@ def fov(
     n_dims = len(size)
     fov_vox = np.stack([
         np.zeros(n_dims, dtype=np.int32),
-        np.array(size, dtype=np.int32),
+        np.array(size, dtype=np.int32) - 1,
     ])
     if affine is None:
         return fov_vox

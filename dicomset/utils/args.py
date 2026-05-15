@@ -3,14 +3,14 @@ from __future__ import annotations
 import ast
 from functools import wraps
 import inspect
+import numpy as np
 import os
 import textwrap
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Tuple
+from typing import Any, Callable, Dict, List, Literal, Tuple, TYPE_CHECKING
 
 from .. import config
 from ..typing import DiskLandmarkID, DiskRegionID, FilePath, ID, LandmarkID, LandmarkList, RegionID, RegionList
 from .python import isinstance_generic, version
-
 if TYPE_CHECKING:
     from ..struct_map import StructMap
 
@@ -66,7 +66,7 @@ def arg_to_list(
     iter_types: Any | List[Any] | None = None,   # If 'arg' is one of these types, convert directly to a list (if not already).
     literals: Dict[Any, List[Any]] | None = None,   # Check if 'arg' matches any of these literal values.
     out_type: Any | None = None,    # Convert a match to a different output type.
-    return_expanded: bool = False,   # Return whether the match was successful.
+    return_matched: bool = False,   # Return whether the match was successful.
     ) -> List[Any]:
     # Convert types to list.
     if not isinstance(types, list) and not isinstance(types, tuple):
@@ -80,7 +80,7 @@ def arg_to_list(
     if exceptions is not None:
         for e in exceptions:
             if isinstance(arg, type(e)) and arg == e:
-                if return_expanded:
+                if return_matched:
                     return arg, False
                 else:
                     return arg
@@ -97,7 +97,7 @@ def arg_to_list(
                 if isinstance(arg, Callable):
                     arg = arg()
 
-                if return_expanded:
+                if return_matched:
                     return arg, False
                 else:
                     return arg
@@ -107,7 +107,7 @@ def arg_to_list(
         for t in iter_types:
             if isinstance(arg, t):
                 arg = list(arg)
-                if return_expanded:
+                if return_matched:
                     return arg, False
                 else:
                     return arg
@@ -125,10 +125,23 @@ def arg_to_list(
     if expanded and out_type is not None:
         arg = [out_type(a) for a in arg]
 
-    if return_expanded:
+    if return_matched:
         return arg, expanded
     else:
         return arg
+
+def assert_2d(
+    data: np.ndarray,
+    message: str = "Data must be 2D.",
+    ) -> None:
+    assert data.ndim == 2, message
+
+# Expands an arg to the required length based on 'dim'.
+def assert_3d(
+    data: np.ndarray,
+    message: str = "Data must be 3D.",
+    ) -> None:
+    assert data.ndim == 3, message
 
 def bubble_args(*inner_fns: Callable) -> Callable:
     if not version(gte='3.9'):
@@ -178,7 +191,6 @@ def bubble_args(*inner_fns: Callable) -> Callable:
 
     return change_outer_fn_sig
 
-# Expands an arg to the required length based on 'dim'.
 def get_inner_args(
     outer_fn: Callable,
     inner_fn: Callable,
@@ -189,6 +201,7 @@ def get_inner_args(
     visitor.visit(tree)
     return visitor.args, visitor.kwargs
 
+# Can't move this to StructMap because we don't want literal='all' behaviour in there.
 def landmarks_to_list(
     landmark_id: LandmarkID | LandmarkList | List[LandmarkID | LandmarkList] | Literal['all'],
     disk_landmarks: List[DiskLandmarkID] | None = None,
@@ -200,6 +213,7 @@ def landmarks_to_list(
         landmark_ids = struct_map.expand_list(landmark_ids, disk_ids=disk_landmarks)
     return list(sorted(set(landmark_ids)))
 
+# Can't move this to StructMap because we don't want literal='all' behaviour in there.
 def regions_to_list(
     region_id: RegionID | RegionList | List[RegionID | RegionList] | Literal['all'],
     disk_regions: List[DiskRegionID] | None = None,
@@ -211,7 +225,6 @@ def regions_to_list(
         region_ids = struct_map.expand_list(region_ids, disk_ids=disk_regions)
     return list(sorted(set(region_ids)))
 
-# Can't move this to StructMap because we don't want literal='all' behaviour in there.
 def resolve_filepath(filepath: FilePath) -> FilePath:
     file_options = ['f', 'file', 'files']
     for f in file_options:
@@ -220,7 +233,6 @@ def resolve_filepath(filepath: FilePath) -> FilePath:
             break
     return filepath
 
-# Can't move this to StructMap because we don't want literal='all' behaviour in there.
 def resolve_id(
     id: ID | int,
     all_ids: List[ID] | Callable[[], List[ID]],

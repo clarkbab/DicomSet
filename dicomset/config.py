@@ -34,6 +34,20 @@ class Directories:
         if not os.path.exists(filepath):
             os.makedirs(filepath)
         return filepath
+
+    @property
+    def models(self):
+        filepath = os.path.join(self.data, 'models')
+        if not os.path.exists(filepath):
+            os.makedirs(filepath)
+        return filepath
+
+    @property
+    def runs(self):
+        filepath = os.path.join(self.data, 'runs')
+        if not os.path.exists(filepath):
+            os.makedirs(filepath)
+        return filepath
     
     # @property
     # def tmp(self):

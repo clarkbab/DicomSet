@@ -8,7 +8,7 @@ from typing import List, Literal, Tuple
 from ..dicom.series import DicomSeries
 from ..nifti.series import NiftiSeries
 from ..typing import AffineMatrix, AffineMatrix2D, AffineMatrix3D, BatchBox, BatchBox2D, BatchBox3D, BatchLabelImage, BatchLabelImage2D, BatchLabelImage3D, BatchVoxelBox, Box, Box2D, Box3D, Image, Image2D, Image3D, LabelImage, LabelImage2D, LabelImage3D, Landmark, Landmark2D, Landmark3D, LandmarkID, Landmarks, Landmarks2D, Landmarks3D, Number, Orientation, Pixel, PixelBox, Point, Point2D, Point3D, Points, Points2D, Points3D, RegionID, Size, View, Voxel, VoxelBox, Window
-from .args import alias_kwargs, arg_to_list
+from .args import alias_kwargs, arg_to_list, assert_2d, assert_3d
 from .conversion import to_numpy
 from .geometry import affine_origin, affine_spacing, centre_of_mass, foreground_fov, foreground_fov_centre, to_image_coords
 from .landmarks import landmarks_to_points
@@ -138,6 +138,7 @@ def plot_slice(
     crop_margin: int = 100,
     labels: LabelImage2D | BatchLabelImage2D | None = None,
     label_names: RegionID | List[RegionID] | None = None,
+    label_threshold: float = 0,
     figsize: tuple[float, float] = (8, 8),
     points: Point2D | Points2D | Landmark2D | Landmarks2D | None = None,
     points_colour: str = 'yellow',
@@ -158,19 +159,23 @@ def plot_slice(
     if data is None:
         assert labels is not None, "Labels must be provided if data is None."
         data = np.zeros(labels.shape[-2:])
+    assert_2d(data), "Data must be 2D."
 
     # Normalise labels to batch form (B, X, Y).
     if labels is not None and labels.ndim == 2:
         labels = labels[np.newaxis]
     if labels is not None and labels.dtype != bool:
         if labels.min() < 0 or labels.max() > 1:
-            logger.warn(f"Labels values are outside the range [0, 1]. Got min={labels.min():.3f}, max={labels.max():.3f}.")
+            logger.warn(f"Labels values are outside the range [0, 1]. Got min={labels.min():.3f}, max={labels.max():.3f}. Performing minmax norm.")
+            labels_min, labels_max = labels.min(), labels.max()
+            if labels_max > labels_min:
+                labels = (labels - labels_min) / (labels_max - labels_min)
 
     # Resolve window to vmin/vmax.
     vmin, vmax = __resolve_window(window, affine=affine, data=data, labels=labels, vmax=vmax, vmin=vmin)
 
     # Resolve points and point names.
-    points, point_names = __resolve_points(points, point_names=point_names)
+    points, point_names = __resolve_points(points, affine=affine, point_names=point_names)
 
     # Resolve crop.
     crop_box = __resolve_crop(crop, crop_margin, data.shape, affine=affine, label_names=None, labels=labels, point_names=point_names, points=points)
@@ -185,14 +190,10 @@ def plot_slice(
     else:
         show = False
 
-    # Aspect ratio from affine.
-    if aspect is not None:
-        assert affine is None, "Cannot specify both aspect and affine."
-    elif affine is not None:
+    # Get aspect ratio.
+    if aspect is None and affine is not None:
         spacing = affine_spacing(affine)
         aspect = float(spacing[1] / spacing[0])
-    else:
-        aspect = None
 
     # Plot the image.
     if crop_box is not None:
@@ -205,22 +206,19 @@ def plot_slice(
         for i, l in enumerate(labels):
             if crop_box is not None:
                 l = l[crop_box[0, 0]:crop_box[1, 0] + 1, crop_box[0, 1]:crop_box[1, 1] + 1]
+            l_bin = (l > 0).astype(float)
             cmap_label = mpl.colors.ListedColormap(((1, 1, 1, 0), label_palette[i]))
-            ax.imshow(l.T, alpha=alpha, cmap=cmap_label)
-            ax.contour(l.T, colors=[label_palette[i]], levels=[.5], linestyles='solid')
+            ax.imshow(l_bin.T, alpha=alpha, cmap=cmap_label)
+            ax.contour(l_bin.T, colors=[label_palette[i]], levels=[0.5], linestyles='solid')
 
     # Plot points.
     if points is not None:
-        if affine is not None:
-            spacing = affine_spacing(affine)
-            origin = affine_origin(affine)
         if points_colour == 'gradient' and len(points) > 1:
             points_cmap = mpl.colors.LinearSegmentedColormap.from_list('warm_bright', ['#FFE600', '#FF8C00', '#FF3300', '#FF0066'])
             p_colours = [points_cmap(i / (len(points) - 1)) for i in range(len(points))]
         else:
             p_colours = [points_colour] * len(points)
         for pi, p in enumerate(points):
-            p = (p - origin) / spacing if affine is not None else p
             if crop_box is not None:
                 p -= crop_box[0]
             ax.scatter(p[0], p[1], c=[p_colours[pi]], marker='o', s=20, zorder=5)
@@ -257,10 +255,8 @@ def plot_slice(
         y_ticks += crop_box[0, 1]
     # Convert tick labels to world coords.
     if not use_image_coords and affine is not None:
-        s = affine_spacing(affine)
-        o = affine_origin(affine)
-        sx, sy = _get_view_xy(v, s)
-        ox, oy = _get_view_xy(v, o)
+        sx, sy = affine_spacing(affine)
+        ox, oy = affine_origin(affine)
         x_ticks = (x_ticks * sx + ox)
         y_ticks = (y_ticks * sy + oy)
     ax.set_xticklabels([f'{t:.1f}' for t in x_ticks])
@@ -344,19 +340,23 @@ def plot_volume(
         series = data
         data = series.data
         affine = series.affine
+    assert_3d(data), "Data must be 3D."
 
     # Normalise labels to batch form (B, X, Y, Z).
     if labels is not None and labels.ndim == 3:
         labels = labels[np.newaxis]
     if labels is not None and labels.dtype != bool:
         if labels.min() < 0 or labels.max() > 1:
-            logger.warn(f"Labels values are outside the range [0, 1]. Got min={labels.min():.3f}, max={labels.max():.3f}.")
+            logger.warn(f"Labels values are outside the range [0, 1]. Got min={labels.min():.3f}, max={labels.max():.3f}. Performing minmax norm.")
+            labels_min, labels_max = labels.min(), labels.max()
+            if labels_max > labels_min:
+                labels = (labels - labels_min) / (labels_max - labels_min)
 
     # Resolve window to vmin/vmax.
     vmin, vmax = __resolve_window(window, affine=affine, data=data, labels=labels, vmax=vmax, vmin=vmin)
 
     # Resolve points and point names.
-    points, point_names = __resolve_points(points, point_names=point_names)
+    points, point_names = __resolve_points(points, affine=affine, point_names=point_names)
 
     # Resolve views.
     views = list(range(3)) if view == 'all' else (view if isinstance(view, list) else [view])
@@ -434,9 +434,10 @@ def plot_volume(
                 label_slice = _get_view_slice(v, lab, view_idx)
                 if view_crop_box is not None:
                     label_slice = label_slice[view_crop_box[0, 0]:view_crop_box[1, 0] + 1, view_crop_box[0, 1]:view_crop_box[1, 1] + 1]
+                label_bin = (label_slice > 0).astype(float)
                 cmap_label = mpl.colors.ListedColormap(((1, 1, 1, 0), label_palette[j]))
-                col_ax.imshow(label_slice.T, alpha=label_alpha, aspect=aspect, cmap=cmap_label, origin=origin_y)
-                col_ax.contour(label_slice.T, colors=[label_palette[j]], levels=[0.5], linestyles='solid')
+                col_ax.imshow(label_bin.T, alpha=label_alpha, aspect=aspect, cmap=cmap_label, origin=origin_y)
+                col_ax.contour(label_bin.T, colors=[label_palette[j]], levels=[0.5], linestyles='solid')
 
             # Add legend on first view only.
             if label_names_list is not None and v == views[0]:
@@ -445,16 +446,12 @@ def plot_volume(
 
         # Point overlays.
         if show_points and points is not None:
-            if affine is not None:
-                spacing = affine_spacing(affine)
-                origin = affine_origin(affine)
             if points_colour == 'gradient' and len(points) > 1:
                 points_cmap = mpl.colors.LinearSegmentedColormap.from_list('warm_bright', ['#FFE600', '#FF8C00', '#FF3300', '#FF0066'])
                 points_colours = [points_cmap(i / (len(points) - 1)) for i in range(len(points))]
             else:
                 points_colours = ['yellow'] * len(points)
             for pi, p in enumerate(points):
-                p = (p - origin) / spacing if affine is not None else p
                 p_x, p_y = _get_view_xy(v, p)
                 if view_crop_box is not None:
                     p_x -= view_crop_box[0, 0]
@@ -631,17 +628,13 @@ def __resolve_crop(
             if points is None:
                 raise ValueError(f"crop='{crop}' but no points were provided.")
             if value.lstrip('-').isdigit():
-                point_world = points[int(value)]
+                point_vox = points[int(value)]
             else:
                 if point_names is None:
                     raise ValueError(f"crop='{crop}' uses a point name but no 'point_names' were provided.")
                 if value not in point_names:
                     raise ValueError(f"Point name '{value}' not found in point_names: {point_names}.")
-                point_world = points[point_names.index(value)]
-            if affine is not None:
-                point_vox = (point_world - origin) / spacing
-            else:
-                point_vox = point_world
+                point_vox = points[point_names.index(value)]
             box_vox = np.stack([point_vox, point_vox])
 
         else:
@@ -755,6 +748,7 @@ def __resolve_point(
 
 def __resolve_points(
     points: Point | Points | Landmark | Landmarks | None,
+    affine: AffineMatrix | None = None,
     point_names: LandmarkID | List[LandmarkID] | None = None,
     ) -> Tuple[Points, List[LandmarkID | int]]:
     if points is None:
@@ -781,6 +775,12 @@ def __resolve_points(
         point_names = [str(i) for i in range(len(points))]
 
     assert len(point_names) == len(points), f"Expected point_names to have length {len(points)} but got {len(point_names)}."
+
+    # Convert from world to image coords.
+    if affine is not None:
+        spacing = affine_spacing(affine)
+        origin = affine_origin(affine)
+        points = (points - origin) / spacing
 
     return points, point_names
 

@@ -4,7 +4,7 @@ import os
 from typing import List, TYPE_CHECKING
 
 from ..typing import RegionID, SampleID, SplitID
-from ..utils.regions import regions_to_list
+from ..utils.args import regions_to_list
 from .sample import TrainingSample
 if TYPE_CHECKING:
     from .dataset import TrainingDataset

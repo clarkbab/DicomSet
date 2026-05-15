@@ -5,9 +5,8 @@ import os
 from typing import List, Literal, Tuple, TYPE_CHECKING
 
 from ..typing import LabelImage3D, LandmarkID, Point3D, RegionID, SampleID, Size3D, Spacing3D
-from ..utils.args import arg_to_list
+from ..utils.args import arg_to_list, regions_to_list
 from ..utils.io import load_csv
-from ..utils.regions import regions_to_list
 if TYPE_CHECKING:
     from .split import HoldoutSplit
 

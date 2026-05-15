@@ -34,10 +34,6 @@ class Patient:
     def id(self) -> PatientID:
         return get_private_attr(self, '__id')
 
-    @property
-    def struct_map(self) -> StructMap | None:
-        return get_private_attr(self, '__struct_map')
-
     def __repr__(self) -> str:
         return str(self)
 
@@ -53,3 +49,7 @@ class Patient:
         if ct_from is not None:
             params['ct_from'] = ct_from.id
         return f"{class_name}({', '.join([f'{k}={v}' for k, v in params.items()])})"
+
+    @property
+    def struct_map(self) -> StructMap | None:
+        return get_private_attr(self, '__struct_map')

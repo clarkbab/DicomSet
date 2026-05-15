@@ -362,8 +362,6 @@ def minmax(
     ) -> Image | BatchImage:
     return compute_channel_or_spatial_transforms(__minmax, data, **kwargs)
 
-# We're not actually cropping the affine, it's just what would the new affine
-# before the image after a crop? Maybe crop should return this?
 @bubble_args(__spatial_resample)
 def resample(
     data: BatchImage | Image | None = None, 
@@ -371,8 +369,8 @@ def resample(
     ) -> BatchImage | Image:
     return compute_channel_or_spatial_transforms(__spatial_resample, data, **kwargs) if data is not None else __spatial_resample(**kwargs)
 
-# Cropping doesn't actually do anything to point locations, it just removes
-# points that are outside the box.
+# We're not actually cropping the affine, it's just what would the new affine
+# before the image after a crop? Maybe crop should return this?
 def __resolve_box(
     box: Box,
     size: Size,
@@ -382,10 +380,8 @@ def __resolve_box(
     box = np.where(np.isnan(box), size_fov, box)
     return box
 
-# How is this different from "resample"?
-# This samples all the points passed to the image, and you can specify the region that is sampled
-# for each point by passing size/spacing - this creates a sampling grid centred on the point. 
-# Either returns a list of samples, or adds them to the dataframe using 'sample_col'.
+# Cropping doesn't actually do anything to point locations, it just removes
+# points that are outside the box.
 @bubble_args(__spatial_sample)
 def sample(
     data: BatchImage | Image,
@@ -394,6 +390,10 @@ def sample(
     ) -> BatchImage | Image:
     return compute_channel_or_spatial_transforms(__spatial_sample, data, *args, **kwargs)
 
+# How is this different from "resample"?
+# This samples all the points passed to the image, and you can specify the region that is sampled
+# for each point by passing size/spacing - this creates a sampling grid centred on the point. 
+# Either returns a list of samples, or adds them to the dataframe using 'sample_col'.
 def spatial_transpose(
     data: BatchChannelImage | BatchImage | Image,
     dim: SpatialDim = 3,
@@ -402,6 +402,33 @@ def spatial_transpose(
     to_axes = tuple(reversed(from_axes)) 
     return np.moveaxis(data, from_axes, to_axes)
 
+@bubble_args(__minmax)
+def standardise(
+    data: Image | BatchImage,
+    **kwargs,
+    ) -> Image | BatchImage:
+    return compute_channel_or_spatial_transforms(__standardise, data, **kwargs)
+
+def __standardise(
+    data: Image,
+    # Takes the data mean/std and puts them at these values.
+    mean: Number = 0.0,
+    std: Number = 1.0,
+    ) -> Image:
+    if mean == 'mean':
+        mean = float(data.mean())
+    if std == 'std':
+        std = float(data.std())
+    if std == 0:
+        return data
+    # Standardise to mean 0 and std 1.
+    data = (data - mean) / std
+
+    return data
+
+# Handles 2/3D batch/channel/spatial images and passes them to the
+# spatial or channel transform. Channel is needed because some transforms
+# merge data across channels - e.g. minmax normalisation.
 def to_sitk_image(
     data: ChannelImage | Image,
     affine: AffineMatrix | None = None,

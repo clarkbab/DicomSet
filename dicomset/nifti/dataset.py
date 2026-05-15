@@ -257,10 +257,10 @@ class NiftiDataset(IndexMixin, Dataset):
 
         return NiftiPatient(self, id, ct_from=ct_from, excluded_labels=exc_df, index=index, struct_map=self.__struct_map, **kwargs)
 
+    def __str__(self) -> str:
+        return super().__str__(self.__class__.__name__)
+
     @property
     @ensure_loaded('__struct_map', '__load_data')
     def struct_map(self) -> StructMap | None:
         return self.__struct_map
-
-    def __str__(self) -> str:
-        return super().__str__(self.__class__.__name__)

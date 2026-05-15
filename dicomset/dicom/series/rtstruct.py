@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Literal, Tuple, TYPE_CHECKING
 from ... import config as conf
 from ...struct_map import StructMap
 from ...typing import BatchLabelImage3D, FilePath, LandmarkID, Landmarks3D, RegExp, RegionID, RegionList, RtStructDicom, SeriesID
-from ...utils.args import alias_kwargs, arg_to_list, landmarks_to_list, regions_to_list
+from ...utils.args import alias_kwargs, landmarks_to_list, regions_to_list
 from ...utils.landmarks import landmarks_to_points
 from ...utils.python import ensure_loaded
 from ..utils.dicom import from_rtstruct_dicom, list_rtstruct_landmarks, list_rtstruct_regions
@@ -297,7 +297,7 @@ class DicomRtStructSeries(DicomSeries):
             regions_data[i] = reg_data
 
         if return_regions:
-            return region_ids, regions_data
+            return regions_data, region_ids
         else:
             return regions_data
 

@@ -31,6 +31,9 @@ pred-seg = [
 pred-reg = [
     "unigradicon",
 ]
+torch = [
+    "torch",
+]
 
 [tool.setuptools.packages.find]
 include = ["dicomset*"]
