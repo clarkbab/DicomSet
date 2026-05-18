@@ -14,6 +14,26 @@ from .python import isinstance_generic, version
 if TYPE_CHECKING:
     from ..struct_map import StructMap
 
+# Does 'arg' have a value?
+def arg_default(
+    arg: Any | List[Any] | None,
+    return_arg: Any | None,  # Return this value if at least one arg is not None.
+    default: Any,    # Return this value is all args are None.
+    ) -> Any:
+    if not isinstance(arg, list) and not isinstance(arg, tuple):
+        args = [arg]
+    else:
+        args = arg
+    all_none = True
+    for a in args:
+        if a is not None:
+            all_none = False
+            break
+    if all_none:
+        return default
+    else:
+        return return_arg if return_arg is not None else arg
+
 class CallVisitor(ast.NodeVisitor):
     def __init__(
         self,

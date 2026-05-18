@@ -4,7 +4,8 @@ import importlib
 from typing import TYPE_CHECKING
 
 LAZY_IMPORTS = {
-    'args': ['arg_to_list', 'bubble_args', 'landmarks_to_list', 'regions_to_list', 'resolve_filepath'],
+    'args': ['arg_default', 'arg_to_list', 'bubble_args', 'landmarks_to_list', 'regions_to_list', 'resolve_filepath'],
+    'assertions': ['assert_orientation'],
     'conversion': ['to_list', 'to_numpy', 'to_tensor'],
     'debug': ['from_desc'],
     'geometry': [

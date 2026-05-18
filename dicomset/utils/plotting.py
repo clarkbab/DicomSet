@@ -5,10 +5,12 @@ import pandas as pd
 import seaborn as sns
 from typing import List, Literal, Tuple
 
+from ..config import get_orientation
 from ..dicom.series import DicomSeries
 from ..nifti.series import NiftiSeries
-from ..typing import AffineMatrix, AffineMatrix2D, AffineMatrix3D, BatchBox, BatchBox2D, BatchBox3D, BatchLabelImage, BatchLabelImage2D, BatchLabelImage3D, BatchVoxelBox, Box, Box2D, Box3D, Image, Image2D, Image3D, LabelImage, LabelImage2D, LabelImage3D, Landmark, Landmark2D, Landmark3D, LandmarkID, Landmarks, Landmarks2D, Landmarks3D, Number, Orientation, Pixel, PixelBox, Point, Point2D, Point3D, Points, Points2D, Points3D, RegionID, Size, View, Voxel, VoxelBox, Window
-from .args import alias_kwargs, arg_to_list, assert_2d, assert_3d
+from ..typing import AffineMatrix, AffineMatrix2D, AffineMatrix3D, BatchBox, BatchBox2D, BatchBox3D, BatchLabelImage, BatchLabelImage2D, BatchLabelImage3D, BatchVoxelBox, Box, Box2D, Box3D, Image, Image2D, Image3D, LabelImage, LabelImage2D, LabelImage3D, Landmark, Landmark2D, Landmark3D, LandmarkID, Landmarks, Landmarks2D, Landmarks3D, Number, Orientation2D, Orientation3D, Pixel, PixelBox, Point, Point2D, Point3D, Points, Points2D, Points3D, RegionID, Size, View, Voxel, VoxelBox, Window
+from .args import alias_kwargs, arg_default, arg_to_list, assert_2d, assert_3d
+from .assertions import assert_orientation
 from .conversion import to_numpy
 from .geometry import affine_origin, affine_spacing, centre_of_mass, foreground_fov, foreground_fov_centre, to_image_coords
 from .landmarks import landmarks_to_points
@@ -27,14 +29,7 @@ WINDOW_PRESETS = {
     'tissue': (400, 50),
 }
 
-def _assert_orientation(
-    orientation: Orientation,
-    ) -> None:
-    orientations = {'LAI', 'LAS', 'LPI', 'LPS', 'RAI', 'RAS', 'RPI', 'RPS'}
-    if orientation not in orientations:
-        raise ValueError(f"Invalid orientation '{orientation}'. Must be one of {orientations}.")
-
-def _get_view_aspect(
+def __get_view_aspect(
     view: View,
     affine: AffineMatrix3D | None,
     ) -> float | None:
@@ -45,11 +40,11 @@ def _get_view_aspect(
     aspect = float(spacing[axes[1]] / spacing[axes[0]])
     return aspect
 
-def _get_view_origin(
+def __get_view_origin(
     view: View,
-    orientation: Orientation = 'LPS',
-    ) -> tuple[Literal['lower', 'upper'], Literal['lower', 'upper']]:
-    _assert_orientation(orientation)
+    orientation: Orientation3D,
+    ) -> Tuple[Literal['lower', 'upper'], Literal['lower', 'upper']]:
+    assert_orientation(orientation, 3)
     if view == 0:
         origin_x = 'lower' if orientation[1] == 'P' else 'upper'
         origin_y = 'lower' if orientation[2] == 'S' else 'upper'
@@ -62,7 +57,15 @@ def _get_view_origin(
 
     return (origin_x, origin_y)
 
-def _get_view_slice(
+def __get_origin_2d(
+    orientation: Orientation2D,
+    ) -> Tuple[Literal['lower', 'upper'], Literal['lower', 'upper']]:
+    assert_orientation(orientation, 2)
+    origin_x = 'lower' if orientation[0] == 'L' else 'upper'
+    origin_y = 'lower' if orientation[1] == 'S' else 'upper'
+    return (origin_x, origin_y)
+
+def __get_view_slice(
     view: View,
     data: np.ndarray,
     idx: int,
@@ -71,7 +74,7 @@ def _get_view_slice(
     slicing[view] = idx
     return data[tuple(slicing)]
 
-def _get_view_xy(
+def __get_view_xy(
     view: View,
     values: tuple | np.ndarray,
     ) -> tuple:
@@ -138,9 +141,10 @@ def plot_slice(
     cmap: str = 'gray',
     crop: Box2D | Point2D | RegionID | None = None,
     crop_margin: Number = 100.0,
+    figsize: Tuple[Number, Number] = (8, 8),
     labels: LabelImage2D | BatchLabelImage2D | None = None,
     label_names: RegionID | List[RegionID] | None = None,
-    figsize: Tuple[Number, Number] = (8, 8),
+    orientation: Orientation2D | None = None,
     points: Point2D | Points2D | Landmark2D | Landmarks2D | None = None,
     points_colour: str = 'yellow',
     point_names: LandmarkID | List[LandmarkID] | None = None,
@@ -155,12 +159,13 @@ def plot_slice(
     window: Window | None = None,
     x_label: str | None = None,
     y_label: str | None = None,
-    y_origin: Literal['lower', 'upper'] = 'lower',
     ) -> mpl.axes.Axes | None:
     if data is None:
         assert labels is not None, "Labels must be provided if data is None."
         data = np.zeros(labels.shape[-2:])
     assert_2d(data), "Data must be 2D."
+    orientation = arg_default(orientation, orientation, 'LS')
+    origin_x, origin_y = __get_origin_2d(orientation)
 
     # Normalise labels to batch form (B, X, Y).
     if labels is not None and labels.ndim == 2:
@@ -199,7 +204,9 @@ def plot_slice(
     # Plot the image.
     if crop_box is not None:
         data = data[crop_box[0, 0]:crop_box[1, 0] + 1, crop_box[0, 1]:crop_box[1, 1] + 1]
-    ax.imshow(data.T, aspect=aspect, cmap=cmap, origin=y_origin, vmax=vmax, vmin=vmin)
+    ax.imshow(data.T, aspect=aspect, cmap=cmap, origin=origin_y, vmax=vmax, vmin=vmin)
+    if origin_x == 'upper':
+        ax.invert_xaxis()
 
     # Plot labels.
     if show_labels and labels is not None:
@@ -209,7 +216,7 @@ def plot_slice(
                 l = l[crop_box[0, 0]:crop_box[1, 0] + 1, crop_box[0, 1]:crop_box[1, 1] + 1]
             l_bin = (l > 0).astype(float)
             cmap_label = mpl.colors.ListedColormap(((1, 1, 1, 0), label_palette[i]))
-            ax.imshow(l_bin.T, alpha=alpha, cmap=cmap_label, origin=y_origin)
+            ax.imshow(l_bin.T, alpha=alpha, cmap=cmap_label, origin=origin_y)
             ax.contour(l_bin.T, colors=[label_palette[i]], levels=[0.5], linestyles='solid')
 
     # Plot points.
@@ -318,7 +325,7 @@ def plot_volume(
     labels: LabelImage3D | BatchLabelImage3D | None = None,
     label_names: RegionID | List[RegionID] | None = None,
     centre_method: Literal['com', 'fov'] = 'com',
-    orientation: Orientation = 'LPS',
+    orientation: Orientation3D | None = None,
     label_alpha: Number = 0.3,
     points: Point3D | Points3D | Landmark3D | Landmarks3D | None = None,
     points_colour: str = 'yellow',
@@ -347,6 +354,7 @@ def plot_volume(
         data = series.data
         affine = series.affine
     assert_3d(data), "Data must be 3D."
+    orientation = arg_default(orientation, orientation, get_orientation())
 
     # Normalise labels to batch form (B, X, Y, Z).
     if labels is not None and labels.ndim == 3:
@@ -389,14 +397,14 @@ def plot_volume(
         view_idx = idx_vox[v]
 
         # Compute the view crop box.
-        x_axis, y_axis = _get_view_xy(v, list(range(3)))
+        x_axis, y_axis = __get_view_xy(v, list(range(3)))
         view_crop_box = crop_box[:, [x_axis, y_axis]] if crop_box is not None else None
 
-        image = _get_view_slice(v, data, view_idx)
+        image = __get_view_slice(v, data, view_idx)
         if view_crop_box is not None:
             image = image[view_crop_box[0, 0]:view_crop_box[1, 0] + 1, view_crop_box[0, 1]:view_crop_box[1, 1] + 1]
-        aspect = _get_view_aspect(v, affine)
-        origin_x, origin_y = _get_view_origin(v, orientation=orientation)
+        aspect = __get_view_aspect(v, affine)
+        origin_x, origin_y = __get_view_origin(v, orientation)
 
         # The two non-view axes: first is displayed on x, second on y.
         col_ax.imshow(image.T, aspect=aspect, cmap=cmap, origin=origin_y, vmax=vmax, vmin=vmin)
@@ -406,7 +414,7 @@ def plot_volume(
         # Box overlays.
         if boxes is not None:
             # Get 2D boxes.
-            x_axis, y_axis = _get_view_xy(v, list(range(3)))
+            x_axis, y_axis = __get_view_xy(v, list(range(3)))
             boxes2d = boxes[:, :, [x_axis, y_axis]]
             box_palette = sns.color_palette('colorblind', len(boxes2d))
             for bi, b in enumerate(boxes2d):
@@ -418,7 +426,7 @@ def plot_volume(
 
         # Dose overlay.
         if dose is not None:
-            dose_slice = _get_view_slice(v, dose, view_idx)
+            dose_slice = __get_view_slice(v, dose, view_idx)
             if view_crop_box is not None:
                 dose_slice = dose_slice[view_crop_box[0, 0]:view_crop_box[1, 0] + 1, view_crop_box[0, 1]:view_crop_box[1, 1] + 1]
             base_cmap = plt.get_cmap(dose_cmap)
@@ -437,7 +445,7 @@ def plot_volume(
             label_palette = sns.color_palette('colorblind', len(labels))
             label_names_list = arg_to_list(label_names, str) if label_names is not None else None
             for j, lab in enumerate(labels):
-                label_slice = _get_view_slice(v, lab, view_idx)
+                label_slice = __get_view_slice(v, lab, view_idx)
                 if view_crop_box is not None:
                     label_slice = label_slice[view_crop_box[0, 0]:view_crop_box[1, 0] + 1, view_crop_box[0, 1]:view_crop_box[1, 1] + 1]
                 label_bin = (label_slice > 0).astype(float)
@@ -458,7 +466,7 @@ def plot_volume(
             else:
                 points_colours = ['yellow'] * len(points)
             for pi, p in enumerate(points):
-                p_x, p_y = _get_view_xy(v, p)
+                p_x, p_y = __get_view_xy(v, p)
                 if view_crop_box is not None:
                     p_x -= view_crop_box[0, 0]
                     p_y -= view_crop_box[0, 1]
@@ -475,7 +483,7 @@ def plot_volume(
         # Crosshairs.
         if crosshairs is not None:
             crosshairs_vox = __resolve_point(crosshairs, data.shape, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, points=points)
-            ch_x, ch_y = _get_view_xy(v, crosshairs_vox)
+            ch_x, ch_y = __get_view_xy(v, crosshairs_vox)
             if view_crop_box is not None:
                 ch_x -= view_crop_box[0, 0]
                 ch_y -= view_crop_box[0, 1]
@@ -487,7 +495,7 @@ def plot_volume(
                 if not use_image_coords and affine is not None:
                     s = affine_spacing(affine)
                     o = affine_origin(affine)
-                    ch_x_world, ch_y_world = _get_view_xy(v, crosshairs_vox * s + o)
+                    ch_x_world, ch_y_world = __get_view_xy(v, crosshairs_vox * s + o)
                     label = f'({ch_x_world:.1f}, {ch_y_world:.1f})'
                 else:
                     label = f'({ch_x}, {ch_y})'
@@ -512,8 +520,8 @@ def plot_volume(
         if not use_image_coords and affine is not None:
             s = affine_spacing(affine)
             o = affine_origin(affine)
-            sx, sy = _get_view_xy(v, s)
-            ox, oy = _get_view_xy(v, o)
+            sx, sy = __get_view_xy(v, s)
+            ox, oy = __get_view_xy(v, o)
             x_ticks = (x_ticks * sx + ox)
             y_ticks = (y_ticks * sy + oy)
         col_ax.set_xticklabels([f'{t:.1f}' for t in x_ticks])

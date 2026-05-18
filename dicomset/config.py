@@ -1,9 +1,11 @@
 import os
 
-from .typing import DirPath
+from .typing import DirPath, Orientation
+from .utils.assertions import assert_orientation
 
 DATA_DIR = None
 DATA_ENV_VAR = 'DS_DATA'
+DEFAULT_ORIENTATION = 'LPS'
 
 def config_data(dirpath: DirPath) -> None:
     global DATA_DIR
@@ -57,3 +59,23 @@ class Directories:
     #     return filepath
 
 directories = Directories()
+
+def init_orientation() -> Orientation:
+    o = os.environ.get('DS_ORIENTATION')
+    if o is not None:
+        assert_orientation(o, dim)
+        return o
+    return DEFAULT_ORIENTATION
+
+dim = 3
+orientation = init_orientation()
+
+def get_orientation() -> Orientation:
+    return orientation
+
+def set_orientation(
+    o: Orientation,
+    ) -> None:
+    assert_orientation(o, dim)
+    global orientation
+    orientation = o
