@@ -118,9 +118,11 @@ def plot_hist(
 
 @alias_kwargs(
     ('a', 'affine'),
+    ('b', 'box'),
     ('c', 'crop'),
     ('cm', 'crop_margin'),
     ('l', 'labels'),
+    ('ln', 'label_names'),
     ('p', 'points'),
     ('sl', 'show_labels'),
     ('spn', 'show_point_names'),
@@ -129,32 +131,31 @@ def plot_hist(
 def plot_slice(
     data: Image2D | None,
     affine: AffineMatrix2D | None = None,
-    alpha: float = 0.3,
-    aspect: float | None = None,
+    alpha: Number = 0.3,
+    aspect: Number | None = None,
     ax: mpl.axes.Axes | None = None,
     box: Box2D | BatchBox2D | RegionID | List[RegionID] | None = None,
     cmap: str = 'gray',
-    crop: Box2D | Point2D | str | None = None,
-    crop_margin: int = 100,
+    crop: Box2D | Point2D | RegionID | None = None,
+    crop_margin: Number = 100.0,
     labels: LabelImage2D | BatchLabelImage2D | None = None,
     label_names: RegionID | List[RegionID] | None = None,
-    label_threshold: float = 0,
-    figsize: tuple[float, float] = (8, 8),
+    figsize: Tuple[Number, Number] = (8, 8),
     points: Point2D | Points2D | Landmark2D | Landmarks2D | None = None,
     points_colour: str = 'yellow',
     point_names: LandmarkID | List[LandmarkID] | None = None,
     return_axis: bool = False,
     show_labels: bool = True,
+    show_point_idxs: bool = False,
     show_point_names: bool = False,
     title: str | None = None,
     use_image_coords: bool = False,
-    vmin: float | None = None,
-    vmax: float | None = None,
+    vmin: Number | None = None,
+    vmax: Number | None = None,
     window: Window | None = None,
     x_label: str | None = None,
-    x_origin: Literal['lower', 'upper'] | None = 'lower',
     y_label: str | None = None,
-    y_origin: Literal['lower', 'upper'] | None = 'upper',
+    y_origin: Literal['lower', 'upper'] = 'lower',
     ) -> mpl.axes.Axes | None:
     if data is None:
         assert labels is not None, "Labels must be provided if data is None."
@@ -201,14 +202,14 @@ def plot_slice(
     ax.imshow(data.T, aspect=aspect, cmap=cmap, origin=y_origin, vmax=vmax, vmin=vmin)
 
     # Plot labels.
-    if labels is not None:
+    if show_labels and labels is not None:
         label_palette = sns.color_palette('colorblind', len(labels))
         for i, l in enumerate(labels):
             if crop_box is not None:
                 l = l[crop_box[0, 0]:crop_box[1, 0] + 1, crop_box[0, 1]:crop_box[1, 1] + 1]
             l_bin = (l > 0).astype(float)
             cmap_label = mpl.colors.ListedColormap(((1, 1, 1, 0), label_palette[i]))
-            ax.imshow(l_bin.T, alpha=alpha, cmap=cmap_label)
+            ax.imshow(l_bin.T, alpha=alpha, cmap=cmap_label, origin=y_origin)
             ax.contour(l_bin.T, colors=[label_palette[i]], levels=[0.5], linestyles='solid')
 
     # Plot points.
@@ -224,6 +225,10 @@ def plot_slice(
             ax.scatter(p[0], p[1], c=[p_colours[pi]], marker='o', s=20, zorder=5)
             if show_point_names and point_names is not None:
                 ax.annotate(point_names[pi], (p[0], p[1]),
+                    color=p_colours[pi], fontsize=8,
+                    textcoords='offset points', xytext=(5, 5), zorder=5)
+            elif show_point_idxs:
+                ax.annotate(str(pi), (p[0], p[1]),
                     color=p_colours[pi], fontsize=8,
                     textcoords='offset points', xytext=(5, 5), zorder=5)
 
@@ -301,20 +306,20 @@ def plot_volume(
     ax: mpl.axes.Axes | List[mpl.axes.Axes] | None = None,
     box: Box3D | BatchBox3D | RegionID | List[RegionID] | None = None,
     cmap: str = 'gray',
-    crop: Box3D | Point3D | str | None = None,
-    crop_margin: int = 100,
+    crop: Box3D | Point3D | RegionID | None = None,
+    crop_margin: Number = 100.0,
     dose: Image3D | None = None,
-    dose_alpha_min: float = 0.3,
-    dose_alpha_max: float = 1.0,
+    dose_alpha_min: Number = 0.3,
+    dose_alpha_max: Number = 1.0,
     dose_cmap: str = 'turbo',
-    dose_cmap_trunc: float = 0.15,
-    figsize: tuple[float, float] = (16, 6),
+    dose_cmap_trunc: Number = 0.15,
+    figsize: Tuple[Number, Number] = (16, 6),
     idx: int | float | str | Point3D | None = None,
     labels: LabelImage3D | BatchLabelImage3D | None = None,
     label_names: RegionID | List[RegionID] | None = None,
     centre_method: Literal['com', 'fov'] = 'com',
     orientation: Orientation = 'LPS',
-    label_alpha: float = 0.3,
+    label_alpha: Number = 0.3,
     points: Point3D | Points3D | Landmark3D | Landmarks3D | None = None,
     points_colour: str = 'yellow',
     point_names: LandmarkID | List[LandmarkID] | None = None,
@@ -323,13 +328,14 @@ def plot_volume(
     return_axis: bool = False,
     show_crosshairs_coords: bool = True,
     show_labels: bool = True,
+    show_point_idxs: bool = False,
     show_points: bool = True,
     show_point_names: bool = False,
     show_title: bool = True,
     use_image_coords: bool = False,
-    view: int | list[int] | Literal['all'] = 'all',
-    vmin: float | None = None,
-    vmax: float | None = None,
+    view: View | List[View] | Literal['all'] = 'all',
+    vmin: Number | None = None,
+    vmax: Number | None = None,
     window: Window | None = None,
     ) -> np.ndarray | None:
     if data is None:
@@ -459,6 +465,10 @@ def plot_volume(
                 col_ax.scatter(p_x, p_y, c=[points_colours[pi]], marker='o', s=20, zorder=5)
                 if show_point_names and point_names is not None:
                     col_ax.annotate(point_names[pi], (p_x, p_y),
+                        color=points_colours[pi], fontsize=8,
+                        textcoords='offset points', xytext=(5, 5), zorder=5)
+                elif show_point_idxs:
+                    col_ax.annotate(str(pi), (p_x, p_y),
                         color=points_colours[pi], fontsize=8,
                         textcoords='offset points', xytext=(5, 5), zorder=5)
 

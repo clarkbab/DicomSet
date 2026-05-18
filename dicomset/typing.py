@@ -2,7 +2,7 @@ from jaxtyping import Bool, Float, Int
 import numpy as np
 import pandas as pd
 import pydicom as dcm
-from typing import Literal, Tuple
+from typing import List, Literal, Tuple
 
 # First-order types (composed of basic types).
 # Splitting by 'order' allows for easier managing of type dependencies.
@@ -38,8 +38,7 @@ FilePath = str
 GroupID = str       # E.g. lung, hn
 Image2D = Float[np.ndarray, "X Y"]
 Image3D = Float[np.ndarray, "X Y Z"]
-Indices2D = Int[np.ndarray, "N 2"]
-Indices3D = Int[np.ndarray, "N 3"]
+Indices = int | List[int] | Int[np.ndarray, "N"]
 LabelImage2D = Bool[np.ndarray, "X Y"]
 LabelImage3D = Bool[np.ndarray, "X Y Z"]
 Landmark2D = pd.Series

@@ -95,7 +95,7 @@ def to_tensor(
 @bubble_args(to_numpy)
 def to_tuple(
     data: bool | Number | str | List[bool | Number | str] | np.ndarray,
-    decimals: int | None = None,
+    dp: int | None = None,
     **kwargs,
     ) -> Tuple[bool | Number | str, ...] | None:
     if data is None:
@@ -104,7 +104,7 @@ def to_tuple(
     data = tuple(to_numpy(data, **kwargs).tolist())
 
     # Round elements if required.
-    if decimals is not None:
-        data = tuple(round(x, decimals) if isinstance(x, float) else x for x in data)
+    if dp is not None:
+        data = tuple(round(x, dp) if isinstance(x, float) else x for x in data)
 
     return data
