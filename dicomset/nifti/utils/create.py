@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 import os
 import pandas as pd
 import shutil
-import SimpleITK as sitk
-from typing import List
+from typing import TYPE_CHECKING, List
+
+if TYPE_CHECKING:
+    import SimpleITK as sitk
 
 from ... import config
 from ...typing import AffineMatrix3D, BatchLabelImage3D, DatasetID, Image3D, LabelImage3D, Landmarks3D, ModelID, NiftiModality, PatientID, RegionID, SeriesID, StudyID

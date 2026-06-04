@@ -7,7 +7,7 @@ from .conversion import to_list, to_numpy
 def round(
     x: Number | List[Number] | np.ndarray,
     # Can round either by number of decimal places, or by tolerance.
-    dp: int | None = 0,
+    dp: int | None = None,
     tol: Number | None = None,
     ) -> Number | List[Number] | np.ndarray:
     x, return_type = to_numpy(x, return_type=True)

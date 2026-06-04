@@ -1,12 +1,14 @@
+from __future__ import annotations
+
 import ast
 import json
-import nibabel as nib
-import nrrd
 import numpy as np
 import os
 import pandas as pd
-import SimpleITK as sitk
-from typing import Any, Dict, List, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple
+
+if TYPE_CHECKING:
+    import SimpleITK as sitk
 import yaml
 
 from ..typing import AffineMatrix3D, DirPath, FilePath, Image3D
@@ -86,6 +88,8 @@ def load_json(filepath: FilePath) -> Any:
 def load_nifti(
     filepath: FilePath,
     ) -> Tuple[Image3D, AffineMatrix3D]:
+    # Slow import so postponing until method call.
+    import nibabel as nib
     filepath = resolve_filepath(filepath)
     assert filepath.endswith('.nii') or filepath.endswith('.nii.gz'), "Filepath must end with .nii or .nii.gz"
     img = nib.load(filepath)
@@ -96,6 +100,8 @@ def load_nifti(
 def load_nrrd(
     filepath: FilePath,
     ) -> Tuple[Image3D, AffineMatrix3D]:
+    # Slow import so postponing until method call.
+    import nrrd
     filepath = resolve_filepath(filepath)
     data, header = nrrd.read(filepath)
     affine = create_affine(dim=3)
@@ -171,6 +177,8 @@ def save_nifti(
     filepath: FilePath,
     overwrite: bool = False,
     ) -> None:
+    # Slow import so postponing until method call.
+    import nibabel as nib
     filepath = resolve_filepath(filepath)
     assert filepath.endswith('.nii.gz') or filepath.endswith('.nii'), "Filepath must end with .nii or .nii.gz"
     if os.path.exists(filepath) and not overwrite:
@@ -207,6 +215,8 @@ def save_transform(
     filepath: FilePath,
     overwrite: bool = False,
     ) -> None:
+    # Slow import so postponing until method call.
+    import SimpleITK as sitk
     filepath = resolve_filepath(filepath)
     if os.path.exists(filepath) and not overwrite:
         raise ValueError(f"File '{filepath}' already exists, use overwrite=True.")

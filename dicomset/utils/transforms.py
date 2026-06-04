@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import SimpleITK as sitk
 import skimage as ski
 from typing import Callable, List, Literal, Tuple, TYPE_CHECKING
 
@@ -12,6 +11,7 @@ from .geometry import affine_origin, affine_spacing, assert_box_width, create_af
 from .landmarks import landmarks_to_points, replace_points
 from .logging import logger
 if TYPE_CHECKING:
+    import SimpleITK as sitk
     from ..dicom import DicomSeries
     from ..nifti import NiftiImageSeries
 
@@ -105,9 +105,12 @@ def __spatial_resample(
     output_spacing = affine_spacing(output_affine)
     output_origin = affine_origin(output_affine) 
 
+    # Slow import so postponing until method call.
+    import SimpleITK as sitk
+
     # Convert to sitk datatypes.
     if data.dtype == bool:
-        data = data.astype(np.uint8) 
+        data = data.astype(np.uint8)
 
     # Create 'sitk' image.
     img = to_sitk_image(data, affine=affine, dim=data.ndim)
@@ -178,10 +181,13 @@ def __spatial_sample(
     if sample_spacing is None:
         sample_spacing = (1.0,) * dim
 
+    # Slow import so postponing until method call.
+    import SimpleITK as sitk
+
     # Convert to sitk datatypes.
     is_boolean = data.dtype == bool
     if is_boolean:
-        data = data.astype(np.uint8) 
+        data = data.astype(np.uint8)
     if sample_spacing is not None:
         sample_spacing = tuple(float(s) for s in sample_spacing)
 
@@ -335,6 +341,8 @@ def crop_points(
 def from_sitk_image(
     img: sitk.Image,
     ) -> Tuple[Image, AffineMatrix]:
+    # Slow import so postponing until method call.
+    import SimpleITK as sitk
     data = sitk.GetArrayFromImage(img)
     # SimpleITK always flips the data coordinates (x, y, z) -> (z, y, x) when converting to numpy.
     # See C- (row-major) vs. Fortran- (column-major) style indexing.
@@ -434,6 +442,8 @@ def to_sitk_image(
     affine: AffineMatrix | None = None,
     dim: SpatialDim = 3,
     ) -> sitk.Image:
+    # Slow import so postponing until method call.
+    import SimpleITK as sitk
     # Multi-channel sitk images must be stored as vector images.
     is_vector = True if data.ndim == dim + 1 else False
 

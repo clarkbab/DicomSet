@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 import numpy as np
 import os
 import pandas as pd
-import SimpleITK as sitk
-from typing import List, Tuple
+from typing import TYPE_CHECKING, List, Tuple
+
+if TYPE_CHECKING:
+    import SimpleITK as sitk
 
 from ... import config
 from ...typing import AffineMatrix3D, BatchLabelImage3D, DatasetID, Image3D, LabelImage3D, Landmarks3D, ModelID, NiftiModality, PatientID, RegionID, SeriesID, StudyID
@@ -120,4 +124,6 @@ def load_registration_transform(
     set = NiftiDataset(dataset)
     moving_patient_id = fixed_patient_id if moving_patient_id is None else moving_patient_id
     filepath = os.path.join(set.path, 'data', 'predictions', 'registration', 'patients', fixed_patient_id, fixed_study_id, fixed_series_id, moving_patient_id, moving_study_id, moving_series_id, 'transform', f'{model}.hdf5')
+    # Slow import so postponing until method call.
+    import SimpleITK as sitk
     return sitk.ReadTransform(filepath)

@@ -1,7 +1,5 @@
 import numpy as np
 import pandas as pd
-import SimpleITK as sitk
-from surface_distance import compute_average_surface_distance, compute_robust_hausdorff, compute_surface_dice_at_tolerance, compute_surface_distances
 from typing import Callable, Dict, List
 
 from ..typing import AffineMatrix, BatchImage, BatchLabelImage, Image, LabelImage, Landmarks, Number, Point, Points, SpatialDim
@@ -48,6 +46,9 @@ def __spatial_dice(
     if a.sum() == 0 and b.sum() == 0:
         return 1.0
 
+    # Slow import so postponing until method call.
+    import SimpleITK as sitk
+
     # Convert types for SimpleITK.
     a = a.astype(np.int64)
     b = b.astype(np.int64)
@@ -71,6 +72,9 @@ def __spatial_distances(
         raise ValueError(f"Metric 'distances' expects arrays of equal shape. Got '{a.shape}' and '{b.shape}'.")
     if a.sum() == 0 or b.sum() == 0:
         raise ValueError(f"Metric 'distances' can't be calculated on empty labels.")
+
+    # Slow import so postponing until method call.
+    from surface_distance import compute_average_surface_distance, compute_robust_hausdorff, compute_surface_dice_at_tolerance, compute_surface_distances
 
     # Calculate surface distances.
     if affine is not None:
