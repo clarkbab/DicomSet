@@ -30,7 +30,7 @@ class NiftiRegionsSeries(NiftiImageSeries):
         struct_map: StructMap | None = None,
         ) -> None:
         super().__init__('regions', dataset, patient, study, id, index=index)
-        dirpath = os.path.join(config.directories.datasets, 'nifti', self.__dataset.id, 'data', 'patients', self.__patient.id, self.__study.id, self.__modality, self.__id)
+        dirpath = os.path.join(config.dirs.datasets, 'nifti', self.__dataset.id, 'data', 'patients', self.__patient.id, self.__study.id, self.__modality, self.__id)
         if not os.path.exists(dirpath):
             raise ValueError(f"No regions series '{self.__id}' found for study '{self.__study.id}'. Dirpath: {dirpath}")
         self.__path = dirpath

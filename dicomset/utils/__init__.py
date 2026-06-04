@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 LAZY_IMPORTS = {
     'args': ['arg_default', 'arg_to_list', 'bubble_args', 'landmarks_to_list', 'regions_to_list', 'resolve_filepath'],
-    'assertions': ['assert_orientation'],
+    'assertions': ['assert_orientation', 'assert_shapes_equal'],
     'conversion': ['to_list', 'to_numpy', 'to_tensor'],
     'debug': ['from_desc'],
     'geometry': [
@@ -13,7 +13,7 @@ LAZY_IMPORTS = {
         'foreground_fov', 'foreground_fov_centre', 'foreground_fov_width', 'fov', 'fov_centre', 'fov_width'
     ],
     'images': ['create_box_label'],
-    'io': ['load_csv', 'load_json', 'load_nifti', 'load_numpy', 'save_csv', 'save_nifti', 'save_numpy'],
+    'io': ['load_csv', 'load_json', 'load_nifti', 'load_numpy', 'save_csv', 'save_json', 'save_nifti', 'save_numpy'],
     'landmarks': ['landmarks_dim', 'landmarks_to_points', 'points_to_landmarks', 'replace_points'],
     'load_utils': ['list_datasets', 'load_dataset'],
     'logging': ['logger'],

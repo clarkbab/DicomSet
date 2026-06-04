@@ -27,7 +27,7 @@ class NiftiMrSeries(NiftiImageSeries):
         index: pd.DataFrame | None = None
         ) -> None:
         super().__init__('mr', dataset, pat, study, id, index=index)
-        basepath = os.path.join(config.directories.datasets, 'nifti', self.__dataset.id, 'data', 'patients', self.__patient.id, self.__study.id, self.__modality, self.__id)
+        basepath = os.path.join(config.dirs.datasets, 'nifti', self.__dataset.id, 'data', 'patients', self.__patient.id, self.__study.id, self.__modality, self.__id)
         filepath = None
         for e in IMAGE_EXTENSIONS:
             fpath = f"{basepath}{e}"

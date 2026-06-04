@@ -6,10 +6,9 @@ import numpy as np
 import os
 import pandas as pd
 from typing import TYPE_CHECKING, Any, Dict, List, Tuple
-
+import yaml
 if TYPE_CHECKING:
     import SimpleITK as sitk
-import yaml
 
 from ..typing import AffineMatrix3D, DirPath, FilePath, Image3D
 from .args import arg_to_list, resolve_filepath
@@ -91,7 +90,7 @@ def load_nifti(
     # Slow import so postponing until method call.
     import nibabel as nib
     filepath = resolve_filepath(filepath)
-    assert filepath.endswith('.nii') or filepath.endswith('.nii.gz'), "Filepath must end with .nii or .nii.gz"
+    assert filepath.endswith('.nii') or filepath.endswith('.nii.gz'), f"Filepath must end with .nii or .nii.gz, got: {filepath}"
     img = nib.load(filepath)
     data = img.get_fdata()
     affine = img.affine
@@ -112,18 +111,23 @@ def load_nrrd(
 
 def load_numpy(
     filepath: FilePath,
-    keys: str | List[str] = 'data',
+    keys: str | List[str] | Literal['all'] = 'all',
     ) -> np.ndarray | List[np.ndarray]:
     filepath = resolve_filepath(filepath)
-    assert filepath.endswith('.npy') or filepath.endswith('.npz'), "Filepath must end with .npy or .npz"
+    assert filepath.endswith('.npy') or filepath.endswith('.npz'), f"Filepath must end with .npy or .npz, got: {filepath}"
     data = np.load(filepath)
     if filepath.endswith('.npz'):
-        keys = arg_to_list(keys, str)
-        items = [data[k] for k in keys]
-        items = items[0] if len(items) == 1 else items
+        keys = arg_to_list(keys, str, literals={ 'all': list(data.keys()) })
+        items = []
+        for k in keys:
+            try:
+                items.append(data[k])
+            except KeyError as e:
+                raise KeyError(f"Key '{k}' not found in .npz file. Available keys are: {list(data.keys())}. Filepath: '{filepath}'.")
+        data = items[0] if len(items) == 1 else items
     else:
-        items = data
-    return items
+        data = data
+    return data
 
 def load_yaml(filepath: FilePath) -> Any:
     filepath = resolve_filepath(filepath)
@@ -150,7 +154,7 @@ def save_csv(
     data: pd.DataFrame,
     filepath: FilePath,
     index: bool = False,
-    overwrite: bool = False,
+    overwrite: bool = True,
     ) -> None:
     filepath = resolve_filepath(filepath)
     if os.path.exists(filepath) and not overwrite:
@@ -161,7 +165,7 @@ def save_csv(
 def save_json(
     data: Any,
     filepath: FilePath,
-    overwrite: bool = False,
+    overwrite: bool = True,
     ) -> None:
     filepath = resolve_filepath(filepath)
     if os.path.exists(filepath) and not overwrite:
@@ -175,12 +179,12 @@ def save_nifti(
     data: Image3D,
     affine: AffineMatrix3D,
     filepath: FilePath,
-    overwrite: bool = False,
+    overwrite: bool = True,
     ) -> None:
     # Slow import so postponing until method call.
     import nibabel as nib
     filepath = resolve_filepath(filepath)
-    assert filepath.endswith('.nii.gz') or filepath.endswith('.nii'), "Filepath must end with .nii or .nii.gz"
+    assert filepath.endswith('.nii.gz') or filepath.endswith('.nii'), f"Filepath must end with .nii or .nii.gz, got: {filepath}"
     if os.path.exists(filepath) and not overwrite:
         raise ValueError(f"File '{filepath}' already exists, use overwrite=True.")
     if data.dtype == bool:
@@ -193,10 +197,10 @@ def save_numpy(
     data: np.ndarray | List[np.ndarray],
     filepath: FilePath,
     keys: str | List[str] = 'data',
-    overwrite: bool = False,
+    overwrite: bool = True,
     ) -> None:
     filepath = resolve_filepath(filepath)
-    assert filepath.endswith('.npy') or filepath.endswith('.npz'), "Filepath must end with .npy or .npz"
+    assert filepath.endswith('.npy') or filepath.endswith('.npz'), f"Filepath must end with .npy or .npz, got: {filepath}"
     if os.path.exists(filepath) and not overwrite:
         raise ValueError(f"File '{filepath}' already exists, use overwrite=True.")
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
@@ -213,7 +217,7 @@ def save_numpy(
 def save_transform(
     transform: sitk.Transform,
     filepath: FilePath,
-    overwrite: bool = False,
+    overwrite: bool = True,
     ) -> None:
     # Slow import so postponing until method call.
     import SimpleITK as sitk
@@ -226,7 +230,7 @@ def save_transform(
 def save_yaml(
     data: Any,
     filepath: FilePath,
-    overwrite: bool = False,
+    overwrite: bool = True,
     ) -> None:
     filepath = resolve_filepath(filepath)
     if os.path.exists(filepath) and not overwrite:

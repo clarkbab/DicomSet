@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dicomset import config
+
 import ast
 from functools import wraps
 import inspect
@@ -8,7 +10,6 @@ import os
 import textwrap
 from typing import Any, Callable, Dict, List, Literal, Tuple, TYPE_CHECKING
 
-from .. import config
 from ..typing import DiskLandmarkID, DiskRegionID, FilePath, ID, LandmarkID, LandmarkList, RegionID, RegionList
 from .python import isinstance_generic, version
 if TYPE_CHECKING:
@@ -82,28 +83,13 @@ def arg_to_list(
     arg: Any | None,
     types: Any | List[Any],     # Check if 'arg' matches any of these types.
     broadcast: int = 1,         # Expand a match to multiple elements, e.g. None -> [None, None, None].
-    exceptions: Any | List[Any] | None = None,
-    iter_types: Any | List[Any] | None = None,   # If 'arg' is one of these types, convert directly to a list (if not already).
     literals: Dict[Any, List[Any]] | None = None,   # Check if 'arg' matches any of these literal values.
     out_type: Any | None = None,    # Convert a match to a different output type.
-    return_matched: bool = False,   # Return whether the match was successful.
-    ) -> List[Any]:
+    return_matched: bool = False,   # If arg matched 'types' or 'literals' then return True.
+    ) -> List[Any] | Tuple[List[Any], bool]:
     # Convert types to list.
     if not isinstance(types, list) and not isinstance(types, tuple):
         types = [types]
-    if exceptions is not None and not isinstance(exceptions, list) and not isinstance(exceptions, tuple):
-        exceptions = [exceptions]
-    if iter_types is not None and not isinstance(iter_types, list) and not isinstance(iter_types, tuple):
-        iter_types = [iter_types]
-
-    # Check exceptions.
-    if exceptions is not None:
-        for e in exceptions:
-            if isinstance(arg, type(e)) and arg == e:
-                if return_matched:
-                    return arg, False
-                else:
-                    return arg
     
     # Check literal matches.
     if literals is not None:
@@ -118,37 +104,24 @@ def arg_to_list(
                     arg = arg()
 
                 if return_matched:
-                    return arg, False
-                else:
-                    return arg
-
-    # Check iterable types.
-    if iter_types is not None:
-        for t in iter_types:
-            if isinstance(arg, t):
-                arg = list(arg)
-                if return_matched:
-                    return arg, False
-                else:
-                    return arg
-
+                    return arg, True
+                return arg
 
     # Check types.
-    expanded = False
+    matched = False
     for t in types:
         if isinstance_generic(arg, t):
-            expanded = True
+            matched = True
             arg = [arg] * broadcast
             break
         
     # Convert to output type.
-    if expanded and out_type is not None:
+    if matched and out_type is not None:
         arg = [out_type(a) for a in arg]
 
     if return_matched:
-        return arg, expanded
-    else:
-        return arg
+        return arg, matched
+    return arg
 
 def assert_2d(
     data: np.ndarray,
@@ -249,7 +222,7 @@ def resolve_filepath(filepath: FilePath) -> FilePath:
     file_options = ['f', 'file', 'files']
     for f in file_options:
         if filepath.startswith(f"{f}:"):
-            filepath = os.path.join(config.directories.files, filepath[len(f) + 1:])
+            filepath = os.path.join(config.dirs.files, filepath[len(f) + 1:])
             break
     return filepath
 

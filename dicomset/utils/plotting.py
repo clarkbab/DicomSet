@@ -8,7 +8,7 @@ from typing import List, Literal, Tuple
 from ..config import get_orientation
 from ..dicom.series import DicomSeries
 from ..nifti.series import NiftiSeries
-from ..typing import AffineMatrix, AffineMatrix2D, AffineMatrix3D, BatchBox, BatchBox2D, BatchBox3D, BatchLabelImage, BatchLabelImage2D, BatchLabelImage3D, BatchVoxelBox, Box, Box2D, Box3D, Image, Image2D, Image3D, LabelImage, LabelImage2D, LabelImage3D, Landmark, Landmark2D, Landmark3D, LandmarkID, Landmarks, Landmarks2D, Landmarks3D, Number, Orientation2D, Orientation3D, Pixel, PixelBox, Point, Point2D, Point3D, Points, Points2D, Points3D, RegionID, Size, View, Voxel, VoxelBox, Window
+from ..typing import AffineMatrix, AffineMatrix2D, AffineMatrix3D, BatchBox, BatchBox2D, BatchBox3D, BatchLabelImage, BatchLabelImage2D, BatchLabelImage3D, BatchPoints, BatchPoints2D, BatchPoints3D, BatchVoxelBox, Box, Box2D, Box3D, Image, Image2D, Image3D, LabelImage, LabelImage2D, LabelImage3D, Landmark, Landmark2D, Landmark3D, LandmarkID, Landmarks, Landmarks2D, Landmarks3D, Number, Orientation2D, Orientation3D, Pixel, PixelBox, Point, Point2D, Point3D, Points, Points2D, Points3D, RegionID, Size, View, Voxel, VoxelBox, Window
 from .args import alias_kwargs, arg_default, arg_to_list, assert_2d, assert_3d
 from .assertions import assert_orientation
 from .conversion import to_numpy
@@ -28,6 +28,14 @@ WINDOW_PRESETS = {
     'mediastinum': (350, 50),
     'tissue': (400, 50),
 }
+
+def __get_origin_2d(
+    orientation: Orientation2D,
+    ) -> Tuple[Literal['lower', 'upper'], Literal['lower', 'upper']]:
+    assert_orientation(orientation, 2)
+    origin_x = 'lower' if orientation[0] == 'L' else 'upper'
+    origin_y = 'lower' if orientation[1] == 'S' else 'upper'
+    return (origin_x, origin_y)
 
 def __get_view_aspect(
     view: View,
@@ -55,14 +63,6 @@ def __get_view_origin(
         origin_x = 'lower' if orientation[0] == 'L' else 'upper'
         origin_y = 'upper' if orientation[1] == 'P' else 'lower'
 
-    return (origin_x, origin_y)
-
-def __get_origin_2d(
-    orientation: Orientation2D,
-    ) -> Tuple[Literal['lower', 'upper'], Literal['lower', 'upper']]:
-    assert_orientation(orientation, 2)
-    origin_x = 'lower' if orientation[0] == 'L' else 'upper'
-    origin_y = 'lower' if orientation[1] == 'S' else 'upper'
     return (origin_x, origin_y)
 
 def __get_view_slice(
@@ -126,6 +126,7 @@ def plot_hist(
     ('cm', 'crop_margin'),
     ('l', 'labels'),
     ('ln', 'label_names'),
+    ('o', 'orientation'),
     ('p', 'points'),
     ('sl', 'show_labels'),
     ('spn', 'show_point_names'),
@@ -145,7 +146,7 @@ def plot_slice(
     labels: LabelImage2D | BatchLabelImage2D | None = None,
     label_names: RegionID | List[RegionID] | None = None,
     orientation: Orientation2D | None = None,
-    points: Point2D | Points2D | Landmark2D | Landmarks2D | None = None,
+    points: Point2D | Points2D | BatchPoints2D | List[Points2D] | Landmark2D | Landmarks2D | None = None,
     points_colour: str = 'yellow',
     point_names: LandmarkID | List[LandmarkID] | None = None,
     return_axis: bool = False,
@@ -153,6 +154,7 @@ def plot_slice(
     show_point_idxs: bool = False,
     show_point_names: bool = False,
     title: str | None = None,
+    title_fontsize: float = 10,
     use_image_coords: bool = False,
     vmin: Number | None = None,
     vmax: Number | None = None,
@@ -163,19 +165,15 @@ def plot_slice(
     if data is None:
         assert labels is not None, "Labels must be provided if data is None."
         data = np.zeros(labels.shape[-2:])
-    assert_2d(data), "Data must be 2D."
+    data = to_numpy(data)
+    data = data.squeeze()  # Remove any singleton dimensions.
+    assert_2d(data)
+    affine = to_numpy(affine)
     orientation = arg_default(orientation, orientation, 'LS')
     origin_x, origin_y = __get_origin_2d(orientation)
 
-    # Normalise labels to batch form (B, X, Y).
-    if labels is not None and labels.ndim == 2:
-        labels = labels[np.newaxis]
-    if labels is not None and labels.dtype != bool:
-        if labels.min() < 0 or labels.max() > 1:
-            logger.warn(f"Labels values are outside the range [0, 1]. Got min={labels.min():.3f}, max={labels.max():.3f}. Performing minmax norm.")
-            labels_min, labels_max = labels.min(), labels.max()
-            if labels_max > labels_min:
-                labels = (labels - labels_min) / (labels_max - labels_min)
+    # Resolve labels.
+    labels = __resolve_labels(labels, dim=2)
 
     # Resolve window to vmin/vmax.
     vmin, vmax = __resolve_window(window, affine=affine, data=data, labels=labels, vmax=vmax, vmin=vmin)
@@ -221,23 +219,29 @@ def plot_slice(
 
     # Plot points.
     if points is not None:
-        if points_colour == 'gradient' and len(points) > 1:
-            points_cmap = mpl.colors.LinearSegmentedColormap.from_list('warm_bright', ['#FFE600', '#FF8C00', '#FF3300', '#FF0066'])
-            p_colours = [points_cmap(i / (len(points) - 1)) for i in range(len(points))]
-        else:
-            p_colours = [points_colour] * len(points)
-        for pi, p in enumerate(points):
-            if crop_box is not None:
-                p -= crop_box[0]
-            ax.scatter(p[0], p[1], c=[p_colours[pi]], marker='o', s=20, zorder=5)
-            if show_point_names and point_names is not None:
-                ax.annotate(point_names[pi], (p[0], p[1]),
-                    color=p_colours[pi], fontsize=8,
-                    textcoords='offset points', xytext=(5, 5), zorder=5)
-            elif show_point_idxs:
-                ax.annotate(str(pi), (p[0], p[1]),
-                    color=p_colours[pi], fontsize=8,
-                    textcoords='offset points', xytext=(5, 5), zorder=5)
+        n_batches = len(points)
+        batch_palette = sns.color_palette('colorblind', n_batches)
+        for bi, (batch, batch_names) in enumerate(zip(points, point_names)):
+            batch_colour = batch_palette[bi]
+            if points_colour == 'gradient' and len(batch) > 1:
+                r, g, b = batch_colour[:3]
+                light = (r + (1 - r) * 0.7, g + (1 - g) * 0.7, b + (1 - b) * 0.7)
+                points_cmap = mpl.colors.LinearSegmentedColormap.from_list('batch_grad', [light, batch_colour])
+                p_colours = [points_cmap(i / (len(batch) - 1)) for i in range(len(batch))]
+            else:
+                p_colours = [batch_colour] * len(batch)
+            for pi, p in enumerate(batch):
+                if crop_box is not None:
+                    p = p - crop_box[0]
+                ax.scatter(p[0], p[1], c=[p_colours[pi]], marker='o', s=20, zorder=5)
+                if show_point_names and batch_names is not None:
+                    ax.annotate(batch_names[pi], (p[0], p[1]),
+                        color=p_colours[pi], fontsize=8,
+                        textcoords='offset points', xytext=(5, 5), zorder=5)
+                elif show_point_idxs:
+                    ax.annotate(str(pi), (p[0], p[1]),
+                        color=p_colours[pi], fontsize=8,
+                        textcoords='offset points', xytext=(5, 5), zorder=5)
 
     # Box overlays.
     if boxes is not None:
@@ -280,7 +284,7 @@ def plot_slice(
 
     # Add text.
     if title is not None:
-        ax.set_title(title)
+        ax.set_title(title, fontsize=title_fontsize)
     if x_label is not None:
         ax.set_xlabel(x_label)
     if y_label is not None:
@@ -327,7 +331,7 @@ def plot_volume(
     centre_method: Literal['com', 'fov'] = 'com',
     orientation: Orientation3D | None = None,
     label_alpha: Number = 0.3,
-    points: Point3D | Points3D | Landmark3D | Landmarks3D | None = None,
+    points: Point3D | Points3D | BatchPoints3D | List[Points3D] | Landmark3D | Landmarks3D | None = None,
     points_colour: str = 'yellow',
     point_names: LandmarkID | List[LandmarkID] | None = None,
     crosshairs: Point3D | str | None = None,
@@ -339,6 +343,7 @@ def plot_volume(
     show_points: bool = True,
     show_point_names: bool = False,
     show_title: bool = True,
+    title_fontsize: float = 10,
     use_image_coords: bool = False,
     view: View | List[View] | Literal['all'] = 'all',
     vmin: Number | None = None,
@@ -353,18 +358,14 @@ def plot_volume(
         series = data
         data = series.data
         affine = series.affine
-    assert_3d(data), "Data must be 3D."
-    orientation = arg_default(orientation, orientation, get_orientation())
+    data = to_numpy(data)
+    data = data.squeeze()  # Remove any singleton dimensions.
+    assert_3d(data)
+    affine = to_numpy(affine)
+    orientation = arg_default(orientation, orientation, get_orientation(3))
 
-    # Normalise labels to batch form (B, X, Y, Z).
-    if labels is not None and labels.ndim == 3:
-        labels = labels[np.newaxis]
-    if labels is not None and labels.dtype != bool:
-        if labels.min() < 0 or labels.max() > 1:
-            logger.warn(f"Labels values are outside the range [0, 1]. Got min={labels.min():.3f}, max={labels.max():.3f}. Performing minmax norm.")
-            labels_min, labels_max = labels.min(), labels.max()
-            if labels_max > labels_min:
-                labels = (labels - labels_min) / (labels_max - labels_min)
+    # Resolve labels.
+    labels = __resolve_labels(labels, dim=3)
 
     # Resolve window to vmin/vmax.
     vmin, vmax = __resolve_window(window, affine=affine, data=data, labels=labels, vmax=vmax, vmin=vmin)
@@ -375,8 +376,11 @@ def plot_volume(
     # Resolve views.
     views = list(range(3)) if view == 'all' else (view if isinstance(view, list) else [view])
 
-    # Resolve idx and crosshairs to 3D voxel points.
+    # Resolve idx to a 3D voxel point.
     idx_vox = __resolve_point(idx, data.shape, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, point_names=point_names, points=points)
+
+    # Resolve crosshairs to image coords.
+    crosshairs_vox = __resolve_crosshairs(crosshairs, data.shape, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, point_names=point_names, points=points)
 
     # Resolve crop to a voxel bounding box.
     crop_box = __resolve_crop(crop, crop_margin, data.shape, affine=affine, label_names=label_names, labels=labels, point_names=point_names, points=points)
@@ -460,29 +464,34 @@ def plot_volume(
 
         # Point overlays.
         if show_points and points is not None:
-            if points_colour == 'gradient' and len(points) > 1:
-                points_cmap = mpl.colors.LinearSegmentedColormap.from_list('warm_bright', ['#FFE600', '#FF8C00', '#FF3300', '#FF0066'])
-                points_colours = [points_cmap(i / (len(points) - 1)) for i in range(len(points))]
-            else:
-                points_colours = ['yellow'] * len(points)
-            for pi, p in enumerate(points):
-                p_x, p_y = __get_view_xy(v, p)
-                if view_crop_box is not None:
-                    p_x -= view_crop_box[0, 0]
-                    p_y -= view_crop_box[0, 1]
-                col_ax.scatter(p_x, p_y, c=[points_colours[pi]], marker='o', s=20, zorder=5)
-                if show_point_names and point_names is not None:
-                    col_ax.annotate(point_names[pi], (p_x, p_y),
-                        color=points_colours[pi], fontsize=8,
-                        textcoords='offset points', xytext=(5, 5), zorder=5)
-                elif show_point_idxs:
-                    col_ax.annotate(str(pi), (p_x, p_y),
-                        color=points_colours[pi], fontsize=8,
-                        textcoords='offset points', xytext=(5, 5), zorder=5)
+            n_batches = len(points)
+            batch_palette = sns.color_palette('colorblind', n_batches)
+            for bi, (batch, batch_names) in enumerate(zip(points, point_names)):
+                batch_colour = batch_palette[bi]
+                if points_colour == 'gradient' and len(batch) > 1:
+                    r, g, b = batch_colour[:3]
+                    light = (r + (1 - r) * 0.7, g + (1 - g) * 0.7, b + (1 - b) * 0.7)
+                    points_cmap = mpl.colors.LinearSegmentedColormap.from_list('batch_grad', [light, batch_colour])
+                    p_colours = [points_cmap(i / (len(batch) - 1)) for i in range(len(batch))]
+                else:
+                    p_colours = [batch_colour] * len(batch)
+                for pi, p in enumerate(batch):
+                    p_x, p_y = __get_view_xy(v, p)
+                    if view_crop_box is not None:
+                        p_x -= view_crop_box[0, 0]
+                        p_y -= view_crop_box[0, 1]
+                    col_ax.scatter(p_x, p_y, c=[p_colours[pi]], marker='o', s=20, zorder=5)
+                    if show_point_names and batch_names is not None:
+                        col_ax.annotate(batch_names[pi], (p_x, p_y),
+                            color=p_colours[pi], fontsize=8,
+                            textcoords='offset points', xytext=(5, 5), zorder=5)
+                    elif show_point_idxs:
+                        col_ax.annotate(str(pi), (p_x, p_y),
+                            color=p_colours[pi], fontsize=8,
+                            textcoords='offset points', xytext=(5, 5), zorder=5)
 
         # Crosshairs.
-        if crosshairs is not None:
-            crosshairs_vox = __resolve_point(crosshairs, data.shape, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, points=points)
+        if crosshairs_vox is not None:
             ch_x, ch_y = __get_view_xy(v, crosshairs_vox)
             if view_crop_box is not None:
                 ch_x -= view_crop_box[0, 0]
@@ -539,7 +548,7 @@ def plot_volume(
                 o = affine_origin(affine)
                 world_pos = view_idx * s[v] + o[v]
                 title += f' ({world_pos:.1f}mm)'
-            col_ax.set_title(title)
+            col_ax.set_title(title, fontsize=title_fontsize)
 
     if show:
         plt.tight_layout()
@@ -554,8 +563,8 @@ def __resolve_boxes(
     affine: AffineMatrix | None = None,
     labels: LabelImage | BatchLabelImage | None = None,
     label_names: List[RegionID] | None = None,
-    points: Points | None = None,
-    point_names: List[str] | None = None,
+    points: Point | Points | BatchPoints | None = None,
+    point_names: List[LandmarkID] | List[List[LandmarkID]] | None = None,
     ) -> BatchVoxelBox | None:
     if box is None:
         return None
@@ -604,8 +613,8 @@ def __resolve_crop(
     affine: AffineMatrix | None = None,
     labels: BatchLabelImage | None = None,
     label_names: List[RegionID] | None = None,
-    points: Points | None = None,
-    point_names: List[str] | None = None,
+    points: List[np.ndarray] | None = None,
+    point_names: List[List[str]] | None = None,
     ) -> PixelBox | VoxelBox | None:
     if crop is None:
         return None
@@ -645,14 +654,21 @@ def __resolve_crop(
         elif source in ('p', 'point', 'points'):
             if points is None:
                 raise ValueError(f"crop='{crop}' but no points were provided.")
-            if value.lstrip('-').isdigit():
-                point_vox = points[int(value)]
+            value_parts = value.split(':')
+            if len(value_parts) == 1:
+                batch_idx, point_ref = 0, value_parts[0]
             else:
-                if point_names is None:
+                batch_idx, point_ref = int(value_parts[0]), value_parts[1]
+            batch = points[batch_idx]
+            if point_ref.lstrip('-').isdigit():
+                point_vox = batch[int(point_ref)]
+            else:
+                batch_names = point_names[batch_idx] if point_names is not None else None
+                if batch_names is None:
                     raise ValueError(f"crop='{crop}' uses a point name but no 'point_names' were provided.")
-                if value not in point_names:
-                    raise ValueError(f"Point name '{value}' not found in point_names: {point_names}.")
-                point_vox = points[point_names.index(value)]
+                if point_ref not in batch_names:
+                    raise ValueError(f"Point name '{point_ref}' not found in point_names: {batch_names}.")
+                point_vox = batch[batch_names.index(point_ref)]
             box_vox = np.stack([point_vox, point_vox])
 
         else:
@@ -686,6 +702,23 @@ def __resolve_crop(
     ])
     return box_vox
 
+def __resolve_labels(
+    labels: LabelImage | BatchLabelImage | None,
+    dim: int,
+    ) -> BatchLabelImage | None:
+    if labels is None:
+        return None
+    # Normalise to batch form (B, ...).
+    if labels.ndim == dim:
+        labels = labels[np.newaxis]
+    if labels.dtype != bool:
+        if labels.min() < 0 or labels.max() > 1:
+            logger.warn(f"Labels values are outside the range [0, 1]. Got min={labels.min():.3f}, max={labels.max():.3f}. Performing minmax norm.")
+            labels_min, labels_max = labels.min(), labels.max()
+            if labels_max > labels_min:
+                labels = (labels - labels_min) / (labels_max - labels_min)
+    return labels
+
 def __resolve_point(
     idx: int | float | str | Point | None,
     size: Size,
@@ -693,8 +726,8 @@ def __resolve_point(
     centre_method: Literal['com', 'fov'] = 'com',
     labels: BatchLabelImage | None = None,
     label_names: List[RegionID] | None = None,
-    points: Points | None = None,
-    point_names: List[str] | None = None,
+    points: List[np.ndarray] | None = None,
+    point_names: List[List[str]] | None = None,
     ) -> Pixel | Voxel:
     if idx is None:
         idx = 'f:0.5'
@@ -743,14 +776,21 @@ def __resolve_point(
     elif source in ('p', 'point', 'points'):
         if points is None:
             raise ValueError(f"idx='{idx}' but no points were provided.")
-        if value.lstrip('-').isdigit():
-            point = points[int(value)]
+        value_parts = value.split(':')
+        if len(value_parts) == 1:
+            batch_idx, point_ref = 0, value_parts[0]
         else:
-            if point_names is None:
+            batch_idx, point_ref = int(value_parts[0]), value_parts[1]
+        batch = points[batch_idx]
+        if point_ref.lstrip('-').isdigit():
+            point = batch[int(point_ref)]
+        else:
+            batch_names = point_names[batch_idx] if point_names is not None else None
+            if batch_names is None:
                 raise ValueError(f"idx='{idx}' uses a point name but no 'point_names' were provided.")
-            if value not in point_names:
-                raise ValueError(f"Point name '{value}' not found in point_names: {point_names}.")
-            point = points[point_names.index(value)]
+            if point_ref not in batch_names:
+                raise ValueError(f"Point name '{point_ref}' not found in point_names: {batch_names}.")
+            point = batch[batch_names.index(point_ref)]
 
     else:
         raise ValueError(f"Unknown idx prefix '{source}'. Expected 'f', 'labels', or 'points'.")
@@ -764,43 +804,80 @@ def __resolve_point(
 
     return point
 
+def __resolve_crosshairs(
+    crosshairs: Point3D | str | None,
+    size: Size,
+    affine: AffineMatrix | None = None,
+    centre_method: Literal['com', 'fov'] = 'com',
+    labels: BatchLabelImage | None = None,
+    label_names: List[RegionID] | None = None,
+    points: List[np.ndarray] | None = None,
+    point_names: List[List[LandmarkID]] | None = None,
+    ) -> Voxel | None:
+    if crosshairs is None:
+        return None
+    return __resolve_point(crosshairs, size, affine=affine, centre_method=centre_method, labels=labels, label_names=label_names, points=points, point_names=point_names)
+
 def __resolve_points(
-    points: Point | Points | Landmark | Landmarks | None,
+    points: Point | Points | BatchPoints | List[Points] | Landmark | Landmarks | None,
     affine: AffineMatrix | None = None,
     point_names: LandmarkID | List[LandmarkID] | None = None,
-    ) -> Tuple[Points, List[LandmarkID | int]]:
+    # Returns a list of points (instead of a batchpoints) because this allows
+    # different batch sizes.
+    ) -> Tuple[List[Points] | None, List[List[LandmarkID]] | None]:
     if points is None:
         return None, None
 
-    # Get points and IDs.
+    # Handle Landmark/Landmarks (pd.DataFrame/pd.Series).
     if isinstance(points, (pd.DataFrame, pd.Series)):
         if point_names is None:
             point_names = points['landmark-id'].astype(str).tolist()
         points = landmarks_to_points(points)
-    elif not isinstance(points, np.ndarray):
-        points = to_numpy(points)
 
-    # Expand single point.
-    if points.ndim == 1:
-        points = points[np.newaxis, :]
+    # Normalise to List[Points].
+    if isinstance(points, list):
+        # List[Points] — convert each batch element, normalise (dim,) → (1, dim).
+        points = [to_numpy(p) for p in points]
+        points = [p[np.newaxis] if p.ndim == 1 else p for p in points]
+    else:
+        if not isinstance(points, np.ndarray):
+            points = to_numpy(points)
+        # Normalise to (B, N, dim): single point (dim,) → (1, 1, dim), unbatched (N, dim) → (1, N, dim).
+        if points.ndim == 1:
+            points = [points[np.newaxis]]
+        elif points.ndim == 2:
+            points = [points]
+        else:
+            points = [p for p in points]
 
-    if points.shape[0] == 0:
-        logger.warn("Points array is empty. No points will be plotted.")
-        return None, None
-
-    # Use indices for point names.
+    # Resolve point names — applied uniformly across all batches.
+    n_points = points[0].shape[0] if points else 0
     if point_names is None:
-        point_names = [str(i) for i in range(len(points))]
-
-    assert len(point_names) == len(points), f"Expected point_names to have length {len(points)} but got {len(point_names)}."
+        per_point_names = [str(i) for i in range(n_points)]
+    else:
+        per_point_names = arg_to_list(point_names, str)
+        assert len(per_point_names) == n_points, f"Expected point_names of length {n_points} but got {len(per_point_names)}."
 
     # Convert from world to image coords.
     if affine is not None:
         spacing = affine_spacing(affine)
         origin = affine_origin(affine)
-        points = (points - origin) / spacing
+        points = [(p - origin) / spacing for p in points]
 
-    return points, point_names
+    # Skip empty batches.
+    batches = []
+    batch_names_list = []
+    for b in points:
+        if b.shape[0] == 0:
+            continue
+        batches.append(b)
+        batch_names_list.append(list(per_point_names))
+
+    if not batches:
+        logger.warn("Points array is empty. No points will be plotted.")
+        return None, None
+
+    return batches, batch_names_list
 
 def __resolve_window(
     window: Window | None,

@@ -34,7 +34,7 @@ class NiftiLandmarksSeries(NiftiSeries):
         ref_dose: NiftiDoseSeries | None = None,
         ) -> None:
         super().__init__('landmarks', dataset, patient, study, id, index=index)
-        self.__filepath = os.path.join(config.directories.datasets, 'nifti', self.__dataset.id, 'data', 'patients', self.__patient.id, self.__study.id, self.__modality, f'{self.__id}.csv')
+        self.__filepath = os.path.join(config.dirs.datasets, 'nifti', self.__dataset.id, 'data', 'patients', self.__patient.id, self.__study.id, self.__modality, f'{self.__id}.csv')
         if not os.path.exists(self.__filepath):
             raise ValueError(f"No NiftiLandmarksSeries '{self.__id}' found for study '{self.__study.id}'. Filepath: {self.__filepath}")
         self.__ref_ct = ref_ct

@@ -51,7 +51,7 @@ def build_index(
     logger.info(f"Building index for dataset '{dataset}'.")
 
     # Load dataset path.
-    dataset_path = os.path.join(config.directories.datasets, 'dicom', dataset) 
+    dataset_path = os.path.join(config.dirs.datasets, 'dicom', dataset) 
 
     # Check if indexes are open and therefore can't be overwritten.
     files = ['index.csv', 'index-errors.csv']
@@ -108,7 +108,7 @@ def build_index(
             modalities.remove('ct')     # Don't look for new CT files.
 
             # Load 'ct_from' index - can't use DicomDataset API as it creates circular dependencies.
-            filepath = os.path.join(config.directories.datasets, 'dicom', ct_from, 'index.csv')
+            filepath = os.path.join(config.dirs.datasets, 'dicom', ct_from, 'index.csv')
             if not os.path.exists(filepath):
                 raise ValueError(f"Index for 'ct_from={ct_from}' dataset doesn't exist. Filepath: '{filepath}'.")
             index = load_csv(filepath, eval_cols='dicom-tags', filters={ 'modality': 'ct' }, map_types=DICOM_INDEX_COLS)
@@ -455,7 +455,7 @@ def build_index(
     Path(filepath).touch()
 
 def index_exists(dataset: DatasetID) -> bool:
-    dataset_path = os.path.join(config.directories.datasets, 'dicom', dataset) 
+    dataset_path = os.path.join(config.dirs.datasets, 'dicom', dataset) 
     files = os.listdir(dataset_path)
     for f in files:
         if f.startswith('__INDEXING_COMPLETE_'):

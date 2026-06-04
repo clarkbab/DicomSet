@@ -1,3 +1,7 @@
+import numpy as np
+import torch
+from typing import List
+
 from ..typing import Orientation, Orientation2D, Orientation3D, SpatialDim
 
 def assert_orientation(
@@ -22,3 +26,10 @@ def __assert_orientation_3d(
     orientations = {'LAI', 'LAS', 'LPI', 'LPS', 'RAI', 'RAS', 'RPI', 'RPS'}
     if orientation not in orientations:
         raise ValueError(f"Invalid orientation '{orientation}' for dim=3. Must be one of {orientations}.")
+    
+def assert_shapes_equal(
+    *args: List[np.ndarray | torch.Tensor],
+    ) -> None:
+    shapes = [arg.shape for arg in args]
+    if not all(s == shapes[0] for s in shapes):
+        raise ValueError(f"All arrays must have the same shape. Got shapes {shapes}.")

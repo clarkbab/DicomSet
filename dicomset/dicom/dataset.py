@@ -22,7 +22,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         self,
         id: DatasetID,
         ) -> None:
-        self.__path = os.path.join(config.directories.datasets, 'dicom', str(id))
+        self.__path = os.path.join(config.dirs.datasets, 'dicom', str(id))
         if not os.path.exists(self.__path):
             raise ValueError(f"No dicom dataset '{id}' found at path: {self.__path}")
         ct_from = None

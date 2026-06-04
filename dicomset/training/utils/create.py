@@ -9,7 +9,7 @@ def create_dataset(
     dataset_id: DatasetID,
     recreate: bool = False,
     ) -> TrainingDataset:
-    ds_path = os.path.join(config.directories.datasets, 'training', dataset_id)
+    ds_path = os.path.join(config.dirs.datasets, 'training', dataset_id)
     if os.path.exists(ds_path):
         if recreate:
             shutil.rmtree(ds_path)

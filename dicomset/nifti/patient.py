@@ -28,7 +28,7 @@ class NiftiPatient(IndexMixin, Patient):
         struct_map: StructMap | None = None,
         ) -> None:
         super().__init__(dataset, id, ct_from=ct_from, index=index, struct_map=struct_map)
-        self.__path = os.path.join(config.directories.datasets, 'nifti', self.__dataset.id, 'data', 'patients', self.__id)
+        self.__path = os.path.join(config.dirs.datasets, 'nifti', self.__dataset.id, 'data', 'patients', self.__id)
         if not os.path.exists(self.__path):
             raise ValueError(f"No nifti patient '{self.__id}' found at path: {self.__path}")
 

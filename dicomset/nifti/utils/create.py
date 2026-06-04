@@ -31,7 +31,7 @@ def create_dataset(
     dataset_id: DatasetID,
     recreate: bool = False,
     ) -> NiftiDataset:
-    ds_path = os.path.join(config.directories.datasets, 'nifti', dataset_id)
+    ds_path = os.path.join(config.dirs.datasets, 'nifti', dataset_id)
     if os.path.exists(ds_path):
         if recreate:
             shutil.rmtree(ds_path)

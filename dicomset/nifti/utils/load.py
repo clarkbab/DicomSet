@@ -15,11 +15,11 @@ from ...utils.io import load_csv, load_nifti
 from ..dataset import NiftiDataset
 
 def dataset_exists(dataset_id: DatasetID) -> bool:
-    ds_path = os.path.join(config.directories.datasets, 'nifti', dataset_id)
+    ds_path = os.path.join(config.dirs.datasets, 'nifti', dataset_id)
     return os.path.exists(ds_path)
 
 def list_datasets() -> List[DatasetID]:
-    path = os.path.join(config.directories.datasets, 'nifti')
+    path = os.path.join(config.dirs.datasets, 'nifti')
     return list(sorted(os.listdir(path))) if os.path.exists(path) else []
     
 def load_ct(
@@ -33,7 +33,7 @@ def load_ct(
     return load_nifti(filepath)
 
 def load_dataset(dataset_id: DatasetID) -> NiftiDataset:
-    ds_path = os.path.join(config.directories.datasets, 'nifti', dataset_id)
+    ds_path = os.path.join(config.dirs.datasets, 'nifti', dataset_id)
     if not os.path.exists(ds_path):
         raise FileNotFoundError(f"Nifti dataset '{id}' not found at {ds_path}.")
     return NiftiDataset(dataset_id)
@@ -98,7 +98,7 @@ def load_registered_regions(
     moving_series_id: SeriesID = 'series_0',
     moving_study_id: StudyID = 'study_0',
     ) -> Tuple[LabelImage3D | BatchLabelImage3D, AffineMatrix3D]:
-    region_ids, region_id_was_single = arg_to_list(region_id, str, return_matched=True)
+    region_ids = arg_to_list(region_id, str)
     set = NiftiDataset(dataset)
     moving_patient_id = fixed_patient_id if moving_patient_id is None else moving_patient_id
     data_list = []
@@ -108,7 +108,7 @@ def load_registered_regions(
         d, a = load_nifti(filepath)
         data_list.append(d)
         affine = a
-    data = data_list[0] if region_id_was_single else np.stack(data_list, axis=0)
+    data = data_list[0] if len(data_list) == 1 else np.stack(data_list, axis=0)
     return data, affine
 
 def load_registration_transform(

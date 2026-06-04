@@ -9,7 +9,7 @@ import pydicom as dcm
 import re
 import seaborn as sns
 import skimage as ski
-from typing import Any, Dict, List, Literal, Tuple
+from typing import Any, Callable, Dict, List, Literal, Tuple
 
 from ...typing import AffineMatrix3D, BatchLabelImage3D, DirPath, DiskLandmarkID, DiskRegionID, FilePath, Image2D, Image3D, LabelImage3D, LandmarkID, Landmarks, PatientID, Point2D, Point3D, Points2D, RegExp, RegionID, RtStructDicom, Size2D, Size3D, Spacing2D, StudyID
 from ...utils.args import alias_kwargs, arg_to_list, resolve_filepath
@@ -120,6 +120,7 @@ def from_ct_dicom(
     check_orientation: bool = True,
     check_xy_positions: bool = True,
     check_z_spacing: bool = True,
+    progress_callback: Callable[[int, int], None] | None = None,
     ) -> Image2D | Tuple[Image3D, AffineMatrix3D]:
     # Load from filepath/dirpath if present.
     if isinstance(cts, str):
@@ -130,7 +131,12 @@ def from_ct_dicom(
         else:
             # Load multiple CT slices.
             dirpath = resolve_filepath(cts)
-            cts = [load_dicom(os.path.join(dirpath, f), force=False) for f in os.listdir(dirpath) if f.endswith('.dcm')]
+            files = [f for f in os.listdir(dirpath) if f.endswith('.dcm')]
+            cts = []
+            for i, f in enumerate(files):
+                cts.append(load_dicom(os.path.join(dirpath, f), force=False))
+                if progress_callback:
+                    progress_callback(i + 1, len(files))
 
     # Check that standard orientation is used.
     # TODO: Handle non-standard orientation.
@@ -415,9 +421,9 @@ def list_rtstruct_landmarks(
     if landmark_id != 'all':
         req_landmark_ids = arg_to_list(landmark_id, str)
         landmark_ids, landmark_contours = filter_lists([landmark_ids, landmark_contours], lambda ic: ic[0] in req_landmark_ids)
-
-    # Sort results.
-    landmark_ids, landmark_contours = sort_lists([landmark_ids, landmark_contours], key=lambda ic: ic[0])
+        landmark_ids, landmark_contours = sort_lists([landmark_ids, landmark_contours], key=lambda ic: req_landmark_ids.index(ic[0]))
+    else:
+        landmark_ids, landmark_contours = sort_lists([landmark_ids, landmark_contours], key=lambda ic: ic[0])
 
     if return_contours:
         return landmark_ids, landmark_contours
@@ -454,9 +460,11 @@ def list_rtstruct_regions(
     if region_id != 'all':
         req_region_ids = arg_to_list(region_id, str)
         region_ids, region_contours = filter_lists([region_ids, region_contours], lambda ic: ic[0] in req_region_ids)
-
-    # Sort results.
-    region_ids, region_contours = sort_lists([region_ids, region_contours], key=lambda ic: ic[0])
+        # Sort by the order of 'region_id' list.
+        region_ids, region_contours = sort_lists([region_ids, region_contours], key=lambda ic: req_region_ids.index(ic[0]))
+    else:
+        # Sort alphabetically by region ID.
+        region_ids, region_contours = sort_lists([region_ids, region_contours], key=lambda ic: ic[0])
 
     if return_contours:
         return region_ids, region_contours

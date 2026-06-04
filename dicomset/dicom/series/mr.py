@@ -27,7 +27,7 @@ class DicomMrSeries(DicomSeries):
         index_policy: Dict[str, Any],
         ) -> None:
         super().__init__('mr', dataset, patient, study, id, index=index, index_policy=index_policy)
-        dspath = os.path.join(config.directories.datasets, 'dicom', self.__dataset.id, 'data', 'patients')
+        dspath = os.path.join(config.dirs.datasets, 'dicom', self.__dataset.id, 'data', 'patients')
         relpaths = list(index['filepath'])
         abspaths = [os.path.join(dspath, p) for p in relpaths]
         self.__filepaths = abspaths
