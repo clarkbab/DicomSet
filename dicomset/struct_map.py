@@ -22,6 +22,7 @@ class StructMap:
         filepath: FilePath,
         ) -> None:
         self.__data = data
+        self.__filepath = filepath
 
     def expand_list(
         self,
@@ -178,6 +179,10 @@ class StructMap:
 
         return list(sorted(set(disk_ids)))
 
+    # This method takes a list of disk regions (and landmarks) and returns the full
+    # list of API regions that use these disk regions. This could include recursive
+    # definitions, e.g. if we have a mapping from Nerves -> Brainstem -> BrainStem.
+    # Then, API regions for 'BrainStem' disk region should be: ['Brainstem', 'Nerves'].
     def map_disk_to_api(
         self,
         disk_id: DiskLandmarkID | DiskRegionID | List[DiskLandmarkID | DiskRegionID],
@@ -186,24 +191,32 @@ class StructMap:
 
         api_ids = [] 
         for i in disk_ids:
-            # Check mappings.
+            # Check if this disk region maps to any API regions, otherwise, it is
+            # an API region itself.
             if self.mappings is not None:
                 for k, v in self.mappings.items():
-                    if v.startswith('re:'):
-                        regex = re.compile(v[3:], flags=re.IGNORECASE)
-                        if regex.match(i):
-                            api_ids.append(k)
-                    else:
-                        disk_regs = arg_to_list(v, str)
-                        if i in disk_regs:
-                            # Add intermediate mappings - these are still API regions.
+                    # 'k' is the API region.
+                    # 'v' is the list of disk regions (or potentially intermediate
+                    # API regions if chaining).
+                    for vi in v:
+                        matched = False
+                        if vi.startswith('re:'):
+                            regex = re.compile(vi[3:], flags=re.IGNORECASE)
+                            if regex.match(i):
+                                matched = True
+                        elif vi == i:
+                            matched = True
+
+                        if matched:
                             api_ids.append(k)
 
-                            # Unmap these regions.
+                            # Include API regions that comprise these
+                            # API regions, and further up the chain.
                             api_regs = self.map_disk_to_api(k)
                             api_ids.extend(api_regs)
 
-                    # Don't break, the same disk region could be included in multiple mappings.
+                    # Don't break, the disk region could be used in several mappings, i.e. it
+                    # could map to multiple API regions.
                     continue
 
             # Disk regions are also API accessible.

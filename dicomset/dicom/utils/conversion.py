@@ -12,7 +12,7 @@ from ...dataset import CT_FROM_REGEXP
 from ...nifti.utils.create import create_dataset as create_nifti_dataset
 from ...struct_map import StructMap
 from ...typing import GroupID, LandmarkID, PatientID, RegionID
-from ...utils.args import arg_to_list
+from ...utils.args import alias_kwargs, arg_to_list
 from ...utils.io import save_csv, save_nifti
 from ...utils.logging import logger
 from ...utils.pandas import append_row
@@ -59,6 +59,10 @@ if TYPE_CHECKING:
 # limit the number of processed patients, it still has to loop through all the
 # files to build the index.
 
+@alias_kwargs(
+    ('l', 'landmark_id'),
+    ('r', 'region_id'),
+)
 def convert_to_nifti(
     dataset: str,
     anonymise_ct: bool = True,
@@ -198,7 +202,7 @@ def convert_to_nifti(
         filepath = os.path.join(nifti_set.path, f'__CT_FROM_{ct_from}__')
         open(filepath, 'w').close()
 
-    # Copy region map.
+    # Copy struct map.
     struct_map = StructMap.load(dicom_set.path)
     if struct_map is not None:
         filepath = struct_map.filepath
@@ -353,7 +357,8 @@ def convert_to_nifti(
                         create_index_entry = False
 
                         if p in patient_ids:
-                            _, landmarks_data = series.landmarks_data(add_ids=False, landmark_id=landmark_id)
+                            # "add_ids" adds missing dataset/patient/study IDs, we don't need this when copying to nifti.
+                            landmarks_data = series.landmarks_data(add_ids=False, landmark_id=landmark_id)
                             if landmarks_data is not None:
                                 if not os.path.exists(filepath):
                                     logger.info(f"Writing: {series} -> {filepath}")
