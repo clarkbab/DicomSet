@@ -65,9 +65,14 @@ class CallVisitor(ast.NodeVisitor):
                     self.__kwargs.append(k.arg)
 
 def alias_kwargs(
-    *aliases: Tuple[str, str],
+    *aliases: Tuple[str | Tuple[str, ...], str],
     ) -> Callable:
-    alias_map = dict(aliases)
+    alias_map = {}
+    for shortcuts, full_name in aliases:
+        if isinstance(shortcuts, str):
+            shortcuts = (shortcuts,)
+        for shortcut in shortcuts:
+            alias_map[shortcut] = full_name
 
     def decorator(func):
         @wraps(func)
@@ -195,27 +200,35 @@ def get_inner_args(
     return visitor.args, visitor.kwargs
 
 # Can't move this to StructMap because we don't want literal='all' behaviour in there.
+@alias_kwargs(
+    (('dl', 'disk_landmark', 'disk_landmarks', 'disk_landmark_id'), 'disk_landmark_ids'),
+    (('l', 'landmark', 'landmarks', 'landmark_id'), 'landmark_ids'),
+)
 def landmarks_to_list(
-    landmark_id: LandmarkID | LandmarkList | List[LandmarkID | LandmarkList] | Literal['all'],
-    disk_landmarks: List[DiskLandmarkID] | None = None,
+    landmark_ids: LandmarkID | LandmarkList | List[LandmarkID | LandmarkList] | Literal['all'],
+    disk_landmark_ids: DiskLandmarkID | List[DiskLandmarkID] | None = None,
     struct_map: StructMap | None = None,
     **kwargs,
     ) -> List[LandmarkID]:
-    landmark_ids = arg_to_list(landmark_id, str, **kwargs)
+    landmark_ids = arg_to_list(landmark_ids, str, **kwargs)
     if struct_map is not None:
-        landmark_ids = struct_map.expand_list(landmark_ids, disk_ids=disk_landmarks)
+        landmark_ids = struct_map.expand_list(landmark_ids, disk_ids=disk_landmark_ids)
     return list(sorted(set(landmark_ids)))
 
 # Can't move this to StructMap because we don't want literal='all' behaviour in there.
+@alias_kwargs(
+    (('dr', 'disk_region', 'disk_regions', 'disk_region_id'), 'disk_region_ids'),
+    (('r', 'region', 'regions', 'region_ids'), 'region_ids'),
+)
 def regions_to_list(
-    region_id: RegionID | RegionList | List[RegionID | RegionList] | Literal['all'],
-    disk_regions: List[DiskRegionID] | None = None,
+    region_ids: RegionID | RegionList | List[RegionID | RegionList] | Literal['all'],
+    disk_region_ids: DiskRegionID | List[DiskRegionID] | None = None,
     struct_map: StructMap | None = None,
     **kwargs,
     ) -> List[RegionID]:
-    region_ids = arg_to_list(region_id, str, **kwargs)
+    region_ids = arg_to_list(region_ids, str, **kwargs)
     if struct_map is not None:
-        region_ids = struct_map.expand_list(region_ids, disk_ids=disk_regions)
+        region_ids = struct_map.expand_list(region_ids, disk_ids=disk_region_ids)
     return list(sorted(set(region_ids)))
 
 def resolve_filepath(filepath: FilePath) -> FilePath:

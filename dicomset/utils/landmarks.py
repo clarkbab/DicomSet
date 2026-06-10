@@ -3,7 +3,7 @@ import pandas as pd
 from typing import List
 
 from ..typing import Landmark, LandmarkID, Landmarks, Point, Points
-from .args import arg_to_list
+from .args import alias_kwargs, arg_to_list
 
 def landmarks_dim(
     landmarks: Landmark | Landmarks,
@@ -23,15 +23,18 @@ def landmarks_to_points(
     # Need the 'astype' because pd.Series will have mixed types (e.g. landmark-id vs. axes).
     return landmarks[list(range(dim))].astype(np.float32).to_numpy()
 
+@alias_kwargs(
+    (('l', 'landmark', 'landmarks', 'landmark_id'), 'landmark_ids'),
+)
 def points_to_landmarks(
     points: Point | Points,
-    landmark_id: LandmarkID | List[LandmarkID],
+    landmark_ids: LandmarkID | List[LandmarkID],
     ) -> Landmark | Landmarks:
     if isinstance(points, tuple):
         points = np.array([points])
     dim = points.shape[1]
     assert points.ndim == 2 and dim in (2, 3), f"Points must be of shape (n_landmarks, 2/3) or (2/3,), got {points.shape}."
-    landmark_ids = arg_to_list(landmark_id, str)
+    landmark_ids = arg_to_list(landmark_ids, str)
     assert len(landmark_ids) == len(points), f"Number of landmark IDs must match number of points. Got {len(landmark_ids)} landmark IDs and {len(points)} points."
 
     # Create series

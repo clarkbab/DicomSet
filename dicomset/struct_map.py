@@ -153,10 +153,10 @@ class StructMap:
     # Mappings have already been resolved to disk IDs during load.
     def map_api_to_disk(
         self,
-        api_id: LandmarkID | RegionID | List[LandmarkID | RegionID],
+        api_ids: LandmarkID | RegionID | List[LandmarkID | RegionID],
         disk_ids: List[DiskLandmarkID | DiskRegionID] | None = None,
         ) -> List[DiskRegionID]:
-        api_ids = arg_to_list(api_id, str)
+        api_ids = arg_to_list(api_ids, str)
         true_disk_ids = disk_ids
 
         disk_ids = [] 
@@ -185,9 +185,9 @@ class StructMap:
     # Then, API regions for 'BrainStem' disk region should be: ['Brainstem', 'Nerves'].
     def map_disk_to_api(
         self,
-        disk_id: DiskLandmarkID | DiskRegionID | List[DiskLandmarkID | DiskRegionID],
+        disk_ids: DiskLandmarkID | DiskRegionID | List[DiskLandmarkID | DiskRegionID],
         ) -> List[LandmarkID | RegionID]:
-        disk_ids = arg_to_list(disk_id, str)
+        disk_ids = arg_to_list(disk_ids, str)
 
         api_ids = [] 
         for i in disk_ids:

@@ -60,8 +60,8 @@ if TYPE_CHECKING:
 # files to build the index.
 
 @alias_kwargs(
-    ('l', 'landmark_id'),
-    ('r', 'region_id'),
+    (('l', 'landmark', 'landmarks', 'landmark_id'), 'landmark_ids'),
+    (('r', 'region', 'regions', 'region_id'), 'region_ids'),
 )
 def convert_to_nifti(
     dataset: str,
@@ -83,7 +83,7 @@ def convert_to_nifti(
     filter_pats_by_landmarks: bool = False,
     filter_pats_by_regions: bool = False,
     group_id: GroupID | List[GroupID] | Literal['all'] = 'all',
-    landmark_id: LandmarkID | List[LandmarkID] | Literal['all'] = 'all',
+    landmark_ids: LandmarkID | List[LandmarkID] | Literal['all'] = 'all',
     patient_id: PatientID | List[PatientID] | Literal['all'] = 'all',
     # These flags remove data before conversion. Maybe there was a bunch of
     # dose series that got out of sync and we only want to remove them.
@@ -94,7 +94,7 @@ def convert_to_nifti(
     recreate_landmarks: bool = False,
     recreate_patient_id: PatientID | List[PatientID] | str | Literal['all'] = 'all',
     recreate_regions: bool = False,
-    region_id: RegionID | List[RegionID] | Literal['all'] = 'all',
+    region_ids: RegionID | List[RegionID] | Literal['all'] = 'all',
     # These functions allow us to sort series by dicom tags before they
     # are persisted to nifti series with static ordering by name.
     sort_cts: Callable[DicomCTSeries, int] | None = None,
@@ -113,10 +113,10 @@ def convert_to_nifti(
     # Load all patients.
     dicom_set = DicomDataset(dataset)
     okwargs = dict(group_id=group_id, patient_id=patient_id)
-    if filter_pats_by_landmarks and landmark_id is not None: 
-        okwargs['landmark_id'] = landmark_id
-    if filter_pats_by_regions and region_id is not None:
-        okwargs['region_id'] = region_id
+    if filter_pats_by_landmarks and landmark_ids is not None: 
+        okwargs['landmark_ids'] = landmark_ids
+    if filter_pats_by_regions and region_ids is not None:
+        okwargs['region_ids'] = region_ids
     all_dicom_patient_ids = dicom_set.list_patients(sort=sort_patients, **okwargs)
     logger.info(f"Loaded patients: {all_dicom_patient_ids}")
 
@@ -343,7 +343,7 @@ def convert_to_nifti(
                 dicom_series_ids = study.list_rtstruct_series(sort=sort_rtstructs)
 
                 # Create landmarks.
-                if convert_landmarks and landmark_id is not None:
+                if convert_landmarks and landmark_ids is not None:
                     if anonymise_landmarks:
                         series_ids = [f'series_{i}' for i in range(len(dicom_series_ids))]
                     else:
@@ -358,7 +358,7 @@ def convert_to_nifti(
 
                         if p in patient_ids:
                             # "add_ids" adds missing dataset/patient/study IDs, we don't need this when copying to nifti.
-                            landmarks_data = series.landmarks_data(add_ids=False, landmark_id=landmark_id)
+                            landmarks_data = series.landmarks_data(add_ids=False, landmark_ids=landmark_ids)
                             if landmarks_data is not None:
                                 if not os.path.exists(filepath):
                                     logger.info(f"Writing: {series} -> {filepath}")
@@ -384,7 +384,7 @@ def convert_to_nifti(
                             index = append_row(index, data)
 
                 # Create regions.
-                if convert_regions and region_id is not None:
+                if convert_regions and region_ids is not None:
                     if anonymise_regions:
                         series_ids = [f'series_{i}' for i in range(len(dicom_series_ids))]
                     else:
@@ -393,7 +393,7 @@ def convert_to_nifti(
                     for sr, dsr in zip(series_ids, dicom_series_ids):
                         series = study.rtstruct_series(dsr)
                         logger.info(f"Inspecting: {series}")
-                        region_ids = series.list_regions(region_id=region_id)
+                        region_ids = series.list_regions(region_ids=region_ids)
 
                         create_index_entry = False
                         for r in region_ids:
@@ -411,7 +411,7 @@ def convert_to_nifti(
                                 # nifti dataset.
                                 # Realistically, this conversion will only be run once or maybe a few times at
                                 # the beginning of a project, so it doesn't have to be super efficient.
-                                _, region_data = series.regions_data(region_id=r)
+                                _, region_data = series.regions_data(region_ids=r)
                                 region_data = region_data[0]    # Region data is a batch.
                                 if region_data is not None:
                                     if not os.path.exists(filepath):

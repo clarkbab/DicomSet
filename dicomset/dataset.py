@@ -18,7 +18,7 @@ class Dataset:
         ) -> None:
         set_private_attr(self, '__id', str(id))
         set_private_attr(self, '__ct_from', ct_from)
-        filepath = os.path.join(get_private_attr(self, '__path'), 'config.yaml')
+        filepath = os.path.join(get_private_attr(self, '__dirpath'), 'config.yaml')
         set_private_attr(self, '__config', load_yaml(filepath) if os.path.exists(filepath) else {})
 
     @property
@@ -43,7 +43,7 @@ class Dataset:
 
     @property
     def params(self) -> Dict[str, Any]:
-        filepath = os.path.join(get_private_attr(self, '__path'), 'params.yaml')
+        filepath = os.path.join(get_private_attr(self, '__dirpath'), 'params.yaml')
         if os.path.exists(filepath):
             return load_yaml(filepath)
         else:
@@ -51,10 +51,10 @@ class Dataset:
 
     @property
     def path(self) -> DirPath:
-        return get_private_attr(self, '__path')
+        return get_private_attr(self, '__dirpath')
 
     def print_notes(self) -> None:
-        filepath = os.path.join(get_private_attr(self, '__path'), 'notes.txt')
+        filepath = os.path.join(get_private_attr(self, '__dirpath'), 'notes.txt')
         if os.path.exists(filepath):
             with open(filepath, 'r') as f:
                 print(f.read())

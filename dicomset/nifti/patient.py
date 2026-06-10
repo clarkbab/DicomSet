@@ -28,9 +28,9 @@ class NiftiPatient(IndexMixin, Patient):
         struct_map: StructMap | None = None,
         ) -> None:
         super().__init__(dataset, id, ct_from=ct_from, index=index, struct_map=struct_map)
-        self.__path = os.path.join(config.dirs.datasets, 'nifti', self.__dataset.id, 'data', 'patients', self.__id)
-        if not os.path.exists(self.__path):
-            raise ValueError(f"No nifti patient '{self.__id}' found at path: {self.__path}")
+        self.__dirpath = os.path.join(config.dirs.datasets, 'nifti', self.__dataset.id, 'data', 'patients', self.__id)
+        if not os.path.exists(self.__dirpath):
+            raise ValueError(f"No nifti patient '{self.__id}' found at path: {self.__dirpath}")
 
     @property
     def default_study(self) -> NiftiStudy | None:
@@ -65,7 +65,7 @@ class NiftiPatient(IndexMixin, Patient):
         # Might have to deal with sorting at some point for 'default_study'.
         # Right now sorting is just alphabetical, which is fine if we're using anonymous IDs,
         # as they're sorted during DICOM -> NIFTI conversion.
-        ids = list(sorted(os.listdir(self.__path)))
+        ids = list(sorted(os.listdir(self.__dirpath)))
         if study_id != 'all':
             study_ids = arg_to_list(study_id, str)
             all_ids = ids.copy()

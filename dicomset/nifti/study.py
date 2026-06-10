@@ -31,9 +31,9 @@ class NiftiStudy(IndexMixin, Study):
         struct_map: StructMap | None = None,
         ) -> None:
         super().__init__(dataset, patient, id, ct_from=ct_from, index=index, struct_map=struct_map)
-        self.__path = os.path.join(config.dirs.datasets, 'nifti', self.__dataset.id, 'data', 'patients', self.__patient.id, self.__id)
-        if not os.path.exists(self.__path):
-            raise ValueError(f"No nifti study '{self.__id}' found at path: {self.__path}")
+        self.__dirpath = os.path.join(config.dirs.datasets, 'nifti', self.__dataset.id, 'data', 'patients', self.__patient.id, self.__id)
+        if not os.path.exists(self.__dirpath):
+            raise ValueError(f"No nifti study '{self.__id}' found at path: {self.__dirpath}")
 
     def default_series(
         self,
@@ -69,24 +69,24 @@ class NiftiStudy(IndexMixin, Study):
         image_extensions = ['.nii', '.nii.gz', '.nrrd']
         if modality == 'ct':
             if self.__ct_from is None:
-                dirpath = os.path.join(self.__path, 'ct')
+                dirpath = os.path.join(self.__dirpath, 'ct')
                 series_ids = list(sorted(os.listdir(dirpath))) if os.path.exists(dirpath) else []
                 series_ids = [i.replace(e, '') for i in series_ids for e in IMAGE_EXTENSIONS if i.endswith(e)]
             else:
                 series_ids = self.__ct_from.list_series(modality)
         elif modality == 'dose':
-            dirpath = os.path.join(self.__path, 'dose')
+            dirpath = os.path.join(self.__dirpath, 'dose')
             series_ids = list(sorted(os.listdir(dirpath))) if os.path.exists(dirpath) else []
             series_ids = [i.replace(e, '') for i in series_ids for e in IMAGE_EXTENSIONS if i.endswith(e)]
         elif modality == 'landmarks':
-            dirpath = os.path.join(self.__path, 'landmarks')
+            dirpath = os.path.join(self.__dirpath, 'landmarks')
             series_ids = list(sorted(f.replace('.csv', '') for f in os.listdir(dirpath))) if os.path.exists(dirpath) else []
         elif modality == 'mr':
-            dirpath = os.path.join(self.__path, 'mr')
+            dirpath = os.path.join(self.__dirpath, 'mr')
             series_ids = list(sorted(os.listdir(dirpath))) if os.path.exists(dirpath) else []
             series_ids = [i.replace(e, '') for i in series_ids for e in IMAGE_EXTENSIONS if i.endswith(e)]
         elif modality == 'regions':
-            dirpath = os.path.join(self.__path, 'regions')
+            dirpath = os.path.join(self.__dirpath, 'regions')
             series_ids = list(sorted(os.listdir(dirpath))) if os.path.exists(dirpath) else []
         else:
             raise ValueError(f"Unknown modality '{modality}'.")
@@ -128,7 +128,7 @@ class NiftiStudy(IndexMixin, Study):
             index = self.__index[(self.__index['dataset'] == self.__dataset.id) & (self.__index['patient-id'] == self.__patient.id) & (self.__index['study-id'] == self.__id) & (self.__index['series-id'] == id) & (self.__index['modality'] == 'landmarks')].copy() if self.__index is not None else None
             ref_ct = self.default_series('ct')
             ref_dose = self.default_series('dose')
-            return NiftiLandmarksSeries(self.__dataset, self.__patient, self, id, index=index, ref_ct=ref_ct, ref_dose=ref_dose)
+            return NiftiLandmarksSeries(self.__dataset, self.__patient, self, id, index=index, ref_ct=ref_ct, ref_dose=ref_dose, struct_map=self.__struct_map)
         elif modality == 'mr':
             id = resolve_id(id, lambda: self.list_series('mr'))
             index = self.__index[(self.__index['dataset'] == self.__dataset.id) & (self.__index['patient-id'] == self.__patient.id) & (self.__index['study-id'] == self.__id) & (self.__index['series-id'] == id) & (self.__index['modality'] == 'mr')].copy() if self.__index is not None else None

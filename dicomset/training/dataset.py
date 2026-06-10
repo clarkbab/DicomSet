@@ -15,9 +15,9 @@ class TrainingDataset(Dataset):
         id: DatasetID,
         **kwargs,
         ) -> None:
-        self.__path = os.path.join(config.dirs.datasets, 'training', id)
-        if not os.path.exists(self.__path):
-            raise ValueError(f"No training dataset '{id}' found at path: {self.__path}")
+        self.__dirpath = os.path.join(config.dirs.datasets, 'training', id)
+        if not os.path.exists(self.__dirpath):
+            raise ValueError(f"No training dataset '{id}' found at path: {self.__dirpath}")
         super().__init__(id)
     
     @property

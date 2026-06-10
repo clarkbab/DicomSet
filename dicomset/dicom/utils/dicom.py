@@ -243,17 +243,18 @@ def from_rtplan_dicom(
     return info
 
 @alias_kwargs(
-    ('r', 'region_id'),
+    (('l', 'landmark', 'landmarks', 'landmark_id'), 'landmark_ids'),
+    (('r', 'region', 'regions', 'region_id'), 'region_ids'),
     ('rr', 'return_regions'),
 )
 def from_rtstruct_dicom(
     rtstruct: FilePath | dcm.dataset.FileDataset,
     ct_size: Size3D,
     ct_affine: AffineMatrix3D, 
-    landmark_id: DiskLandmarkID | List[DiskLandmarkID] | Literal['all'] | None = 'all',
+    landmark_ids: DiskLandmarkID | List[DiskLandmarkID] | Literal['all'] | None = 'all',
     landmark_regexp: str | None = None,
     landmarks_use_world_coords: bool = True,
-    region_id: DiskRegionID | List[DiskRegionID] | Literal['all'] | None = 'all',    
+    region_ids: DiskRegionID | List[DiskRegionID] | Literal['all'] | None = 'all',    
     return_regions: bool = True,
     ) -> Tuple[List[RegionID] | BatchLabelImage3D] | Tuple[List[LandmarkID] | Landmarks] | Tuple[List[RegionID], BatchLabelImage3D, List[LandmarkID], Landmarks]:
     if isinstance(rtstruct, str):
@@ -262,20 +263,20 @@ def from_rtstruct_dicom(
     ct_spacing = affine_spacing(ct_affine)
     ct_origin = affine_origin(ct_affine)
     landmark_regexp = landmark_regexp or DEFAULT_LANDMARK_REGEXP
-    assert region_id is not None or landmark_id is not None, "Either 'region/landmark_id' must not be None."
+    assert region_ids is not None or landmark_ids is not None, "Either 'region/landmark_ids' must not be None."
 
     # Get landmark/region names.
-    if region_id is not None:
-        region_ids, region_contours = list_rtstruct_regions(rtstruct, landmark_regexp=landmark_regexp, region_id=region_id, return_contours=True)
-    if landmark_id is not None:
-        landmark_ids, landmark_contours = list_rtstruct_landmarks(rtstruct, landmark_id=landmark_id, landmark_regexp=landmark_regexp, return_contours=True)
+    if region_ids is not None:
+        region_ids, region_contours = list_rtstruct_regions(rtstruct, landmark_regexp=landmark_regexp, region_ids=region_ids, return_contours=True)
+    if landmark_ids is not None:
+        landmark_ids, landmark_contours = list_rtstruct_landmarks(rtstruct, landmark_ids=landmark_ids, landmark_regexp=landmark_regexp, return_contours=True)
 
     # The data hierarchy is:
     # rtstruct -> roi_contours -> roi_contour -> contours -> contour -> contour_data.
 
     # Load regions data.
     regions_data = None
-    if region_id is not None:
+    if region_ids is not None:
         regions_data = [__get_region_label(cs, ct_size, ct_affine) for cs in region_contours]
         if len(regions_data) != 0:
             regions_data = np.stack(regions_data, axis=0)
@@ -284,7 +285,7 @@ def from_rtstruct_dicom(
 
     # Process landmarks data.
     landmarks_data = None
-    if landmark_id is not None:
+    if landmark_ids is not None:
         landmarks_points = [__get_landmark_point(cs, ct_affine, use_world_coords=landmarks_use_world_coords) for cs in landmark_contours]
         if len(landmarks_points) != 0:
             landmarks_points = np.stack(landmarks_points, axis=0)
@@ -293,9 +294,9 @@ def from_rtstruct_dicom(
             landmarks_data = None
 
     result = []
-    if region_id is not None:
+    if region_ids is not None:
         result += [region_ids, regions_data] if return_regions else [regions_data]
-    if landmark_id is not None:
+    if landmark_ids is not None:
         result += [landmark_ids, landmarks_data] if return_regions else [landmarks_data]
     if len(result) == 1:
         return result[0]
@@ -394,9 +395,12 @@ def __get_region_slice_label(
 
     return slice_data
 
+@alias_kwargs(
+    (('l', 'landmark', 'landmarks', 'landmark_id'), 'landmark_ids'),
+)
 def list_rtstruct_landmarks(
     rtstruct: FilePath | RtStructDicom,
-    landmark_id: DiskLandmarkID | List[DiskLandmarkID] | Literal['all'] = 'all',
+    landmark_ids: DiskLandmarkID | List[DiskLandmarkID] | Literal['all'] = 'all',
     landmark_regexp: RegExp | List[RegExp] | None = None,
     return_contours: bool = False,
     ) -> List[DiskLandmarkID] | Tuple[List[DiskLandmarkID], List['Something dcm']]:
@@ -404,6 +408,7 @@ def list_rtstruct_landmarks(
         rtstruct = load_dicom(rtstruct, force=False)
     landmark_regexp = landmark_regexp or DEFAULT_LANDMARK_REGEXP
     landmark_regexps = arg_to_list(landmark_regexp, str)
+    req_landmark_ids = landmark_ids     # 'landmark_ids' is overloaded.
 
     # Load all regions and contours.
     all_ids = [i.ROIName for i in rtstruct.StructureSetROISequence]
@@ -417,9 +422,9 @@ def list_rtstruct_landmarks(
     # Filter on the presence of a 'ContourSequence' - sometimes empty.
     landmark_ids, landmark_contours = filter_lists([landmark_ids, landmark_contours], lambda ic: getattr(ic[1], 'ContourSequence', None) is not None)
 
-    # Filter by 'landmark_id'.
-    if landmark_id != 'all':
-        req_landmark_ids = arg_to_list(landmark_id, str)
+    # Filter by 'landmark_ids'.
+    if req_landmark_ids != 'all':
+        req_landmark_ids = arg_to_list(req_landmark_ids, str)
         landmark_ids, landmark_contours = filter_lists([landmark_ids, landmark_contours], lambda ic: ic[0] in req_landmark_ids)
         landmark_ids, landmark_contours = sort_lists([landmark_ids, landmark_contours], key=lambda ic: req_landmark_ids.index(ic[0]))
     else:
@@ -430,19 +435,23 @@ def list_rtstruct_landmarks(
     else:
         return landmark_ids
 
+@alias_kwargs(
+    (('r', 'region', 'regions', 'region_id'), 'region_ids'),
+)
 def list_rtstruct_regions(
     rtstruct: FilePath | RtStructDicom,
     # TODO: Expand this to handle landmark IDs also.
     # Can we just treatment landmarks (e.g. "Marker 1") as regexps
     # and match using the same logic?
     landmark_regexp: RegExp | List[RegExp] | None = None,
-    region_id: DiskRegionID | List[DiskRegionID] | Literal['all'] = 'all',
+    region_ids: DiskRegionID | List[DiskRegionID] | Literal['all'] = 'all',
     return_contours: bool = False,
     ) -> List[DiskRegionID] | Tuple[List[DiskRegionID], List['Something dcm']]:
     if isinstance(rtstruct, str):
         rtstruct = load_dicom(rtstruct, force=False)
     landmark_regexp = landmark_regexp or DEFAULT_LANDMARK_REGEXP
     landmark_regexps = arg_to_list(landmark_regexp, str)
+    req_region_ids = region_ids    # 'region_ids' is overloaded.
 
     # Load all regions and contours.
     all_ids = [i.ROIName for i in rtstruct.StructureSetROISequence]
@@ -456,9 +465,9 @@ def list_rtstruct_regions(
     # Filter on the presence of a 'ContourSequence' - sometimes empty.
     region_ids, region_contours = filter_lists([region_ids, region_contours], lambda ic: getattr(ic[1], 'ContourSequence', None) is not None)
 
-    # Filter by 'region_id'.
-    if region_id != 'all':
-        req_region_ids = arg_to_list(region_id, str)
+    # Filter by 'region_ids'.
+    if req_region_ids != 'all':
+        req_region_ids = arg_to_list(req_region_ids, str)
         region_ids, region_contours = filter_lists([region_ids, region_contours], lambda ic: ic[0] in req_region_ids)
         # Sort by the order of 'region_id' list.
         region_ids, region_contours = sort_lists([region_ids, region_contours], key=lambda ic: req_region_ids.index(ic[0]))
@@ -718,7 +727,7 @@ def to_rtdose_dicom(
 
 def to_rtstruct_dicom(
     data: BatchLabelImage3D | LabelImage3D,
-    region_id: RegionID | List[RegionID], 
+    region_ids: RegionID | List[RegionID], 
     ref_cts: DirPath | List[dcm.dataset.FileDataset],
     generation_algorithm: str | None = None,
     institution: str | None = None, 
@@ -729,8 +738,8 @@ def to_rtstruct_dicom(
     ) -> dcm.dataset.FileDataset:
     if data.ndim == 3:
         data = np.expand_dims(data, axis=0)    
-    region_ids = arg_to_list(region_id, str)
-    assert len(data) == len(region_ids), f"Length of 'data' and 'region_id' must be the same, got {len(data)} and {len(region_ids)} respectively."
+    region_ids = arg_to_list(region_ids, str)
+    assert len(data) == len(region_ids), f"Length of 'data' and 'region_ids' must be the same, got {len(data)} and {len(region_ids)} respectively."
     if isinstance(ref_cts, str):
         ref_cts = [load_dicom(os.path.join(ref_cts, f), force=False) for f in os.listdir(ref_cts) if f.endswith('.dcm')]
 

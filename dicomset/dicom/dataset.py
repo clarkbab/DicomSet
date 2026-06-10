@@ -22,11 +22,11 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         self,
         id: DatasetID,
         ) -> None:
-        self.__path = os.path.join(config.dirs.datasets, 'dicom', str(id))
-        if not os.path.exists(self.__path):
-            raise ValueError(f"No dicom dataset '{id}' found at path: {self.__path}")
+        self.__dirpath = os.path.join(config.dirs.datasets, 'dicom', str(id))
+        if not os.path.exists(self.__dirpath):
+            raise ValueError(f"No dicom dataset '{id}' found at path: {self.__dirpath}")
         ct_from = None
-        for f in os.listdir(self.__path):
+        for f in os.listdir(self.__dirpath):
             match = re.match(CT_FROM_REGEXP, f)
             if match:
                 ct_from = match.group(1)
@@ -53,7 +53,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
     @alias_kwargs(
         ('g', 'group_id'),
         ('p', 'patient_id'),
-        ('r', 'region_id'),
+        (('r', 'region', 'regions', 'region_id'), 'region_ids'),
     )
     @ensure_loaded(
         ('__index', '__load_index'),
@@ -63,19 +63,19 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         self,
         group_id: GroupID | List[GroupID] | Literal['all'] = 'all',
         patient_id: PatientID | List[PatientID] | Literal['all'] = 'all', 
-        region_id: RegionID | List[RegionID] | Literal['all'] = 'all',
+        region_ids: RegionID | List[RegionID] | Literal['all'] = 'all',
         show_progress: bool = False,
         sort: Callable[DicomPatient, int] | None = None,    # Not yet implemented.
         use_mapping: bool = True,
         use_regions_report: bool = True,
         ) -> List[PatientID]:
         # Load the region report for fast region filtering.
-        if region_id != 'all' and use_regions_report:
+        if region_ids != 'all' and use_regions_report:
             # Can't use 'load_patient_regions_report' due to circularity.
             filename = 'regions.csv' if use_mapping else 'unmapped-regions.csv'
-            filepath = os.path.join(self.__path, 'reports', filename)
+            filepath = os.path.join(self.__dirpath, 'reports', filename)
             if os.path.exists(filepath):
-                region_ids = regions_to_list(region_id, literals={ 'all': self.list_regions }, struct_map=self.__struct_map)
+                region_ids = regions_to_list(region_ids, literals={ 'all': self.list_regions }, struct_map=self.__struct_map)
                 df = pd.read_csv(filepath)
                 df = df[df['region'].isin(region_ids)]
                 ids = list(sorted(df['patient-id'].unique()))
@@ -86,9 +86,9 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
             ids = list(sorted(self.__index['patient-id'].unique()))
 
             # Filter by region ID.
-            if region_id != 'all':
+            if region_ids != 'all':
                 def filter_fn(p: PatientID) -> bool:
-                    pat_regions = self.patient(p).list_regions(region_id=region_id, use_mapping=use_mapping)
+                    pat_regions = self.patient(p).list_regions(region_ids=region_ids, use_mapping=use_mapping)
                     return True if len(pat_regions) > 0 else False
                 ids = list(filter(filter_fn, tqdm(ids, disable=not show_progress)))
 
@@ -148,7 +148,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
         if use_regions_report:
             # Can't use 'load_patient_regions_report' due to circularity.
             filename = 'regions.csv' if use_mapping else 'unmapped-regions.csv'
-            filepath = os.path.join(self.__path, 'reports', filename)
+            filepath = os.path.join(self.__dirpath, 'reports', filename)
             if os.path.exists(filepath):
                 df = pd.read_csv(filepath)
                 df = df[df['patient-id'].isin(patient_ids)]
@@ -175,7 +175,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
 
     def __load_groups(self) -> None:
         # Load groups.
-        filepath = os.path.join(self.__path, 'groups.csv')
+        filepath = os.path.join(self.__dirpath, 'groups.csv')
         self.__groups = load_csv(filepath) if os.path.exists(filepath) else None
 
     def __load_index(self) -> None:
@@ -184,7 +184,7 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
             build_index_base(self.__id) 
 
         # Load index.
-        filepath = os.path.join(self.__path, 'index.csv')
+        filepath = os.path.join(self.__dirpath, 'index.csv')
         try:
             self.__index = load_csv(filepath, eval_cols='mod-spec', map_types=DICOM_INDEX_COLS)
         except pd.errors.EmptyDataError as e:
@@ -193,18 +193,18 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
 
         # Load error index.
         try:
-            filepath = os.path.join(self.__path, 'index-errors.csv')
+            filepath = os.path.join(self.__dirpath, 'index-errors.csv')
             self.__index_errors = load_csv(filepath, eval_cols='mod-spec', map_types=DICOM_ERROR_INDEX_COLS)
         except pd.errors.EmptyDataError as e:
             logger.info(f"Error index empty for dataset '{self}'.")
             self.__index_errors = pd.DataFrame(columns=DICOM_ERROR_INDEX_COLS.keys())
 
         # Load index policy.
-        filepath = os.path.join(self.__path, 'index-policy.yaml')
+        filepath = os.path.join(self.__dirpath, 'index-policy.yaml')
         self.__index_policy = load_yaml(filepath)
 
     def __load_struct_map(self) -> None:
-        self.__struct_map = StructMap.load(self.__path)
+        self.__struct_map = StructMap.load(self.__dirpath)
 
     @ensure_loaded(
         ('__index', '__load_index'),

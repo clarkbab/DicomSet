@@ -20,11 +20,11 @@ class NiftiDataset(IndexMixin, Dataset):
         self,
         id: DatasetID,
         ) -> None:
-        self.__path = os.path.join(config.dirs.datasets, 'nifti', str(id))
-        if not os.path.exists(self.__path):
-            raise ValueError(f"No nifti dataset '{id}' found at path: {self.__path}")
+        self.__dirpath = os.path.join(config.dirs.datasets, 'nifti', str(id))
+        if not os.path.exists(self.__dirpath):
+            raise ValueError(f"No nifti dataset '{id}' found at path: {self.__dirpath}")
         ct_from = None
-        for f in os.listdir(self.__path):
+        for f in os.listdir(self.__dirpath):
             match = re.match(CT_FROM_REGEXP, f)
             if match:
                 ct_from = match.group(1)
@@ -63,23 +63,26 @@ class NiftiDataset(IndexMixin, Dataset):
     @alias_kwargs(
         ('g', 'group_id'),
         ('p', 'patient_id'),
-        ('r', 'region_id'),
+        (('r', 'region', 'regions', 'region_id'), 'region_ids'),
     )
-    @ensure_loaded('__index', '__load_data')
+    @ensure_loaded(
+        ('__groups', '__load_groups'),
+        ('__index', '__load_index'),
+    )
     def list_patients(
         self,
         exclude: PatientID | List[PatientID] | Literal['all'] | None = None,
         group_id: GroupID | List[GroupID] | Literal['all'] = 'all',
         patient_id: PatientID | List[PatientID] | Literal['all'] = 'all',
-        region_id: RegionID | List[RegionID] | Literal['all'] = 'all',
+        region_ids: RegionID | List[RegionID] | Literal['all'] = 'all',
         ) -> List[PatientID]:
         # Load patients from filenames.
-        dirpath = os.path.join(self.__path, 'data', 'patients')
+        dirpath = os.path.join(self.__dirpath, 'data', 'patients')
         all_ids = list(sorted(os.listdir(dirpath)))
 
         # Filter by region ID.
         ids = all_ids.copy()
-        if region_id != 'all':
+        if region_ids != 'all':
             all_regions = self.list_regions()
 
             # # Check that 'regions' are valid.
@@ -88,7 +91,7 @@ class NiftiDataset(IndexMixin, Dataset):
             #         logging.warning(f"Filtering by region '{r}' but it doesn't exist in dataset '{self}'.")
 
             def filter_fn(p: PatientID) -> bool:
-                pat_regions = self.patient(p).list_regions(region_id=region_id)
+                pat_regions = self.patient(p).list_regions(region_ids=region_ids)
                 if len(pat_regions) > 0:
                     return True
                 else:
@@ -171,10 +174,13 @@ class NiftiDataset(IndexMixin, Dataset):
 
         return ids
 
+    @alias_kwargs(
+        (('r', 'region', 'regions', 'region_id'), 'region_ids'),
+    )
     def list_regions(
         self,
         patient_id: PatientID | List[PatientID] | Literal['all'] = 'all', 
-        region_id: RegionID | List[RegionID] | Literal['all'] = 'all',
+        region_ids: RegionID | List[RegionID] | Literal['all'] = 'all',
         ) -> List[RegionID]:
         # Load all patients.
         patient_ids = self.list_patients(patient_id=patient_id)
@@ -186,36 +192,37 @@ class NiftiDataset(IndexMixin, Dataset):
             study_ids = pat.list_studies()
             for s in study_ids:
                 study = pat.study(s)
-                series_ids = study.list_regions_series(region_id=region_id)
+                series_ids = study.list_regions_series(region_ids=region_ids)
                 for s in series_ids:
                     series = study.regions_series(s)
-                    ids += series.list_regions(region_id=region_id)
+                    ids += series.list_regions(region_ids=region_ids)
         ids = list(str(i) for i in np.unique(ids))
 
         return ids
 
-    def __load_data(self) -> None:
+    def __load_index(self) -> None:
         # Load index.
-        filepath = os.path.join(self.__path, 'index.csv')
+        filepath = os.path.join(self.__dirpath, 'index.csv')
         if os.path.exists(filepath):
             map_types = { 'dicom-patient-id': str, 'patient-id': str, 'study-id': str, 'series-id': str }
             self.__index = load_csv(filepath, map_types=map_types)
         else:
             self.__index = None
 
+    def __load_groups(self) -> None:
         # Load groups.
-        filepath = os.path.join(self.__path, 'groups.csv')
+        filepath = os.path.join(self.__dirpath, 'groups.csv')
         self.__groups = load_csv(filepath) if os.path.exists(filepath) else None
 
-        # Load region map.
-        self.__struct_map = StructMap.load(self.__path)
+    def __load_struct_map(self) -> None:
+        self.__struct_map = StructMap.load(self.__dirpath)
 
     # Copied from 'mymi/reports/dataset/nift.py' to avoid circular dependency.
     def __load_patient_regions_report(
         self,
         exists_only: bool = False,
         ) -> pd.DataFrame | bool:
-        filepath = os.path.join(self.__path, 'reports', 'region-count.csv')
+        filepath = os.path.join(self.__dirpath, 'reports', 'region-count.csv')
         if os.path.exists(filepath):
             if exists_only:
                 return True
@@ -231,13 +238,18 @@ class NiftiDataset(IndexMixin, Dataset):
     def n_patients(self) -> int:
         return len(self.list_patients())
 
-    @ensure_loaded('__index', '__load_data')
+    @ensure_loaded(
+        ('__groups', '__load_groups'),
+        ('__index', '__load_index'),
+        ('__struct_map', '__load_struct_map'),
+    )
     def patient(
         self,
         id: PatientID | int | None = None,
         group_id: GroupID | List[GroupID] | Literal['all'] = 'all',
         n: int | None = None,
-        **kwargs) -> NiftiPatient:
+        **kwargs,
+        ) -> NiftiPatient:
         id = resolve_id(id, lambda: self.list_patients(group_id=group_id))
         if n is not None:
             if id is not None:
@@ -261,6 +273,6 @@ class NiftiDataset(IndexMixin, Dataset):
         return super().__str__(self.__class__.__name__)
 
     @property
-    @ensure_loaded('__struct_map', '__load_data')
+    @ensure_loaded('__struct_map', '__load_struct_map')
     def struct_map(self) -> StructMap | None:
         return self.__struct_map

@@ -91,14 +91,14 @@ def load_registered_regions(
     dataset: DatasetID,
     fixed_patient_id: PatientID,
     model: ModelID,
-    region_id: RegionID | List[RegionID],
+    region_ids: RegionID | List[RegionID],
     fixed_series_id: SeriesID = 'series_0',
     fixed_study_id: StudyID = 'study_1',
     moving_patient_id: PatientID | None = None,
     moving_series_id: SeriesID = 'series_0',
     moving_study_id: StudyID = 'study_0',
     ) -> Tuple[LabelImage3D | BatchLabelImage3D, AffineMatrix3D]:
-    region_ids = arg_to_list(region_id, str)
+    region_ids = arg_to_list(region_ids, str)
     set = NiftiDataset(dataset)
     moving_patient_id = fixed_patient_id if moving_patient_id is None else moving_patient_id
     data_list = []
