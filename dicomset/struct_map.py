@@ -11,7 +11,7 @@ from .utils.conversion import to_list
 from .utils.io import load_yaml
 from .utils.python import ensure_loaded
 
-RM_FILENAME_REGEXP = r"struct[-_]?map\.ya?ml"
+SM_FILENAME_REGEXP = r"struct[-_]?map\.ya?ml"
 
 class StructMap:
     def __init__(
@@ -78,7 +78,7 @@ class StructMap:
         dirpath: DirPath,
         ) -> StructMap | None:
         files = os.listdir(dirpath)
-        files = [f for f in files if re.match(RM_FILENAME_REGEXP, f, flags=re.IGNORECASE)]
+        files = [f for f in files if re.match(SM_FILENAME_REGEXP, f, flags=re.IGNORECASE)]
         if not files:
             return None
         filepath = os.path.join(dirpath, files[0])

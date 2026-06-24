@@ -62,7 +62,7 @@ class NiftiDataset(IndexMixin, Dataset):
 
     @alias_kwargs(
         ('g', 'group_id'),
-        ('p', 'patient_id'),
+        (('p', 'patient', 'patients', 'patient_id'), 'patient_ids'),
         (('r', 'region', 'regions', 'region_id'), 'region_ids'),
     )
     @ensure_loaded(
@@ -73,7 +73,7 @@ class NiftiDataset(IndexMixin, Dataset):
         self,
         exclude: PatientID | List[PatientID] | Literal['all'] | None = None,
         group_id: GroupID | List[GroupID] | Literal['all'] = 'all',
-        patient_id: PatientID | List[PatientID] | Literal['all'] = 'all',
+        patient_ids: PatientID | List[PatientID] | Literal['all'] = 'all',
         region_ids: RegionID | List[RegionID] | Literal['all'] = 'all',
         ) -> List[PatientID]:
         # Load patients from filenames.
@@ -127,8 +127,8 @@ class NiftiDataset(IndexMixin, Dataset):
             ids = [p for p in ids if p not in exclude]
 
         # Filter by patient ID.
-        if patient_id != 'all':
-            patient_ids = arg_to_list(patient_id, PatientID)
+        if patient_ids != 'all':
+            patient_ids = arg_to_list(patient_ids, PatientID)
 
             # # Check that 'patient_ids' are valid.
             # for p in patient_ids:
