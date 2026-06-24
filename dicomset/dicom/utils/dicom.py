@@ -397,6 +397,7 @@ def __get_region_slice_label(
 
 @alias_kwargs(
     (('l', 'landmark', 'landmarks', 'landmark_id'), 'landmark_ids'),
+    ('lr', 'landmark_regexp'),
 )
 def list_rtstruct_landmarks(
     rtstruct: FilePath | RtStructDicom,
@@ -408,7 +409,7 @@ def list_rtstruct_landmarks(
         rtstruct = load_dicom(rtstruct, force=False)
     landmark_regexp = landmark_regexp or DEFAULT_LANDMARK_REGEXP
     landmark_regexps = arg_to_list(landmark_regexp, str)
-    req_landmark_ids = landmark_ids     # 'landmark_ids' is overloaded.
+    req_landmark_ids = landmark_ids
 
     # Load all regions and contours.
     all_ids = [i.ROIName for i in rtstruct.StructureSetROISequence]
@@ -451,7 +452,7 @@ def list_rtstruct_regions(
         rtstruct = load_dicom(rtstruct, force=False)
     landmark_regexp = landmark_regexp or DEFAULT_LANDMARK_REGEXP
     landmark_regexps = arg_to_list(landmark_regexp, str)
-    req_region_ids = region_ids    # 'region_ids' is overloaded.
+    req_region_ids = region_ids
 
     # Load all regions and contours.
     all_ids = [i.ROIName for i in rtstruct.StructureSetROISequence]

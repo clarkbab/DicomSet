@@ -1560,6 +1560,20 @@ def __resolve_crop(
     ])
     return box_vox
 
+def __resolve_crosshairs(
+    crosshairs: Point3D | str | None,
+    size: Size,
+    affine: AffineMatrix | None = None,
+    centre_method: Literal['com', 'fov'] = 'com',
+    labels: BatchLabelImage | None = None,
+    label_names: List[RegionID] | None = None,
+    points: List[np.ndarray] | None = None,
+    point_names: List[List[LandmarkID]] | None = None,
+    ) -> Voxel | None:
+    if crosshairs is None:
+        return None
+    return __resolve_point(crosshairs, size, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, point_names=point_names, points=points)
+
 def __resolve_labels(
     labels: LabelImage | BatchLabelImage | None,
     dim: int,
@@ -1661,20 +1675,6 @@ def __resolve_point(
     point = np.clip(point, 0, size - 1)
 
     return point
-
-def __resolve_crosshairs(
-    crosshairs: Point3D | str | None,
-    size: Size,
-    affine: AffineMatrix | None = None,
-    centre_method: Literal['com', 'fov'] = 'com',
-    labels: BatchLabelImage | None = None,
-    label_names: List[RegionID] | None = None,
-    points: List[np.ndarray] | None = None,
-    point_names: List[List[LandmarkID]] | None = None,
-    ) -> Voxel | None:
-    if crosshairs is None:
-        return None
-    return __resolve_point(crosshairs, size, affine=affine, centre_method=centre_method, labels=labels, label_names=label_names, points=points, point_names=point_names)
 
 def __resolve_points(
     points: Point | Points | BatchPoints | List[Points] | Landmark | Landmarks | None,

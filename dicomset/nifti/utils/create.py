@@ -3,8 +3,7 @@ from __future__ import annotations
 import os
 import pandas as pd
 import shutil
-from typing import TYPE_CHECKING, List
-
+from typing import List, TYPE_CHECKING
 if TYPE_CHECKING:
     import SimpleITK as sitk
 

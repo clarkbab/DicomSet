@@ -42,6 +42,19 @@ class Directories:
             os.makedirs(filepath)
         return filepath
 
+def get_dim() -> SpatialDim:
+    return dim
+
+def get_orientation(
+    dim: SpatialDim,
+    ) -> Orientation:
+    if dim not in (2, 3):
+        raise ValueError(f"dim must be 2 or 3, got {dim}.")
+    if dim == 2:
+        return orientation_2d
+    elif dim == 3:
+        return orientation_3d
+
 def init_data() -> DirPath | None:
     d = os.environ.get('DS_DATA')
     if d is not None:
@@ -74,19 +87,6 @@ def init_orientation() -> tuple[Orientation, Orientation]:
     else:
         o3d = DEFAULT_ORIENTATION_3D
     return o2d, o3d
-
-def get_dim() -> SpatialDim:
-    return dim
-
-def get_orientation(
-    dim: SpatialDim,
-    ) -> Orientation:
-    if dim not in (2, 3):
-        raise ValueError(f"dim must be 2 or 3, got {dim}.")
-    if dim == 2:
-        return orientation_2d
-    elif dim == 3:
-        return orientation_3d
 
 def set_data(d: DirPath) -> None:
     if not os.path.exists(d):

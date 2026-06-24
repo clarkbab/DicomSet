@@ -129,16 +129,16 @@ def _find_unsorted_calls(source: str) -> List[Tuple[ast.Call, List[ast.keyword],
     return results
 
 
-def _get_skip_sort_lines(source: str) -> set:
-    """Return the set of 1-based line numbers that contain a ``# skip_sort`` comment."""
-    lines = set()
-    for i, line in enumerate(source.splitlines(), 1):
-        # Match '# skip_sort' anywhere in a trailing comment.
-        stripped = line.rstrip()
-        idx = stripped.find('#')
-        if idx != -1 and 'skip_sort' in stripped[idx:]:
-            lines.add(i)
-    return lines
+def _get_nosort_func_ranges(tree: ast.AST, nosortkwargs_lines: set) -> List[Tuple[int, int]]:
+    """Return ``(start_line, end_line)`` ranges for functions preceded by ``# linter:nosort``."""
+    ranges = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        first_line = node.decorator_list[0].lineno if node.decorator_list else node.lineno
+        if first_line - 1 in nosortkwargs_lines:
+            ranges.append((node.lineno, node.end_lineno))
+    return ranges
 
 
 def _get_nosortkwargs_lines(source: str) -> set:
@@ -152,16 +152,16 @@ def _get_nosortkwargs_lines(source: str) -> set:
     return lines
 
 
-def _get_nosort_func_ranges(tree: ast.AST, nosortkwargs_lines: set) -> List[Tuple[int, int]]:
-    """Return ``(start_line, end_line)`` ranges for functions preceded by ``# linter:nosort``."""
-    ranges = []
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        first_line = node.decorator_list[0].lineno if node.decorator_list else node.lineno
-        if first_line - 1 in nosortkwargs_lines:
-            ranges.append((node.lineno, node.end_lineno))
-    return ranges
+def _get_skip_sort_lines(source: str) -> set:
+    """Return the set of 1-based line numbers that contain a ``# skip_sort`` comment."""
+    lines = set()
+    for i, line in enumerate(source.splitlines(), 1):
+        # Match '# skip_sort' anywhere in a trailing comment.
+        stripped = line.rstrip()
+        idx = stripped.find('#')
+        if idx != -1 and 'skip_sort' in stripped[idx:]:
+            lines.add(i)
+    return lines
 
 
 # ---------------------------------------------------------------------------

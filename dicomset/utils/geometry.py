@@ -116,22 +116,21 @@ def foreground_fov(
 
     # Get fov of foreground objects.
     non_zero = torch.argwhere(data != 0)
-    fov_vox = torch.stack([
+    fov = torch.stack([
         non_zero.min(dim=0).values,
         non_zero.max(dim=0).values,
     ])
-    if affine is None:
-        return fov_vox
 
     # Get fov in mm.
-    spacing = affine_spacing(affine)
-    origin = affine_origin(affine)
-    fov_mm = fov_vox * spacing + origin
+    if affine is not None:
+        spacing = affine_spacing(affine)
+        origin = affine_origin(affine)
+        fov = fov * spacing + origin
 
     if return_type is np.ndarray:
-        fov_mm = to_numpy(fov_mm)
+        fov = to_numpy(fov)
 
-    return fov_mm
+    return fov
 
 def foreground_fov_centre(
     data: LabelImage,

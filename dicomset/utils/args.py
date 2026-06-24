@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from dicomset import config
-
 import ast
+from dicomset import config
 from functools import wraps
 import inspect
 import numpy as np

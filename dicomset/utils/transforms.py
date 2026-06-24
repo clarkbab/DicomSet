@@ -3,15 +3,18 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import skimage as ski
+import torch
 from typing import Callable, List, Literal, Tuple, TYPE_CHECKING
+if TYPE_CHECKING:
+    import SimpleITK as sitk
 
 from ..typing import AffineMatrix, BatchChannelImage, BatchImage, Box, ChannelImage, Image, Landmark, Landmarks, Number, Point, Points, Size, Spacing, SpatialDim
 from .args import bubble_args
+from .conversion import to_numpy, to_tensor
 from .geometry import affine_origin, affine_spacing, assert_box_width, create_affine, fov, to_image_coords
 from .landmarks import landmarks_to_points, replace_points
 from .logging import logger
 if TYPE_CHECKING:
-    import SimpleITK as sitk
     from ..dicom import DicomSeries
     from ..nifti import NiftiImageSeries
 
@@ -26,21 +29,24 @@ def __minmax(
     min: Number = 0.0,
     max: Number = 1.0,
     ) -> Image:
+    data, return_type = to_tensor(data, return_type=True)
     if data_min == 'min':
         data_min = float(data.min())
     if data_max == 'max':
         data_max = float(data.max())
     data_width = data_max - data_min
     if data_width == 0:
+        if return_type is np.ndarray:
+            return to_numpy(data)
         return data
     # Normalise to [0, 1].
     data = (data - data_min) / data_width
     # Scale to [min, max].
     data = data * (max - min) + min
-
     # Data min/max can result in values outside the [min, max] range - clip these.
-    data = np.clip(data, min, max)
-
+    data = data.clamp(min, max)
+    if return_type is np.ndarray:
+        data = to_numpy(data)
     return data
 
 # Can be applied to spatial or channel image.
@@ -48,7 +54,8 @@ def __spatial_crop(
     data: Image,
     crop_box: Box,
     affine: AffineMatrix | None = None,
-    ) -> ImageArray:
+    ) -> Image:
+    data, return_type = to_tensor(data, return_type=True)
     crop_box = __resolve_box(crop_box, data.shape, affine=affine)
     assert_box_width(crop_box)
 
@@ -60,11 +67,49 @@ def __spatial_crop(
     size = np.array(data.shape)
     crop_min = np.array(crop_box[0]).clip(0)
     crop_max = (size - np.array(crop_box[1])).clip(0)
-    slices = tuple(slice(min, s - max) for min, max, s in zip(crop_min, crop_max, size))
+    slices = tuple(slice(int(mn), int(s - mx)) for mn, mx, s in zip(crop_min, crop_max, size))
     data = data[slices]
 
+    if return_type is np.ndarray:
+        data = to_numpy(data)
     return data
 
+def __spatial_pad(
+    image: Image,
+    box: Box,
+    affine: AffineMatrix | None = None,
+    fill: float | Literal['min'] = 'min',
+    ) -> Image:
+    assert_box_width(box)
+    image, return_type = to_tensor(image, return_type=True)
+    fill = image.min() if fill == 'min' else fill
+    if isinstance(fill, torch.Tensor):
+        fill = fill.item()
+
+    # Convert box to voxel coordinates.
+    if affine is not None:
+        min_mm, max_mm = box
+        spacing = affine_spacing(affine)
+        origin = affine_origin(affine)
+        min = tuple(np.round((np.array(min_mm) - origin) / spacing).astype(int))
+        max = tuple(np.round((np.array(max_mm) - origin) / spacing).astype(int))
+    else:
+        min, max = box
+
+    # Perform padding - clip if padding is less than zero.
+    size = np.array(image.shape)
+    pad_min = (-np.array(min)).clip(0)
+    pad_max = (max - size).clip(0)
+    padding = list(reversed(list(zip(pad_min, pad_max))))  # torch 'pad' operates from back to front.
+    padding = tuple(torch.tensor(padding).flatten().tolist())
+    image = torch.nn.functional.pad(image, padding, value=fill)
+
+    if return_type is np.ndarray:
+        image = to_numpy(image)
+    return image
+
+# Pulls image data/affine from "data/affine" or "image" series.
+# Output size/affine is pulled from "output_size/affine" or "output_image" series. 
 def __spatial_resample(
     data: Image | None = None,
     affine: AffineMatrix | None = None,
@@ -77,6 +122,7 @@ def __spatial_resample(
     transform: sitk.Transform | None = None,     # This transforms points not intensities. I.e. positive transform will move image in negative direction.
     ) -> Image | Tuple[Image, sitk.Transform]:
     # Get input data/affine.
+    return_type = None
     if image is not None:
         assert data is None, "Data can't be provided when image is provided."
         assert affine is None, "Affine can't be provided when image is provided."
@@ -85,6 +131,7 @@ def __spatial_resample(
     else:
         assert data is not None, "Either 'data' or 'image' must be provided."
         assert affine is not None, "Either 'affine' or 'image' must be provided."
+        data, return_type = to_numpy(data, return_type=True)
     spacing = affine_spacing(affine)
     origin = affine_origin(affine) 
 
@@ -150,13 +197,14 @@ def __spatial_resample(
     if data.dtype == bool:
         image = image.astype(bool)
 
+    if return_type is torch.Tensor:
+        image = to_tensor(image)
+
     if return_transform:
         return image, filter.GetTransform()
     else:
         return image
 
-# Pulls image data/affine from "data/affine" or "image" series.
-# Output size/affine is pulled from "output_size/affine" or "output_image" series. 
 def __spatial_sample(
     data: Image,
     points: Point | Points | Landmark | Landmarks,
@@ -168,6 +216,7 @@ def __spatial_sample(
     transform: sitk.Transform | None = None,
     **kwargs,
     ) -> List[float] | Landmarks:
+    data = to_numpy(data)
     was_landmarks = False
     if isinstance(points, (pd.DataFrame, pd.Series)):
         was_landmarks = True
@@ -231,6 +280,12 @@ def __spatial_sample(
 
     return result
 
+def _stack(results: list):
+    if results and isinstance(results[0], torch.Tensor):
+        return torch.stack(results, dim=0)
+    return np.stack(results, axis=0)
+
+# Transposes spatial coordinates, whilst maintaining initial batch/channel dimensions.
 def compute_channel_or_spatial_transforms(
     transform_fn: Callable,
     data: Image | BatchImage | BatchChannelImage,
@@ -253,18 +308,18 @@ def compute_channel_or_spatial_transforms(
                 results = []
                 for d in data:
                     results.append(transform_fn(d, *args, **kwargs))
-                return np.stack(results, axis=0)
+                return _stack(results)
     elif data.ndim == 4:  # 2D batch/channel or 3D batch.
         if dim is None or dim == 3:
             # Assume that a dim=3, 4D array is (C, X, Y, Z).
-            logger.warn(f"Transform function '{transform_fn.__name__}' received 4D array with no specified 'dim'. Assuming batch of 3D labels. If these are batch/channels of 2D labels, specify 'dim=2' to compute transform per image in batch.")    
+            logger.warn(f"Transform function '{transform_fn.__name__}' received 4D array with no specified 'dim'. Assuming batch of 3D labels. If these are batch/channels of 2D labels, specify 'dim=2' to compute transform per image in batch.")
             if combine_channels:
                 return transform_fn(data, *args, **kwargs)
             else:
                 results = []
                 for d in data:
                     results.append(transform_fn(d, *args, **kwargs))
-                return np.stack(results, axis=0)
+                return _stack(results)
         elif dim == 2:
             results = []
             for b in data:
@@ -276,8 +331,8 @@ def compute_channel_or_spatial_transforms(
                     channel_results = []
                     for c in b:
                         channel_results.append(transform_fn(c, *args, **kwargs))
-                    results.append(np.stack(channel_results, axis=0))
-            return np.stack(results, axis=0) 
+                    results.append(_stack(channel_results))
+            return _stack(results)
     elif data.ndim == 5:  # 3D batch/channel.
         results = []
         for b in data:
@@ -289,12 +344,12 @@ def compute_channel_or_spatial_transforms(
             channel_results = []
             for c in b:
                 channel_results.append(transform_fn(c, *args, **kwargs))
-            results.append(np.stack(channel_results, axis=0))
-        return np.stack(results, axis=0) 
+            results.append(_stack(channel_results))
+        return _stack(results)
     else:
         raise ValueError(f"Transform function '{transform_fn.__name__}' expects array of spatial dimension 2 or 3, with optional batch dimension. Got array of shape '{data.shape}' with inferred spatial dimension {data.ndim}. Specify 'dim' to override inference.")        
 
-# Transposes spatial coordinates, whilst maintaining initial batch/channel dimensions.
+
 @bubble_args(__spatial_crop)
 def crop(
     data: BatchImage | Image,
@@ -303,7 +358,6 @@ def crop(
     ) -> BatchImage | Image:
     return compute_channel_or_spatial_transforms(__spatial_crop, data, *args, **kwargs)
 
-# To/from sitk image need to be here for circular import reasons (spatial transpose).
 def crop_affine(
     affine: AffineMatrix,
     crop_box: Box,
@@ -313,6 +367,7 @@ def crop_affine(
     affine = create_affine(spacing, crop_box[0])
     return affine
 
+# To/from sitk image need to be here for circular import reasons (spatial transpose).
 def crop_points(
     points: Point | Points | Landmark | Landmarks,
     crop: Box,
@@ -352,23 +407,35 @@ def from_sitk_image(
     affine = create_affine(spacing, origin)
     return data, affine
 
-# Handle 'np.nan' values in box.
 def hist_eq(
     data: Image,
     ) -> Image:
-    return ski.exposure.equalize_hist(data)
+    data, return_type = to_numpy(data, return_type=True)
+    data = ski.exposure.equalize_hist(data)
+    if return_type is torch.Tensor:
+        data = to_tensor(data)
+    return data
 
-# What if we want to pass image series? This is probably bad
-# design as we're then loading data and cropping in the same function.
-# Better to keep loading and processing separate.
-# We do this for spatial_resample though and it is convenient there due
-# to all the input/output params...
+# Handle 'np.nan' values in box.
 @bubble_args(__minmax)
 def minmax(
     data: Image | BatchImage,
     **kwargs,
     ) -> Image | BatchImage:
     return compute_channel_or_spatial_transforms(__minmax, data, **kwargs)
+
+# What if we want to pass image series? This is probably bad
+# design as we're then loading data and cropping in the same function.
+# Better to keep loading and processing separate.
+# We do this for spatial_resample though and it is convenient there due
+# to all the input/output params...
+@bubble_args(__spatial_pad)
+def pad(
+    image: Image,
+    *args, 
+    **kwargs,
+    ) -> Image:
+    return compute_channel_or_spatial_transforms(__spatial_pad, image, *args, **kwargs)
 
 @bubble_args(__spatial_resample)
 def resample(
@@ -406,9 +473,13 @@ def spatial_transpose(
     data: BatchChannelImage | BatchImage | Image,
     dim: SpatialDim = 3,
     ) -> BatchChannelImage | BatchImage | Image:
-    from_axes = tuple(range(data.ndim - dim, data.ndim))     
-    to_axes = tuple(reversed(from_axes)) 
-    return np.moveaxis(data, from_axes, to_axes)
+    data, return_type = to_tensor(data, return_type=True)
+    from_axes = tuple(range(data.ndim - dim, data.ndim))
+    to_axes = tuple(reversed(from_axes))
+    data = torch.moveaxis(data, from_axes, to_axes)
+    if return_type is np.ndarray:
+        data = to_numpy(data)
+    return data
 
 @bubble_args(__minmax)
 def standardise(
@@ -423,15 +494,19 @@ def __standardise(
     mean: Number = 0.0,
     std: Number = 1.0,
     ) -> Image:
+    data, return_type = to_tensor(data, return_type=True)
     if mean == 'mean':
         mean = float(data.mean())
     if std == 'std':
         std = float(data.std())
     if std == 0:
+        if return_type is np.ndarray:
+            return to_numpy(data)
         return data
     # Standardise to mean 0 and std 1.
     data = (data - mean) / std
-
+    if return_type is np.ndarray:
+        data = to_numpy(data)
     return data
 
 # Handles 2/3D batch/channel/spatial images and passes them to the
@@ -444,6 +519,7 @@ def to_sitk_image(
     ) -> sitk.Image:
     # Slow import so postponing until method call.
     import SimpleITK as sitk
+    data = to_numpy(data)
     # Multi-channel sitk images must be stored as vector images.
     is_vector = True if data.ndim == dim + 1 else False
 

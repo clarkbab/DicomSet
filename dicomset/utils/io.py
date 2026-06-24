@@ -5,7 +5,7 @@ import json
 import numpy as np
 import os
 import pandas as pd
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple
+from typing import Any, Dict, List, Literal, Tuple, TYPE_CHECKING
 import yaml
 if TYPE_CHECKING:
     import SimpleITK as sitk
