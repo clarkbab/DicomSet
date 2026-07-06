@@ -9,13 +9,14 @@ from ..config import get_orientation
 from ..dicom.series import DicomSeries
 from ..nifti.series import NiftiSeries
 from ..typing import AffineMatrix, AffineMatrix2D, AffineMatrix3D, BatchBox, BatchBox2D, BatchBox3D, BatchLabelImage, BatchLabelImage2D, BatchLabelImage3D, BatchPoints, BatchPoints2D, BatchPoints3D, BatchVoxelBox, Box, Box2D, Box3D, Image, Image2D, Image3D, LabelImage, LabelImage2D, LabelImage3D, Landmark, Landmark2D, Landmark3D, LandmarkID, Landmarks, Landmarks2D, Landmarks3D, Number, Orientation2D, Orientation3D, Pixel, PixelBox, Point, Point2D, Point3D, Points, Points2D, Points3D, RegionID, Size, View, Voxel, VoxelBox, Window
+from . import logging
 from .args import alias_kwargs, arg_default, arg_to_list, assert_2d, assert_3d
 from .assertions import assert_orientation
 from .conversion import to_numpy
 from .geometry import affine_origin, affine_spacing, centre_of_mass, foreground_fov, foreground_fov_centre, to_image_coords
 from .landmarks import landmarks_to_points
 from .logging import logger
-from .transforms import crop
+from .transforms import crop, hist_eq as hist_eq_fn
 
 VIEWS = ['Sagittal', 'Coronal', 'Axial']
 
@@ -45,7 +46,7 @@ def __get_view_aspect(
         return None
     spacing = affine_spacing(affine)
     axes = [i for i in range(3) if i != view]
-    aspect = float(spacing[axes[1]] / spacing[axes[0]])
+    aspect = float(np.abs(spacing[axes[1]] / spacing[axes[0]]))
     return aspect
 
 def __get_view_origin(
@@ -272,7 +273,7 @@ def plot_dataframe(
         hr = [1] * n_rows
         n_cols_final_row = len(x_order) % n_cols if len(x_order) % n_cols != 0 else n_cols
         width_ratios = [n_cols_final_row, n_cols - n_cols_final_row]
-        gs = mpl.gridspec.GridSpec(n_rows, ncols=2, height_ratios=hr, hspace=hspace, width_ratios=width_ratios)
+        gs = mpl.gridspec.GridSpec(n_rows, height_ratios=hr, hspace=hspace, ncols=2, width_ratios=width_ratios)
         axs = []
         for r in range(n_rows):
             for c in range(2):  # since you used ncols=2
@@ -485,7 +486,7 @@ def plot_dataframe(
                     main_legend = inset_ax.get_legend()
 
                     # Show outlier legend.
-                    inset_ax.legend(artists, labels, borderaxespad=legend_borderaxespad, borderpad=legend_borderpad, bbox_to_anchor=legend_bbox, fontsize=fontsize_legend, loc=legend_loc)
+                    inset_ax.legend(artists, labels, bbox_to_anchor=legend_bbox, borderaxespad=legend_borderaxespad, borderpad=legend_borderpad, fontsize=fontsize_legend, loc=legend_loc)
 
                     # Re-add main legend.
                     inset_ax.add_artist(main_legend)
@@ -547,7 +548,7 @@ def plot_dataframe(
 
             if hue is None:
                 for x_l, x_r in pairs:
-                    row_pivot_df = row_df.pivot(index=stats_paired_by, columns=x, values=y).reset_index()
+                    row_pivot_df = row_df.pivot(columns=x, index=stats_paired_by, values=y).reset_index()
                     if x_l in row_pivot_df.columns and x_r in row_pivot_df.columns:
                         vals_l = row_pivot_df[x_l]
                         vals_r = row_pivot_df[x_r]
@@ -571,7 +572,7 @@ def plot_dataframe(
                     for hue_l, hue_r in hue_pairs:
                         if stats_boot_df is not None:
                             # Load p-values from 'stats_boot_df'.
-                            x_pivot_df = x_df.pivot(index=stats_paired_by, columns=[hue], values=[y]).reset_index()
+                            x_pivot_df = x_df.pivot(columns=[hue], index=stats_paired_by, values=[y]).reset_index()
                             if (y, hue_l) in x_pivot_df.columns and (y, hue_r) in x_pivot_df.columns:
                                 vals_l = x_pivot_df[y][hue_l]
                                 vals_r = x_pivot_df[y][hue_r]
@@ -602,7 +603,7 @@ def plot_dataframe(
                     else:
                         # Calculate p-values using stats tests.
                         for hue_l, hue_r in hue_pairs:
-                            x_pivot_df = x_df.pivot(index=stats_paired_by, columns=[hue], values=[y]).reset_index()
+                            x_pivot_df = x_df.pivot(columns=[hue], index=stats_paired_by, values=[y]).reset_index()
                             if (y, hue_l) in x_pivot_df.columns and (y, hue_r) in x_pivot_df.columns:
                                 vals_l = x_pivot_df[y][hue_l]
                                 vals_r = x_pivot_df[y][hue_r]
@@ -872,8 +873,8 @@ def plot_dataframe(
             inset_ax.set_xticklabels([])
 
         # Set tick label font size and padding.
-        inset_ax.tick_params(axis='x', which='major', labelsize=fontsize_tick_label, pad=x_tick_label_pad)
-        inset_ax.tick_params(axis='y', which='major', labelsize=fontsize_tick_label, pad=y_tick_label_pad)
+        inset_ax.tick_params(axis='x', labelsize=fontsize_tick_label, pad=x_tick_label_pad, which='major')
+        inset_ax.tick_params(axis='y', labelsize=fontsize_tick_label, pad=y_tick_label_pad, which='major')
 
         # Set y axis major ticks.
         if major_tick_freq is not None:
@@ -910,14 +911,14 @@ def plot_dataframe(
             inset_ax.set_yticks(minor_ticks, minor=True)
 
         # Set y grid lines.
-        inset_ax.grid(axis='y', alpha=0.1, color='grey', linewidth=line_width)
+        inset_ax.grid(alpha=0.1, axis='y', color='grey', linewidth=line_width)
         inset_ax.set_axisbelow(True)
 
         # Set axis spine/tick linewidths and tick lengths.
         spines = ['top', 'bottom','left','right']
         for spine in spines:
             inset_ax.spines[spine].set_linewidth(line_width)
-        inset_ax.tick_params(which='both', length=tick_length, width=line_width)
+        inset_ax.tick_params(length=tick_length, which='both', width=line_width)
 
     # Set title.
     okwargs = dict(
@@ -1001,6 +1002,7 @@ def plot_slice(
     crop: Box2D | Point2D | RegionID | None = None,
     crop_margin: Number = 100.0,
     figsize: Tuple[Number, Number] = (8, 8),
+    hist_eq: bool = False,
     labels: LabelImage2D | BatchLabelImage2D | None = None,
     label_names: RegionID | List[RegionID] | None = None,
     orientation: Orientation2D | None = None,
@@ -1060,6 +1062,8 @@ def plot_slice(
     # Plot the image.
     if crop_box is not None:
         data = data[crop_box[0, 0]:crop_box[1, 0] + 1, crop_box[0, 1]:crop_box[1, 1] + 1]
+    if hist_eq:
+        data = hist_eq_fn(data)
     ax.imshow(data.T, aspect=aspect, cmap=cmap, origin=origin_y, vmax=vmax, vmin=vmin)
     if origin_x == 'upper':
         ax.invert_xaxis()
@@ -1078,7 +1082,7 @@ def plot_slice(
     # Plot points.
     if points is not None:
         n_batches = len(points)
-        batch_palette = sns.color_palette('colorblind', n_batches)
+        batch_palette = sns.color_palette('bright', n_batches)
         for bi, (batch, batch_names) in enumerate(zip(points, point_names)):
             batch_colour = batch_palette[bi]
             if points_colour == 'gradient' and len(batch) > 1:
@@ -1086,8 +1090,10 @@ def plot_slice(
                 light = (r + (1 - r) * 0.7, g + (1 - g) * 0.7, b + (1 - b) * 0.7)
                 points_cmap = mpl.colors.LinearSegmentedColormap.from_list('batch_grad', [light, batch_colour])
                 p_colours = [points_cmap(i / (len(batch) - 1)) for i in range(len(batch))]
-            else:
+            elif points_colour == 'batch':
                 p_colours = [batch_colour] * len(batch)
+            else:
+                p_colours = [points_colour] * len(batch)
             for pi, p in enumerate(batch):
                 if crop_box is not None:
                     p = p - crop_box[0]
@@ -1183,6 +1189,7 @@ def plot_volume(
     dose_cmap: str = 'turbo',
     dose_cmap_trunc: Number = 0.15,
     figsize: Tuple[Number, Number] = (16, 6),
+    hist_eq: bool = False,
     idx: int | float | str | Point3D | None = None,
     labels: LabelImage3D | BatchLabelImage3D | None = None,
     label_names: RegionID | List[RegionID] | None = None,
@@ -1225,8 +1232,28 @@ def plot_volume(
     # Resolve labels.
     labels = __resolve_labels(labels, dim=3)
 
+    # Change the affine and any data so that the world coordinates always increase
+    # to the right of and top of the image.
+    if affine is not None:
+        affine = affine.copy()
+        for i in range(3):
+            if affine[i, i] < 0:
+                n = data.shape[i]
+                affine[i, -1] += (n - 1) * affine[i, i]
+                affine[i, i] = -affine[i, i]
+                data = np.flip(data, axis=i)
+                if dose is not None:
+                    dose = np.flip(dose, axis=i)
+                if labels is not None:
+                    labels = np.flip(labels, axis=i + 1)
+
+
     # Resolve window to vmin/vmax.
     vmin, vmax = __resolve_window(window, affine=affine, data=data, labels=labels, vmax=vmax, vmin=vmin)
+
+    # Histogram equalisation (applied to full volume for consistent slices across views).
+    if hist_eq:
+        data = hist_eq_fn(data)
 
     # Resolve points and point names.
     points, point_names = __resolve_points(points, affine=affine, point_names=point_names)
@@ -1331,8 +1358,10 @@ def plot_volume(
                     light = (r + (1 - r) * 0.7, g + (1 - g) * 0.7, b + (1 - b) * 0.7)
                     points_cmap = mpl.colors.LinearSegmentedColormap.from_list('batch_grad', [light, batch_colour])
                     p_colours = [points_cmap(i / (len(batch) - 1)) for i in range(len(batch))]
-                else:
+                elif points_colour == 'batch':
                     p_colours = [batch_colour] * len(batch)
+                else:
+                    p_colours = [points_colour] * len(batch)
                 for pi, p in enumerate(batch):
                     p_x, p_y = __get_view_xy(v, p)
                     if view_crop_box is not None:

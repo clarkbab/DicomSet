@@ -7,7 +7,7 @@ from typing import Any, Dict, TYPE_CHECKING
 from ... import config
 from ...typing import SeriesID
 from ...utils.python import ensure_loaded, get_private_attr
-from ..utils.io import load_dicom
+from ...utils.dicom import load_dicom
 from .series import DicomSeries
 if TYPE_CHECKING:
     from ..dataset import DicomDataset

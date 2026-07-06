@@ -9,7 +9,7 @@ from ... import config
 from ...typing import Box3D, Image3D, Point3D, SeriesID, Size3D, Spacing3D
 from ...utils.geometry import affine_origin, affine_spacing, fov
 from ...utils.python import ensure_loaded, get_private_attr
-from ..utils.io import load_dicom
+from ...utils.dicom import load_dicom
 from .series import DicomSeries
 if TYPE_CHECKING:
     from ..dataset import DicomDataset

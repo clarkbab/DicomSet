@@ -11,14 +11,14 @@ import seaborn as sns
 import skimage as ski
 from typing import Any, Callable, Dict, List, Literal, Tuple
 
-from ...typing import AffineMatrix3D, BatchLabelImage3D, DirPath, DiskLandmarkID, DiskRegionID, FilePath, Image2D, Image3D, LabelImage3D, LandmarkID, Landmarks, PatientID, Point2D, Point3D, Points2D, RegExp, RegionID, RtStructDicom, Size2D, Size3D, Spacing2D, StudyID
-from ...utils.args import alias_kwargs, arg_to_list, resolve_filepath
-from ...utils.geometry import affine_origin, affine_spacing, create_affine, to_image_coords
-from ...utils.landmarks import points_to_landmarks
-from ...utils.logging import logger
-from ...utils.maths import round
-from ...utils.python import filter_lists, sort_lists
-from ..utils.io import load_dicom
+from ..typing import AffineMatrix3D, BatchLabelImage3D, DirPath, DiskLandmarkID, DiskRegionID, FilePath, Image2D, Image3D, LabelImage3D, LandmarkID, Landmarks, PatientID, Point2D, Point3D, Points2D, RegExp, RegionID, RtStructDicom, Size2D, Size3D, Spacing2D, StudyID
+from .args import alias_kwargs, arg_to_list, resolve_filepath
+from .geometry import affine_origin, affine_spacing, create_affine, to_image_coords
+from .io import is_dir, is_file
+from .landmarks import points_to_landmarks
+from .logging import logger
+from .maths import round
+from .python import filter_lists, sort_lists
 
 CONTOUR_FORMATS = ['POINT', 'CLOSED_PLANAR']
 CONTOUR_METHOD = 'SKIMAGE'
@@ -26,6 +26,41 @@ DEFAULT_LANDMARK_REGEXP = r'^Marker \d+$'
 DICOM_DATE_FORMAT = '%Y%m%d'
 DICOM_TIME_FORMAT = '%H%M%S'
 EQUALITY_TOL_MM = 1e-3      # Equivalent up to 1 micron.
+
+def load_dicom(
+    filepath: FilePath,
+    **kwargs,
+    ) -> dcm.dataset.FileDataset:
+    filepath = resolve_filepath(filepath)
+    return dcm.dcmread(filepath, **kwargs)
+
+def save_dicom(
+    dicom: dcm.dataset.FileDataset | List[dcm.dataset.FileDataset],
+    path: DirPath | FilePath | List[FilePath],
+    overwrite: bool = True,
+    ) -> None:
+    # Save single dicom.
+    if isinstance(dicom, dcm.dataset.FileDataset):
+        assert is_file(path), f"Expected filepath for single DICOM, got directory path '{path}'."
+        filepath = resolve_filepath(path)
+        if os.path.exists(filepath) and not overwrite:
+            raise ValueError(f"File '{filepath}' already exists, use overwrite=True.")
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        dcm.dcmwrite(filepath, dicom)
+        return
+
+    # Save multiple dicoms.
+    else:
+        assert isinstance(path, list) or is_dir(path), f"Expected directory path or list of filepaths for multiple DICOMs, got '{path}'."
+        if is_dir(path):
+            path = resolve_filepath(path)
+            filepaths = [os.path.join(path, f'{i:03}.dcm') for i in range(len(dicom))]
+        else:
+            filepaths = [resolve_filepath(p) for p in path]
+        if len(filepaths) != len(dicom):
+            raise ValueError(f"Number of DICOMs ({len(dicom)}) does not match number of filepaths ({len(filepaths)}).")
+        for d, f in zip(dicom, filepaths):
+            save_dicom(d, f, overwrite=overwrite)
 
 def __add_slice_contours(
     roi_contour: dcm.dataset.Dataset,
@@ -121,7 +156,8 @@ def from_ct_dicom(
     check_xy_positions: bool = True,
     check_z_spacing: bool = True,
     progress_callback: Callable[[int, int], None] | None = None,
-    ) -> Image2D | Tuple[Image3D, AffineMatrix3D]:
+    return_ct: bool = False,
+    ) -> Image2D | Tuple[Image2D, dcm.dataset.FileDataset] | Tuple[Image3D, AffineMatrix3D] | Tuple[Image3D, AffineMatrix3D, List[dcm.dataset.FileDataset]]:
     # Load from filepath/dirpath if present.
     if isinstance(cts, str):
         if os.path.isfile(cts):
@@ -200,6 +236,8 @@ def from_ct_dicom(
 
     affine = create_affine(spacing, origin)
 
+    if return_ct:
+        return data, affine, cts
     return data, affine
 
 def from_rtdose_dicom(
@@ -234,11 +272,6 @@ def from_rtplan_dicom(
     # Get info.
     info = {}
     info['isocentre'] = tuple([float(i) for i in rtplan.BeamSequence[0].ControlPointSequence[0].IsocenterPosition])
-    # info['couch-shift'] = tuple([
-    #     float(rtplan.BeamSequence[0].ControlPointSequence[0].TableTopLateralPosition),
-    #     float(rtplan.BeamSequence[0].ControlPointSequence[0].TableTopVerticalPosition),
-    #     float(rtplan.BeamSequence[0].ControlPointSequence[0].TableTopLongitudinalPosition),
-    # ])
 
     return info
 
@@ -868,4 +901,3 @@ def to_rtstruct_dicom(
         rtstruct.RTROIObservationsSequence.append(observation)
 
     return rtstruct
-    

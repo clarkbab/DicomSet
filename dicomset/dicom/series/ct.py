@@ -8,8 +8,7 @@ from ... import config
 from ...typing import AffineMatrix3D, Box3D, CtDicom, Image3D, Point3D, SeriesID, Size3D, Spacing3D
 from ...utils.geometry import affine_origin, affine_spacing, fov
 from ...utils.python import ensure_loaded, get_private_attr
-from ..utils.dicom import from_ct_dicom
-from ..utils.io import load_dicom
+from ...utils.dicom import from_ct_dicom, load_dicom
 from .series import DicomSeries
 if TYPE_CHECKING:
     from ..dataset import DicomDataset

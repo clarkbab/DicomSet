@@ -222,13 +222,17 @@ def landmarks_to_list(
 def regions_to_list(
     region_ids: RegionID | RegionList | List[RegionID | RegionList] | Literal['all'],
     disk_region_ids: DiskRegionID | List[DiskRegionID] | None = None,
+    sort_regions: bool = True,
     struct_map: StructMap | None = None,
     **kwargs,
     ) -> List[RegionID]:
     region_ids = arg_to_list(region_ids, str, **kwargs)
     if struct_map is not None:
-        region_ids = struct_map.expand_list(region_ids, disk_ids=disk_region_ids)
-    return list(sorted(set(region_ids)))
+        region_ids = struct_map.expand_list(region_ids, disk_ids=disk_region_ids, sort=sort_regions)
+    region_ids = list(dict.fromkeys(region_ids))    # Remove duplicates without sorting.
+    if sort_regions:
+        region_ids = list(sorted(region_ids))
+    return region_ids
 
 def resolve_filepath(filepath: FilePath) -> FilePath:
     file_options = ['f', 'file', 'files']

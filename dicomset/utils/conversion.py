@@ -68,7 +68,7 @@ def to_tensor(
     ) -> torch.Tensor | Tuple[torch.Tensor | None, type] | None:
     # Record input type.
     if return_type:
-        input_type = type(data)
+        input_type = np.ndarray if isinstance(data, np.ndarray) else type(data)
 
     # Convert to tensor.
     if isinstance(data, (bool, float, int, str)):

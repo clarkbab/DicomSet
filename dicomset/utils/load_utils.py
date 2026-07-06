@@ -10,13 +10,13 @@ def list_datasets(
     if lower_type in ('d', 'dicom'):
         from ..dicom.utils.load import list_datasets as list_dicom_datasets
         return list_dicom_datasets()
-    elif lower_type == ('n', 'nifti'):
+    elif lower_type in ('n', 'nifti'):
         from ..nifti.utils.load import list_datasets as list_nifti_datasets
         return list_nifti_datasets()
-    elif lower_type == ('r', 'raw'):
+    elif lower_type in ('r', 'raw'):
         from ..raw.utils.load import list_datasets as list_raw_datasets
         return list_raw_datasets()
-    elif lower_type == ('t', 'training'):
+    elif lower_type in ('t', 'training'):
         from ..training.utils.load import list_datasets as list_training_datasets
         return list_training_datasets()
     else:

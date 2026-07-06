@@ -53,7 +53,7 @@ def ensure_loaded(*pairs) -> Callable:
 
 # E.g: a = [1, 2, [3, 4], [5, [6, 7]], 8, 9]
 def filter_lists(
-    lists: List[List[Any]],
+    *lists: List[Any],
     filt_fn: Callable,
     ) -> List[List[Any]]:
     n_lists = len(lists)
@@ -144,7 +144,7 @@ def set_private_attr(obj, attr_name, value):
     setattr(obj, attr_name, value)
 
 def sort_lists(
-    lists: List[List[Any]],
+    *lists: List[List[Any]],
     key: Callable[[List[Any]], int],
     ) -> List[List[Any]]:
     n_lists = len(lists)

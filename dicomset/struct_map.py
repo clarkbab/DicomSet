@@ -28,6 +28,7 @@ class StructMap:
         self,
         id: LandmarkID | RegionID | LandmarkList | RegionList | List[LandmarkID | RegionID | LandmarkList | RegionList],
         disk_ids: List[DiskLandmarkID | DiskRegionID] | None = None,
+        sort: bool = True,
         ) -> List[LandmarkID | RegionID]:
         ids = arg_to_list(id, str)
         expanded = []
@@ -46,7 +47,9 @@ class StructMap:
                         expanded.append(vi)
             else:
                 expanded.append(i)
-        return list(sorted(set(expanded)))
+        if sort:
+            return list(sorted(set(expanded)))
+        return list(dict.fromkeys(expanded))    # Remove duplicates without sorting.
 
     @property
     def filepath(self) -> FilePath:

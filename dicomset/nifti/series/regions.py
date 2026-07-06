@@ -39,17 +39,19 @@ class NiftiRegionsSeries(NiftiImageSeries):
     @alias_kwargs(
         (('r', 'region', 'regions', 'region_id'), 'region_ids'),
         ('rr', 'return_regions'),
+        ('sr', 'sort_regions'),
         ('um', 'use_mapping'),
     )
     def data(
         self,
         region_ids: RegionID | List[RegionID] | Literal['all'] = 'all',
         return_regions: bool = True,
+        sort_regions: bool = True,
         use_mapping: bool = True,
         ) -> Tuple[List[RegionID], BatchLabelImage3D]:
         if self.__struct_map is None:
             use_mapping = False
-        region_ids = self.list_regions(region_ids=region_ids, use_mapping=use_mapping)
+        region_ids = self.list_regions(region_ids=region_ids, sort_regions=sort_regions, use_mapping=use_mapping)
 
         # Required for region mapping with regexps.
         true_disk_regions = self.__list_disk_regions()
@@ -149,6 +151,7 @@ class NiftiRegionsSeries(NiftiImageSeries):
     def list_regions(
         self,
         region_ids: RegionID | List[RegionID] | Literal['all'] = 'all',
+        sort_regions: bool = True,
         use_mapping: bool = True,
         ) -> List[RegionID]:
         if self.__struct_map is None:
@@ -164,8 +167,9 @@ class NiftiRegionsSeries(NiftiImageSeries):
                 api_regions = [r for rs in api_regions for r in (rs if isinstance(rs, list) else [rs])]
             else:
                 api_regions = true_disk_regions
+            api_regions = list(dict.fromkeys(api_regions))    # Remove duplicates without sorting.
         else:
-            region_ids = regions_to_list(region_ids, literals={ 'all': self.list_regions }, struct_map=self.__struct_map)
+            region_ids = regions_to_list(region_ids, literals={ 'all': self.list_regions }, sort_regions=sort_regions, struct_map=self.__struct_map)
             api_regions = []
             for r in region_ids:
                 # Only keep regions that map to a one or more disk regions.
@@ -177,7 +181,9 @@ class NiftiRegionsSeries(NiftiImageSeries):
                     if r in true_disk_regions:
                         api_regions.append(r)
 
-        return list(sorted(set(api_regions)))
+        if sort_regions:
+            api_regions = list(sorted(api_regions))
+        return api_regions
 
     def __str__(self) -> str:
         return super().__str__(self.__class__.__name__)

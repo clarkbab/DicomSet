@@ -200,6 +200,11 @@ class NiftiDataset(IndexMixin, Dataset):
 
         return ids
 
+    def __load_groups(self) -> None:
+        # Load groups.
+        filepath = os.path.join(self.__dirpath, 'groups.csv')
+        self.__groups = load_csv(filepath) if os.path.exists(filepath) else None
+
     def __load_index(self) -> None:
         # Load index.
         filepath = os.path.join(self.__dirpath, 'index.csv')
@@ -209,15 +214,6 @@ class NiftiDataset(IndexMixin, Dataset):
         else:
             self.__index = None
 
-    def __load_groups(self) -> None:
-        # Load groups.
-        filepath = os.path.join(self.__dirpath, 'groups.csv')
-        self.__groups = load_csv(filepath) if os.path.exists(filepath) else None
-
-    def __load_struct_map(self) -> None:
-        self.__struct_map = StructMap.load(self.__dirpath)
-
-    # Copied from 'mymi/reports/dataset/nift.py' to avoid circular dependency.
     def __load_patient_regions_report(
         self,
         exists_only: bool = False,
@@ -233,6 +229,10 @@ class NiftiDataset(IndexMixin, Dataset):
                 return False
             else:
                 raise ValueError(f"Patient regions report doesn't exist for dataset '{self}'.")
+
+    # Copied from 'mymi/reports/dataset/nift.py' to avoid circular dependency.
+    def __load_struct_map(self) -> None:
+        self.__struct_map = StructMap.load(self.__dirpath)
 
     @property
     def n_patients(self) -> int:

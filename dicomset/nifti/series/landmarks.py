@@ -132,9 +132,6 @@ class NiftiLandmarksSeries(NiftiSeries):
         n_overlap = len(np.intersect1d(landmark_ids, all_ids))
         return n_overlap > 0 if any else n_overlap == len(landmark_ids)
 
-    def __load_data(self) -> None:
-        self.__data = load_csv(self.__filepath)
-
     @alias_kwargs(
         (('l', 'landmark', 'landmarks', 'landmark_id'), 'landmark_ids'),
     )
@@ -177,6 +174,9 @@ class NiftiLandmarksSeries(NiftiSeries):
                         api_landmarks.append(r)
 
         return list(sorted(set(api_landmarks)))
+
+    def __load_data(self) -> None:
+        self.__data = load_csv(self.__filepath)
 
     def __str__(self) -> str:
         return super().__str__(self.__class__.__name__)

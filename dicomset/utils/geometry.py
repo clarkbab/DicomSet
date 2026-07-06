@@ -2,11 +2,13 @@ import numpy as np
 import pandas as pd
 import scipy
 import torch
-from typing import List
+from typing import Callable, List
 
-from ..typing import AffineMatrix, Box, Image, LabelImage, Landmarks, Pixel, Point, Points, Size, Spacing, SpatialDim, Voxel
-from .conversion import to_numpy, to_tensor
+from ..typing import AffineMatrix, BatchChannelImage, BatchImage, BatchLabelImage, Box, Image, LabelImage, Landmarks, Orientation, Pixel, Point, Points, Size, Spacing, SpatialDim, Voxel
+from .assertions import assert_orientation
+from .conversion import to_numpy, to_tensor, to_tuple
 from .landmarks import landmarks_to_points, points_to_landmarks
+from .logging import logger
 
 def affine_origin(
     affine: AffineMatrix,
@@ -51,19 +53,88 @@ def assert_box_width(
         if width <= 0:
             raise ValueError(f"Box width must be positive, got '{box}'.")
 
-def centre_of_mass(
-    data: Image,
+def __spatial_centre_of_mass(
+    data: Image | LabelImage,
     affine: AffineMatrix | None = None,
-    ) -> Point | Pixel | Voxel:
+    ) -> Point | Pixel | Voxel | None:
     if data.sum() == 0:
-        return None 
+        return None
 
     # Compute the centre of mass.
-    com = scipy.ndimage.center_of_mass(data)
+    com = to_tuple(scipy.ndimage.center_of_mass(data))
     if affine is not None:
         com = to_world_coords(com, affine)
 
     return com
+
+def compute_channel_or_spatial_geometry(
+    geometry_fn: Callable,
+    data: Image | BatchImage | BatchChannelImage,
+    *args,
+    combine_channels: bool = False,
+    dim: SpatialDim | None = None,
+    **kwargs,
+    ) -> Box | Point | Pixel | Size | Voxel | List[Box | Point | Pixel | Size | Voxel | None] | None:
+    if data.ndim == 2:    # 2D image.
+        return geometry_fn(data, *args, **kwargs)
+    elif data.ndim == 3:  # 2D batch or 3D image.
+        if dim is None or dim == 3:  # 3D image.
+            if dim is None:
+                logger.warn(f"Geometry function '{geometry_fn.__name__}' received 3D array with no specified 'dim'. Assuming 3D image. If these are batches of 2D images, specify 'dim=2' to compute per image in batch.")
+            return geometry_fn(data, *args, **kwargs)
+        elif dim == 2:    # Batch of 2D images.
+            if combine_channels:
+                return geometry_fn(data, *args, **kwargs)
+            else:
+                return [geometry_fn(d, *args, **kwargs) for d in data]
+    elif data.ndim == 4:  # 2D batch/channel or 3D batch.
+        if dim is None or dim == 3:  # 3D batch.
+            if dim is None:
+                logger.warn(f"Geometry function '{geometry_fn.__name__}' received 4D array with no specified 'dim'. Assuming batch of 3D images. If these are batch/channels of 2D images, specify 'dim=2' to compute per image in batch.")
+            if combine_channels:
+                return geometry_fn(data, *args, **kwargs)
+            else:
+                return [geometry_fn(d, *args, **kwargs) for d in data]
+        elif dim == 2:    # 2D batch/channel.
+            results = []
+            for b in data:
+                if combine_channels:
+                    results.append(geometry_fn(b, *args, **kwargs))
+                else:
+                    results.append([geometry_fn(c, *args, **kwargs) for c in b])
+            return results
+    elif data.ndim == 5:  # 3D batch/channel.
+        results = []
+        for b in data:
+            if combine_channels:
+                results.append(geometry_fn(b, *args, **kwargs))
+                continue
+            results.append([geometry_fn(c, *args, **kwargs) for c in b])
+        return results
+    else:
+        raise ValueError(f"Geometry function '{geometry_fn.__name__}' expects array of spatial dimension 2 or 3, with optional batch dimension. Got array of shape '{data.shape}' with inferred spatial dimension {data.ndim}. Specify 'dim' to override inference.")
+
+def centre_of_mass(
+    data: Image | LabelImage | BatchImage | BatchLabelImage,
+    affine: AffineMatrix | None = None,
+    dim: SpatialDim | None = None,
+    ) -> Point | Pixel | Voxel | List[Point | Pixel | Voxel | None] | None:
+    return compute_channel_or_spatial_geometry(__spatial_centre_of_mass, data, affine=affine, dim=dim)
+
+def change_orientation(
+    affine: AffineMatrix,
+    old_orientation: Orientation,
+    new_orientation: Orientation,
+    ) -> AffineMatrix:
+    dim = affine.shape[0] - 1
+    assert_orientation(old_orientation, dim)
+    assert_orientation(new_orientation, dim)
+    flip_axes = [o.lower() != n.lower() for o, n in zip(old_orientation, new_orientation)]
+    affine = affine.copy()
+    for a, flip in enumerate(flip_axes):
+        if flip:
+            affine[a, :] *= -1
+    return affine
 
 def combine_boxes(
     *boxes: List[Box],
@@ -254,3 +325,5 @@ def to_world_coords(
     else:
         points = (np.array(point) * spacing + origin).astype(np.float32)
     return points
+
+

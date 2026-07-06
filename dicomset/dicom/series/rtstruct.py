@@ -11,8 +11,7 @@ from ...typing import BatchLabelImage3D, FilePath, LandmarkID, Landmarks3D, RegE
 from ...utils.args import alias_kwargs, landmarks_to_list, regions_to_list
 from ...utils.landmarks import landmarks_to_points
 from ...utils.python import ensure_loaded
-from ..utils.dicom import from_rtstruct_dicom, list_rtstruct_landmarks, list_rtstruct_regions
-from ..utils.io import load_dicom
+from ...utils.dicom import from_rtstruct_dicom, list_rtstruct_landmarks, list_rtstruct_regions, load_dicom
 from .series import DicomSeries
 if TYPE_CHECKING:
     from ..dataset import DicomDataset
