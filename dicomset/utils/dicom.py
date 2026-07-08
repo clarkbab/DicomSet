@@ -25,7 +25,7 @@ CONTOUR_METHOD = 'SKIMAGE'
 DEFAULT_LANDMARK_REGEXP = r'^Marker \d+$'
 DICOM_DATE_FORMAT = '%Y%m%d'
 DICOM_TIME_FORMAT = '%H%M%S'
-EQUALITY_TOL_MM = 1e-3      # Equivalent up to 1 micron.
+DEFAULT_TOL_MM = 1e-3      # Equivalent up to 1 micron.
 
 def load_dicom(
     filepath: FilePath,
@@ -157,22 +157,45 @@ def from_ct_dicom(
     check_z_spacing: bool = True,
     progress_callback: Callable[[int, int], None] | None = None,
     return_ct: bool = False,
+    tol: float = DEFAULT_TOL_MM,
     ) -> Image2D | Tuple[Image2D, dcm.dataset.FileDataset] | Tuple[Image3D, AffineMatrix3D] | Tuple[Image3D, AffineMatrix3D, List[dcm.dataset.FileDataset]]:
     # Load from filepath/dirpath if present.
+    cts_tmp = cts   # Keep for raised error.
     if isinstance(cts, str):
         if os.path.isfile(cts):
             # Load single CT slice.
             filepath = resolve_filepath(cts)
-            cts = [load_dicom(filepath, force=False)]
+            cts = [load_dicom(filepath, force=True)]
         else:
             # Load multiple CT slices.
             dirpath = resolve_filepath(cts)
-            files = [f for f in os.listdir(dirpath) if f.endswith('.dcm')]
+            # Checking by filename is brittle.
+            # files = [f for f in os.listdir(dirpath) if f.endswith('.dcm')]
+            candidate_files = [os.path.join(dirpath, f) for f in os.listdir(dirpath)]
+            files = []
+            for f in candidate_files: 
+                try:
+                    dicom = load_dicom(f, force=True, stop_before_pixels=True)
+                except dcm.errors.InvalidDicomError:
+                    continue
+                if dicom.Modality.lower() == 'ct':
+                    files.append(f)
             cts = []
             for i, f in enumerate(files):
-                cts.append(load_dicom(os.path.join(dirpath, f), force=False))
+                cts.append(load_dicom(f, force=True))
                 if progress_callback:
                     progress_callback(i + 1, len(files))
+
+    # Check that CTs were found.
+    if len(cts) == 0:
+        raise ValueError(f"No CTs found for cts={cts_tmp}")
+
+    # Files loaded with 'force=True' may lack file meta information (no 'DICM' preamble),
+    # e.g. reconstructed CBCTs. 'pixel_array' requires 'TransferSyntaxUID' to decode
+    # 'PixelData', so fall back to the DICOM default transfer syntax.
+    for c in cts:
+        if 'TransferSyntaxUID' not in c.file_meta:
+            c.file_meta.TransferSyntaxUID = dcm.uid.ImplicitVRLittleEndian
 
     # Check that standard orientation is used.
     # TODO: Handle non-standard orientation.
@@ -185,15 +208,15 @@ def from_ct_dicom(
     # Make sure x/y positions are the same for all slices.
     if check_xy_positions:
         xy_poses = np.array([c.ImagePositionPatient[:2] for c in cts])
-        xy_poses = round(xy_poses, tol=EQUALITY_TOL_MM)
+        xy_poses = round(xy_poses, tol=DEFAULT_TOL_MM)
         xy_poses = np.unique(xy_poses, axis=0)
         if xy_poses.shape[0] > 1:
             raise ValueError(f"CT slices have inconsistent 'ImagePositionPatient' x/y values: {xy_poses}.")
 
     # Get z spacings.
     z_pos = list(sorted([c.ImagePositionPatient[2] for c in cts]))
-    z_pos = round(z_pos, tol=EQUALITY_TOL_MM)
     z_diffs = np.diff(z_pos)
+    z_diffs = round(z_diffs, tol=DEFAULT_TOL_MM)
     z_freqs = Counter(z_diffs)
     if check_z_spacing and len(z_freqs.keys()) > 1:
         raise ValueError(f"CT slices have inconsistent 'ImagePositionPatient' z spacing frequencies: {z_freqs}.")
@@ -252,7 +275,7 @@ def from_rtdose_dicom(
     # Create affine.
     spacing_xy = rtdose.PixelSpacing 
     z_diffs = np.diff(rtdose.GridFrameOffsetVector)
-    z_diffs = round(z_diffs, tol=EQUALITY_TOL_MM)
+    z_diffs = round(z_diffs, tol=DEFAULT_TOL_MM)
     z_diffs = np.unique(z_diffs)
     if len(z_diffs) != 1:
         raise ValueError(f"Slice z spacings for RtDoseDicom not equal: {z_diffs}.")
