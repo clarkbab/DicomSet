@@ -994,7 +994,6 @@ def plot_hist(
 def plot_slice(
     data: Image2D | None,
     affine: AffineMatrix2D | None = None,
-    alpha: Number = 0.3,
     aspect: Number | None = None,
     ax: mpl.axes.Axes | None = None,
     box: Box2D | BatchBox2D | RegionID | List[RegionID] | None = None,
@@ -1004,10 +1003,14 @@ def plot_slice(
     figsize: Tuple[Number, Number] = (8, 8),
     hist_eq: bool = False,
     labels: LabelImage2D | BatchLabelImage2D | None = None,
+    labels_alpha: Number = 0.3,
     label_names: RegionID | List[RegionID] | None = None,
     orientation: Orientation2D | None = None,
     points: Point2D | Points2D | BatchPoints2D | List[Points2D] | Landmark2D | Landmarks2D | None = None,
+    points_alpha: Number = 0.3,
     points_colour: str = 'yellow',
+    points_marker: str = 'o',
+    points_size: Number = 20,
     point_names: LandmarkID | List[LandmarkID] | None = None,
     return_axis: bool = False,
     show_labels: bool = True,
@@ -1076,7 +1079,7 @@ def plot_slice(
                 l = l[crop_box[0, 0]:crop_box[1, 0] + 1, crop_box[0, 1]:crop_box[1, 1] + 1]
             l_bin = (l > 0).astype(float)
             cmap_label = mpl.colors.ListedColormap(((1, 1, 1, 0), label_palette[i]))
-            ax.imshow(l_bin.T, alpha=alpha, cmap=cmap_label, origin=origin_y)
+            ax.imshow(l_bin.T, alpha=labels_alpha, cmap=cmap_label, origin=origin_y)
             ax.contour(l_bin.T, colors=[label_palette[i]], levels=[0.5], linestyles='solid')
 
     # Plot points.
@@ -1097,7 +1100,7 @@ def plot_slice(
             for pi, p in enumerate(batch):
                 if crop_box is not None:
                     p = p - crop_box[0]
-                ax.scatter(p[0], p[1], c=[p_colours[pi]], marker='o', s=20, zorder=5)
+                ax.scatter(p[0], p[1], alpha=points_alpha, c=[p_colours[pi]], marker=points_marker, s=points_size, zorder=5)
                 if show_point_names and batch_names is not None:
                     ax.annotate(batch_names[pi], (p[0], p[1]),
                         color=p_colours[pi], fontsize=8,
@@ -1195,9 +1198,12 @@ def plot_volume(
     label_names: RegionID | List[RegionID] | None = None,
     centre_method: Literal['com', 'fov'] = 'com',
     orientation: Orientation3D | None = None,
-    label_alpha: Number = 0.3,
+    labels_alpha: Number = 0.3,
     points: Point3D | Points3D | BatchPoints3D | List[Points3D] | Landmark3D | Landmarks3D | None = None,
+    points_alpha: Number = 0.3,
     points_colour: str = 'yellow',
+    points_marker: str = 'o',
+    points_size: Number = 20,
     point_names: LandmarkID | List[LandmarkID] | None = None,
     crosshairs: Point3D | str | None = None,
     crosshairs_colour: str = 'yellow',
@@ -1339,7 +1345,7 @@ def plot_volume(
                     label_slice = label_slice[view_crop_box[0, 0]:view_crop_box[1, 0] + 1, view_crop_box[0, 1]:view_crop_box[1, 1] + 1]
                 label_bin = (label_slice > 0).astype(float)
                 cmap_label = mpl.colors.ListedColormap(((1, 1, 1, 0), label_palette[j]))
-                col_ax.imshow(label_bin.T, alpha=label_alpha, aspect=aspect, cmap=cmap_label, origin=origin_y)
+                col_ax.imshow(label_bin.T, alpha=labels_alpha, aspect=aspect, cmap=cmap_label, origin=origin_y)
                 col_ax.contour(label_bin.T, colors=[label_palette[j]], levels=[0.5], linestyles='solid')
 
             # Add legend on first view only.
@@ -1367,7 +1373,7 @@ def plot_volume(
                     if view_crop_box is not None:
                         p_x -= view_crop_box[0, 0]
                         p_y -= view_crop_box[0, 1]
-                    col_ax.scatter(p_x, p_y, c=[p_colours[pi]], marker='o', s=20, zorder=5)
+                    col_ax.scatter(p_x, p_y, alpha=points_alpha, c=[p_colours[pi]], marker=points_marker, s=points_size, zorder=5)
                     if show_point_names and batch_names is not None:
                         col_ax.annotate(batch_names[pi], (p_x, p_y),
                             color=p_colours[pi], fontsize=8,
