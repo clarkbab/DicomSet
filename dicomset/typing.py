@@ -72,6 +72,7 @@ Pixels = Int[np.ndarray, "N 2"]
 RegExp = str
 RegionID = str
 RegionList = str
+RtImageDicom = dcm.dataset.FileDataset
 RtStructDicom = dcm.dataset.FileDataset
 SampleID = int
 SeriesID = str

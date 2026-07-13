@@ -9,7 +9,7 @@ LAZY_IMPORTS = {
     'conversion': ['to_list', 'to_numpy', 'to_tensor', 'to_tuple'],
     'debug': ['from_desc'],
     'dicom': [
-        'from_ct_dicom', 'from_rtdose_dicom', 'from_rtplan_dicom', 'from_rtstruct_dicom',
+        'from_ct_dicom', 'from_rtdose_dicom', 'from_rtimage_dicom', 'from_rtplan_dicom', 'from_rtstruct_dicom',
         'list_rtstruct_landmarks', 'list_rtstruct_regions', 'load_dicom', 'save_dicom',
         'to_ct_dicom', 'to_rtdose_dicom', 'to_rtstruct_dicom',
     ],

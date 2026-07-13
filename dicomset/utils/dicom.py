@@ -11,7 +11,7 @@ import seaborn as sns
 import skimage as ski
 from typing import Any, Callable, Dict, List, Literal, Tuple
 
-from ..typing import AffineMatrix3D, BatchLabelImage3D, DirPath, DiskLandmarkID, DiskRegionID, FilePath, Image2D, Image3D, LabelImage3D, LandmarkID, Landmarks, PatientID, Point2D, Point3D, Points2D, RegExp, RegionID, RtStructDicom, Size2D, Size3D, Spacing2D, StudyID
+from ..typing import AffineMatrix2D, AffineMatrix3D, BatchLabelImage3D, DirPath, DiskLandmarkID, DiskRegionID, FilePath, Image2D, Image3D, LabelImage3D, LandmarkID, Landmarks, PatientID, Point2D, Point3D, Points2D, RegExp, RegionID, RtImageDicom, RtStructDicom, Size2D, Size3D, Spacing2D, StudyID
 from .args import alias_kwargs, arg_to_list, resolve_filepath
 from .geometry import affine_origin, affine_spacing, create_affine, to_image_coords
 from .io import is_dir, is_file
@@ -283,6 +283,34 @@ def from_rtdose_dicom(
     spacing = tuple((float(s) for s in np.append(spacing_xy, spacing_z)))
     origin = tuple(float(o) for o in rtdose.ImagePositionPatient)
     affine = create_affine(spacing, origin)
+
+    return data, affine
+
+def from_rtimage_dicom(
+    rtimage: FilePath | RtImageDicom,
+    invert_intensity: bool = True,
+    ) -> Tuple[Image2D, AffineMatrix2D]:
+    # Load pixel data.
+    if isinstance(rtimage, str):
+        filepath = resolve_filepath(rtimage)
+        rtimage = load_dicom(filepath)
+    assert rtimage.Modality == 'RTIMAGE', f"Expected 'RTIMAGE' modality, got '{rtimage.Modality}'."
+    data = np.transpose(rtimage.pixel_array)    # 'pixel_array' contains row-first image data.
+    data = data.astype(np.float64)
+
+    # Rescale the pixel data.
+    slope = float(getattr(rtimage, 'RescaleSlope', 1))
+    intercept = float(getattr(rtimage, 'RescaleIntercept', 0))
+    data = slope * data + intercept
+
+    # Create affine.
+    spacing = tuple(float(s) for s in rtimage.ImagePlanePixelSpacing)
+    origin = tuple(float(o) for o in getattr(rtimage, 'RTImagePosition', (0, 0)))
+    affine = create_affine(spacing, origin)
+
+    if invert_intensity:
+        data = np.max(data) - data
+    data = np.flip(data, axis=1)
 
     return data, affine
 
