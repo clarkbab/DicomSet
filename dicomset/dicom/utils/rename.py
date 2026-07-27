@@ -6,9 +6,9 @@ from tqdm import tqdm
 from typing import Callable, Dict, Optional, Union
 
 from ...typing import DatasetID, FilePath, PatientID
+from ...utils.dicom import load_dicom
 from ...utils.io import assert_writeable, load_csv, save_csv
 from ..dataset import DicomDataset
-from ...utils.dicom import load_dicom
 
 def get_new_pat_id(
     old_patient_id: PatientID,

@@ -8,7 +8,7 @@ from typing import Callable, List, Literal, Tuple, TYPE_CHECKING
 if TYPE_CHECKING:
     import SimpleITK as sitk
 
-from ..typing import AffineMatrix, BatchChannelImage, BatchImage, Box, ChannelImage, Image, Landmark, Landmarks, Number, Point, Points, Size, Spacing, SpatialDim
+from ..typing import AffineMatrix, BatchChannelImage, BatchChannelLabelImage, BatchImage, BatchLabelMap, Box, ChannelImage, Image, LabelMap, Landmark, Landmarks, Number, Point, Points, Size, Spacing, SpatialDim
 from .args import bubble_args
 from .conversion import to_numpy, to_tensor
 from .geometry import affine_origin, affine_spacing, assert_box_width, create_affine, fov, to_image_coords
@@ -17,6 +17,51 @@ from .logging import logger
 if TYPE_CHECKING:
     from ..dicom import DicomSeries
     from ..nifti import NiftiImageSeries
+
+def __spatial_centre_crop(
+    data: Image,
+    size: Size,
+    affine: AffineMatrix | None = None,
+    ) -> Image:
+    # Convert size from world coords (mm) to voxels if affine is provided.
+    if affine is not None:
+        spacing = affine_spacing(affine)
+        size_vox = np.round(np.array(size) / spacing).astype(int)
+    else:
+        size_vox = np.array(size)
+
+    # Calculate the crop box.
+    to_crop = np.array(data.shape) - size_vox
+    crop_start = np.sign(to_crop) * np.ceil(np.abs(to_crop / 2)).astype(int)
+    crop_end = crop_start + size_vox
+    crop_box = np.stack([crop_start, crop_end])
+
+    return __spatial_crop(data, crop_box)
+
+# Can be applied to spatial or channel image.
+def __spatial_crop(
+    data: Image,
+    crop_box: Box,
+    affine: AffineMatrix | None = None,
+    ) -> Image:
+    data, return_type = to_tensor(data, return_type=True)
+    crop_box = __resolve_box(crop_box, data.shape, affine=affine)
+    assert_box_width(crop_box)
+
+    # Convert box to voxel coordinates.
+    if affine is not None:
+        crop_box = to_image_coords(crop_box, affine=affine)
+
+    # Perform cropping.
+    size = np.array(data.shape)
+    crop_min = np.array(crop_box[0]).clip(0)
+    crop_max = (size - np.array(crop_box[1])).clip(0)
+    slices = tuple(slice(int(mn), int(s - mx)) for mn, mx, s in zip(crop_min, crop_max, size))
+    data = data[slices]
+
+    if return_type is np.ndarray:
+        data = to_numpy(data)
+    return data
 
 def __spatial_minmax(
     data: Image,
@@ -46,31 +91,24 @@ def __spatial_minmax(
         data = to_numpy(data)
     return data
 
-# Can be applied to spatial or channel image.
-def __spatial_crop(
-    data: Image,
-    crop_box: Box,
-    affine: AffineMatrix | None = None,
-    ) -> Image:
-    data, return_type = to_tensor(data, return_type=True)
-    crop_box = __resolve_box(crop_box, data.shape, affine=affine)
-    assert_box_width(crop_box)
-
-    # Convert box to voxel coordinates.
-    if affine is not None:
-        crop_box = to_image_coords(crop_box, affine=affine)
-
-    # Perform cropping.
-    size = np.array(data.shape)
-    crop_min = np.array(crop_box[0]).clip(0)
-    crop_max = (size - np.array(crop_box[1])).clip(0)
-    slices = tuple(slice(int(mn), int(s - mx)) for mn, mx, s in zip(crop_min, crop_max, size))
-    data = data[slices]
-
+def __spatial_one_hot_encode(
+    image: LabelMap,
+    background: bool = False,
+    n_classes: int | None = None,
+    ) -> ChannelLabelImage:
+    image, return_type = to_tensor(image, dtype=torch.long, return_type=True)
+    if n_classes is None:
+        n_classes = int(image.max()) + 1
+    label = torch.zeros((n_classes, *image.shape), dtype=torch.bool)
+    label.scatter_(0, image.unsqueeze(0), True)
+    if not background:
+        label = label[1:]
     if return_type is np.ndarray:
-        data = to_numpy(data)
-    return data
+        label = to_numpy(label)
+    return label
 
+# Pulls image data/affine from "data/affine" or "image" series.
+# Output size/affine is pulled from "output_size/affine" or "output_image" series. 
 def __spatial_pad(
     image: Image,
     box: Box,
@@ -105,8 +143,6 @@ def __spatial_pad(
         image = to_numpy(image)
     return image
 
-# Pulls image data/affine from "data/affine" or "image" series.
-# Output size/affine is pulled from "output_size/affine" or "output_image" series. 
 def __spatial_resample(
     data: Image | None = None,
     affine: AffineMatrix | None = None,
@@ -201,6 +237,11 @@ def __spatial_resample(
     else:
         return image
 
+# What does this do?
+# Applies 'transform_fn' to each image in a batch, or to each
+# channel in a channel image. If 'combine_channels' is True, then
+# all channels are passed to the 'transform_fn' - this is useful
+# when normalising across channels for example.
 def __spatial_sample(
     data: Image,
     points: Point | Points | Landmark | Landmarks,
@@ -276,11 +317,36 @@ def __spatial_sample(
 
     return result
 
-# What does this do?
-# Applies 'transform_fn' to each image in a batch, or to each
-# channel in a channel image. If 'combine_channels' is True, then
-# all channels are passed to the 'transform_fn' - this is useful
-# when normalising across channels for example.
+def __standardise(
+    data: Image,
+    # Takes the data mean/std and puts them at these values.
+    mean: Number = 0.0,
+    std: Number = 1.0,
+    ) -> Image:
+    data, return_type = to_tensor(data, return_type=True)
+    if mean == 'mean':
+        mean = float(data.mean())
+    if std == 'std':
+        std = float(data.std())
+    if std == 0:
+        if return_type is np.ndarray:
+            return to_numpy(data)
+        return data
+    # Standardise to mean 0 and std 1.
+    data = (data - mean) / std
+    if return_type is np.ndarray:
+        data = to_numpy(data)
+    return data
+
+# Transposes spatial coordinates, whilst maintaining initial batch/channel dimensions.
+@bubble_args(__spatial_centre_crop)
+def centre_crop(
+    data: BatchImage | Image,
+    *args,
+    **kwargs,
+    ) -> BatchImage | Image:
+    return compute_channel_or_spatial_transforms(__spatial_centre_crop, data, *args, **kwargs)
+
 def compute_channel_or_spatial_transforms(
     transform_fn: Callable,
     data: Image | BatchImage | BatchChannelImage,
@@ -346,7 +412,6 @@ def compute_channel_or_spatial_transforms(
     else:
         raise ValueError(f"Transform function '{transform_fn.__name__}' expects array of spatial dimension 2 or 3, with optional batch dimension. Got array of shape '{data.shape}' with inferred spatial dimension {data.ndim}. Specify 'dim' to override inference.")        
 
-# Transposes spatial coordinates, whilst maintaining initial batch/channel dimensions.
 @bubble_args(__spatial_crop)
 def crop(
     data: BatchImage | Image,
@@ -355,6 +420,7 @@ def crop(
     ) -> BatchImage | Image:
     return compute_channel_or_spatial_transforms(__spatial_crop, data, *args, **kwargs)
 
+# To/from sitk image need to be here for circular import reasons (spatial transpose).
 def crop_affine(
     affine: AffineMatrix,
     crop_box: Box,
@@ -364,9 +430,16 @@ def crop_affine(
     affine = create_affine(spacing, crop_box[0])
     return affine
 
+# You might expect this to change point values so that they remain in the same
+# position on an image after cropping.
+# This is not the case if an affine is passed, as point locations won't change 
+# in world coordinates and plotting code should just accept the new affine after
+# cropping to correctly place points.
+# With no affine, point values should change to reflect the new image coordinates.
 def crop_points(
     points: Point | Points | Landmark | Landmarks,
     crop: Box,
+    affine: AffineMatrix | None = None,
     ) -> Points | Landmarks:
     was_landmarks = False
     if isinstance(points, (pd.DataFrame, pd.Series)):
@@ -376,20 +449,50 @@ def crop_points(
     if points.ndim == 1:
         points = points[None, :]
 
-    # Get decision variables.
-    to_keep = np.stack((points >= crop[0], points < crop[1]), axis=1)
-    to_keep = np.all(to_keep, axis=(1, 2))
+    # Determine which points fall within the crop FOV.
+    if affine is not None:
+        # Points are in world coords; convert voxel crop box to world coords for comparison.
+        spacing = affine_spacing(affine)
+        origin = affine_origin(affine)
+        crop_world = np.array(crop) * spacing + origin
+        to_keep = np.all((points >= crop_world[0]) & (points < crop_world[1]), axis=1)
+    else:
+        to_keep = np.all((points >= crop[0]) & (points < crop[1]), axis=1)
+
+    # Shift points to new image coordinates if no affine (world coords are unchanged by cropping).
+    if affine is None:
+        points = points - crop[0]
 
     # Convert back to landmarks if necessary.
     if was_landmarks:
         points = replace_points(landmarks_tmp, points)
 
-    # Remove points.
+    # Remove points outside the crop.
     points = points[to_keep]
 
     return points
 
-# To/from sitk image need to be here for circular import reasons (spatial transpose).
+def centre_crop_points(
+    points: Point | Points | Landmark | Landmarks,
+    size: Size,
+    image_size: Size,
+    affine: AffineMatrix | None = None,
+    ) -> Points | Landmarks:
+    # Convert size from world coords (mm) to voxels if affine is provided.
+    if affine is not None:
+        spacing = affine_spacing(affine)
+        size_vox = np.round(np.array(size) / spacing).astype(int)
+    else:
+        size_vox = np.array(size)
+
+    # Compute crop box in voxels (same logic as __spatial_centre_crop).
+    to_crop = np.array(image_size) - size_vox
+    crop_start = np.sign(to_crop) * np.ceil(np.abs(to_crop / 2)).astype(int)
+    crop_end = crop_start + size_vox
+    crop_box = np.stack([crop_start, crop_end])
+
+    return crop_points(points, crop_box, affine=affine)
+
 def from_sitk_image(
     img: sitk.Image,
     ) -> Tuple[Image, AffineMatrix]:
@@ -404,6 +507,7 @@ def from_sitk_image(
     affine = create_affine(spacing, origin)
     return data, affine
 
+# Handle 'np.nan' values in box.
 def hist_eq(
     data: Image,
     ) -> Image:
@@ -413,6 +517,11 @@ def hist_eq(
         data = to_tensor(data)
     return data
 
+# What if we want to pass image series? This is probably bad
+# design as we're then loading data and cropping in the same function.
+# Better to keep loading and processing separate.
+# We do this for spatial_resample though and it is convenient there due
+# to all the input/output params...
 @bubble_args(__spatial_minmax)
 def minmax(
     data: Image | BatchImage,
@@ -420,7 +529,13 @@ def minmax(
     ) -> Image | BatchImage:
     return compute_channel_or_spatial_transforms(__spatial_minmax, data, **kwargs)
 
-# Handle 'np.nan' values in box.
+@bubble_args(__spatial_one_hot_encode)
+def one_hot_encode(
+    image: LabelMap | BatchLabelMap,
+    **kwargs,
+    ) -> ChannelLabelImage | BatchChannelLabelImage:
+    return compute_channel_or_spatial_transforms(__spatial_one_hot_encode, image, **kwargs)
+
 @bubble_args(__spatial_pad)
 def pad(
     image: Image,
@@ -429,11 +544,6 @@ def pad(
     ) -> Image:
     return compute_channel_or_spatial_transforms(__spatial_pad, image, *args, **kwargs)
 
-# What if we want to pass image series? This is probably bad
-# design as we're then loading data and cropping in the same function.
-# Better to keep loading and processing separate.
-# We do this for spatial_resample though and it is convenient there due
-# to all the input/output params...
 @bubble_args(__spatial_resample)
 def resample(
     data: BatchImage | Image | None = None, 
@@ -467,13 +577,6 @@ def __spatial_transpose(
         data = to_numpy(data)
     return data
 
-def transpose(
-    data: BatchChannelImage | BatchImage | Image,
-    *args,
-    **kwargs,
-    ) -> BatchChannelImage | BatchImage | Image:
-    return compute_channel_or_spatial_transforms(__spatial_transpose, data, *args, **kwargs)
-
 def stack(
     results: List[np.ndarray, torch.Tensor],
     ) -> np.ndarray | torch.Tensor:
@@ -481,27 +584,9 @@ def stack(
         return torch.stack(results, dim=0)
     return np.stack(results, axis=0)
 
-def __standardise(
-    data: Image,
-    # Takes the data mean/std and puts them at these values.
-    mean: Number = 0.0,
-    std: Number = 1.0,
-    ) -> Image:
-    data, return_type = to_tensor(data, return_type=True)
-    if mean == 'mean':
-        mean = float(data.mean())
-    if std == 'std':
-        std = float(data.std())
-    if std == 0:
-        if return_type is np.ndarray:
-            return to_numpy(data)
-        return data
-    # Standardise to mean 0 and std 1.
-    data = (data - mean) / std
-    if return_type is np.ndarray:
-        data = to_numpy(data)
-    return data
-
+# Handles 2/3D batch/channel/spatial images and passes them to the
+# spatial or channel transform. Channel is needed because some transforms
+# merge data across channels - e.g. minmax normalisation.
 @bubble_args(__standardise)
 def standardise(
     data: Image | BatchImage,
@@ -509,9 +594,6 @@ def standardise(
     ) -> Image | BatchImage:
     return compute_channel_or_spatial_transforms(__standardise, data, **kwargs)
 
-# Handles 2/3D batch/channel/spatial images and passes them to the
-# spatial or channel transform. Channel is needed because some transforms
-# merge data across channels - e.g. minmax normalisation.
 def to_sitk_image(
     data: ChannelImage | Image,
     affine: AffineMatrix | None = None,
@@ -548,25 +630,9 @@ def to_sitk_image(
 
     return img
 
-def __spatial_one_hot_encode(
-    image: LabelMap,
-    background: bool = False,
-    n_classes: int | None = None,
-    ) -> ChannelLabelImage:
-    image, return_type = to_tensor(image, dtype=torch.long, return_type=True)
-    if n_classes is None:
-        n_classes = int(image.max()) + 1
-    label = torch.zeros((n_classes, *image.shape), dtype=torch.bool)
-    label.scatter_(0, image.unsqueeze(0), True)
-    if not background:
-        label = label[1:]
-    if return_type is np.ndarray:
-        label = to_numpy(label)
-    return label
-
-@bubble_args(__spatial_one_hot_encode)
-def one_hot_encode(
-    image: LabelMap | BatchLabelMap,
+def transpose(
+    data: BatchChannelImage | BatchImage | Image,
+    *args,
     **kwargs,
-    ) -> ChannelLabelImage | BatchChannelLabelImage:
-    return compute_channel_or_spatial_transforms(__spatial_one_hot_encode, image, **kwargs)
+    ) -> BatchChannelImage | BatchImage | Image:
+    return compute_channel_or_spatial_transforms(__spatial_transpose, data, *args, **kwargs)

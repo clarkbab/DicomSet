@@ -1,10 +1,12 @@
+from ast import Tuple
+
 import numpy as np
 import pandas as pd
 import scipy
 import torch
 from typing import Callable, List
 
-from ..typing import AffineMatrix, BatchChannelImage, BatchImage, BatchLabelImage, Box, Image, LabelImage, Landmarks, Orientation, Pixel, Point, Points, Size, Spacing, SpatialDim, Voxel
+from ..typing import AffineMatrix, AffineMatrix3D, AffineMatrix2D, BatchChannelImage, BatchImage, BatchLabelImage, Box, Image, LabelImage, Landmarks, Orientation, Pixel, Point, Points, Size, Spacing, SpatialDim, Voxel
 from .assertions import assert_orientation
 from .conversion import to_numpy, to_tensor, to_tuple
 from .landmarks import landmarks_to_points, points_to_landmarks
@@ -53,19 +55,34 @@ def assert_box_width(
         if width <= 0:
             raise ValueError(f"Box width must be positive, got '{box}'.")
 
-def __spatial_centre_of_mass(
-    data: Image | LabelImage,
+def centre_of_mass(
+    data: Image | LabelImage | BatchImage | BatchLabelImage,
     affine: AffineMatrix | None = None,
-    ) -> Point | Pixel | Voxel | None:
-    if data.sum() == 0:
-        return None
+    dim: SpatialDim | None = None,
+    ) -> Point | Pixel | Voxel | List[Point | Pixel | Voxel | None] | None:
+    return compute_channel_or_spatial_geometry(__spatial_centre_of_mass, data, affine=affine, dim=dim)
 
-    # Compute the centre of mass.
-    com = to_tuple(scipy.ndimage.center_of_mass(data))
-    if affine is not None:
-        com = to_world_coords(com, affine)
+def change_orientation(
+    affine: AffineMatrix,
+    old_orientation: Orientation,
+    new_orientation: Orientation,
+    ) -> AffineMatrix:
+    dim = affine.shape[0] - 1
+    assert_orientation(old_orientation, dim)
+    assert_orientation(new_orientation, dim)
+    flip_axes = [o.lower() != n.lower() for o, n in zip(old_orientation, new_orientation)]
+    affine = affine.copy()
+    for a, flip in enumerate(flip_axes):
+        if flip:
+            affine[a, :] *= -1
+    return affine
 
-    return com
+def combine_boxes(
+    *boxes: List[Box],
+    ) -> Box:
+    min = np.stack([box[0] for box in boxes]).min(axis=0)
+    max = np.stack([box[1] for box in boxes]).max(axis=0)
+    return np.stack([min, max])
 
 def compute_channel_or_spatial_geometry(
     geometry_fn: Callable,
@@ -114,35 +131,6 @@ def compute_channel_or_spatial_geometry(
     else:
         raise ValueError(f"Geometry function '{geometry_fn.__name__}' expects array of spatial dimension 2 or 3, with optional batch dimension. Got array of shape '{data.shape}' with inferred spatial dimension {data.ndim}. Specify 'dim' to override inference.")
 
-def centre_of_mass(
-    data: Image | LabelImage | BatchImage | BatchLabelImage,
-    affine: AffineMatrix | None = None,
-    dim: SpatialDim | None = None,
-    ) -> Point | Pixel | Voxel | List[Point | Pixel | Voxel | None] | None:
-    return compute_channel_or_spatial_geometry(__spatial_centre_of_mass, data, affine=affine, dim=dim)
-
-def change_orientation(
-    affine: AffineMatrix,
-    old_orientation: Orientation,
-    new_orientation: Orientation,
-    ) -> AffineMatrix:
-    dim = affine.shape[0] - 1
-    assert_orientation(old_orientation, dim)
-    assert_orientation(new_orientation, dim)
-    flip_axes = [o.lower() != n.lower() for o, n in zip(old_orientation, new_orientation)]
-    affine = affine.copy()
-    for a, flip in enumerate(flip_axes):
-        if flip:
-            affine[a, :] *= -1
-    return affine
-
-def combine_boxes(
-    *boxes: List[Box],
-    ) -> Box:
-    min = np.stack([box[0] for box in boxes]).min(axis=0)
-    max = np.stack([box[1] for box in boxes]).max(axis=0)
-    return np.stack([min, max])
-
 def create_affine(
     spacing: Spacing | None = None,
     origin: Point | None = None,
@@ -173,6 +161,15 @@ def create_affine(
         affine[0, 3] = origin[0]
         affine[1, 3] = origin[1]
         affine[2, 3] = origin[2]
+    return affine
+
+def affine_2d(
+    affine: AffineMatrix3D,
+    dim: SpatialDim,  # The dim to remove.
+    ) -> AffineMatrix2D:
+    affine = affine.copy()
+    affine = np.delete(affine, 1, axis=0)
+    affine = np.delete(affine, 1, axis=1)
     return affine
 
 def foreground_fov(
@@ -295,6 +292,20 @@ def fov_width(
     fov_w = max - min
 
     return fov_w
+
+def __spatial_centre_of_mass(
+    data: Image | LabelImage,
+    affine: AffineMatrix | None = None,
+    ) -> Point | Pixel | Voxel | None:
+    if data.sum() == 0:
+        return None
+
+    # Compute the centre of mass.
+    com = to_tuple(scipy.ndimage.center_of_mass(data))
+    if affine is not None:
+        com = to_world_coords(com, affine)
+
+    return com
 
 def to_image_coords(
     point: Point | Points | Landmarks,

@@ -9,9 +9,9 @@ from ... import config as conf
 from ...struct_map import StructMap
 from ...typing import BatchLabelImage3D, FilePath, LandmarkID, Landmarks3D, RegExp, RegionID, RegionList, RtStructDicom, SeriesID
 from ...utils.args import alias_kwargs, landmarks_to_list, regions_to_list
+from ...utils.dicom import from_rtstruct_dicom, list_rtstruct_landmarks, list_rtstruct_regions, load_dicom
 from ...utils.landmarks import landmarks_to_points
 from ...utils.python import ensure_loaded
-from ...utils.dicom import from_rtstruct_dicom, list_rtstruct_landmarks, list_rtstruct_regions, load_dicom
 from .series import DicomSeries
 if TYPE_CHECKING:
     from ..dataset import DicomDataset

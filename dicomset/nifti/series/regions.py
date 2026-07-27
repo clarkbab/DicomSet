@@ -46,6 +46,8 @@ class NiftiRegionsSeries(NiftiImageSeries):
         self,
         region_ids: RegionID | List[RegionID] | Literal['all'] = 'all',
         return_regions: bool = True,
+        # Should probably not exist. Just sort if 'region_ids' is 'all',
+        # otherwise, use the passed order of 'region_ids'.
         sort_regions: bool = True,
         use_mapping: bool = True,
         ) -> Tuple[List[RegionID], BatchLabelImage3D]:

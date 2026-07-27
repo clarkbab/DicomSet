@@ -11,7 +11,6 @@ from ... import config
 from ...typing import AffineMatrix3D, BatchLabelImage3D, DatasetID, Image3D, LabelImage3D, Landmarks3D, ModelID, NiftiModality, PatientID, RegionID, SeriesID, StudyID
 from ...utils.args import arg_to_list
 from ...utils.io import save_csv, save_nifti, save_transform
-from ...utils.python import with_makeitso
 from ..dataset import NiftiDataset
 
 def create_ct(
@@ -53,11 +52,10 @@ def create_region(
     region_id: RegionID,
     data: LabelImage3D,
     affine: AffineMatrix3D,
-    makeitso: bool = False,
     ) -> None:
     set = NiftiDataset(dataset)
     filepath = os.path.join(set.path, 'data', 'patients', patient_id, study_id, 'regions', series_id, f'{region_id}.nii.gz')
-    with_makeitso(makeitso, lambda: save_nifti(data, affine, filepath), f"Creating region '{region_id}' for patient '{patient_id}', study '{study_id}', series '{series_id}' in dataset '{dataset}' at {filepath}.")
+    save_nifti(data, affine, filepath)
 
 def create_registered_image(
     dataset: DatasetID,

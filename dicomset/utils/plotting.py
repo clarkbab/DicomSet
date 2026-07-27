@@ -945,8 +945,7 @@ def plot_hist(
     ax: mpl.axes.Axes | None = None,
     bins: int = 50,
     log_scale: bool = False,
-    min: Number | None = None,
-    max: Number | None = None,
+    range: Tuple[float | None, float | None] | None = None,
     return_axis: bool = False,
     title: str | None = None,
     x_label: str | None = None,
@@ -957,10 +956,12 @@ def plot_hist(
         show = True
     else:
         show = False
-    okwargs = {}
-    if min is not None and max is not None:
-        okwargs['range'] = (min, max)
-    ax.hist(data.flatten(), bins=bins, color='gray', **okwargs)
+    flat = data.flatten()
+    if range is not None:
+        range_min = range[0] if range[0] is not None else flat.min()
+        range_max = range[1] if range[1] is not None else flat.max()
+        flat = flat[(flat >= range_min) & (flat <= range_max)]
+    ax.hist(flat, bins=bins, color='gray')
     if log_scale:
         ax.set_yscale('log')
 

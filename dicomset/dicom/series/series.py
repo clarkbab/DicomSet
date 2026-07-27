@@ -3,8 +3,8 @@ from datetime import datetime as dt
 from ...mixins import IndexMixin
 from ...series import Series
 from ...typing import DicomModality
-from ...utils.python import get_private_attr, set_private_attr
 from ...utils.dicom import DICOM_DATE_FORMAT, DICOM_TIME_FORMAT
+from ...utils.python import get_private_attr, set_private_attr
 
 # Abstract class.
 class DicomSeries(IndexMixin, Series):

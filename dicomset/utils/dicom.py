@@ -27,41 +27,6 @@ DICOM_DATE_FORMAT = '%Y%m%d'
 DICOM_TIME_FORMAT = '%H%M%S'
 DEFAULT_TOL_MM = 1e-3      # Equivalent up to 1 micron.
 
-def load_dicom(
-    filepath: FilePath,
-    **kwargs,
-    ) -> dcm.dataset.FileDataset:
-    filepath = resolve_filepath(filepath)
-    return dcm.dcmread(filepath, **kwargs)
-
-def save_dicom(
-    dicom: dcm.dataset.FileDataset | List[dcm.dataset.FileDataset],
-    path: DirPath | FilePath | List[FilePath],
-    overwrite: bool = True,
-    ) -> None:
-    # Save single dicom.
-    if isinstance(dicom, dcm.dataset.FileDataset):
-        assert is_file(path), f"Expected filepath for single DICOM, got directory path '{path}'."
-        filepath = resolve_filepath(path)
-        if os.path.exists(filepath) and not overwrite:
-            raise ValueError(f"File '{filepath}' already exists, use overwrite=True.")
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        dcm.dcmwrite(filepath, dicom)
-        return
-
-    # Save multiple dicoms.
-    else:
-        assert isinstance(path, list) or is_dir(path), f"Expected directory path or list of filepaths for multiple DICOMs, got '{path}'."
-        if is_dir(path):
-            path = resolve_filepath(path)
-            filepaths = [os.path.join(path, f'{i:03}.dcm') for i in range(len(dicom))]
-        else:
-            filepaths = [resolve_filepath(p) for p in path]
-        if len(filepaths) != len(dicom):
-            raise ValueError(f"Number of DICOMs ({len(dicom)}) does not match number of filepaths ({len(filepaths)}).")
-        for d, f in zip(dicom, filepaths):
-            save_dicom(d, f, overwrite=overwrite)
-
 def __add_slice_contours(
     roi_contour: dcm.dataset.Dataset,
     data: Image2D,
@@ -165,7 +130,7 @@ def from_ct_dicom(
         if os.path.isfile(cts):
             # Load single CT slice.
             filepath = resolve_filepath(cts)
-            cts = [load_dicom(filepath, force=True)]
+            cts = [load_dicom(filepath, force=False)]
         else:
             # Load multiple CT slices.
             dirpath = resolve_filepath(cts)
@@ -175,14 +140,14 @@ def from_ct_dicom(
             files = []
             for f in candidate_files: 
                 try:
-                    dicom = load_dicom(f, force=True, stop_before_pixels=True)
+                    dicom = load_dicom(f, force=False, stop_before_pixels=True)
                 except dcm.errors.InvalidDicomError:
                     continue
                 if dicom.Modality.lower() == 'ct':
                     files.append(f)
             cts = []
             for i, f in enumerate(files):
-                cts.append(load_dicom(f, force=True))
+                cts.append(load_dicom(f))
                 if progress_callback:
                     progress_callback(i + 1, len(files))
 
@@ -201,7 +166,7 @@ def from_ct_dicom(
     # TODO: Handle non-standard orientation.
     if check_orientation:
         for c in cts:
-            assert c.PatientPosition == 'HFS', f"CT slice has non-standard 'PatientPosition' value: {c.PatientPosition}. Only 'HFS' is supported."
+            # assert c.PatientPosition == 'HFS', f"CT slice has non-standard 'PatientPosition' value: {c.PatientPosition}. Only 'HFS' is supported."
             if c.ImageOrientationPatient != [1, 0, 0, 0, 1, 0]:
                 raise ValueError(f"CT slice has non-standard 'ImageOrientationPatient' value: {c.ImageOrientationPatient}. Only axial slices with orientation [1, 0, 0, 0, 1, 0] are supported.")
 
@@ -502,15 +467,15 @@ def list_rtstruct_landmarks(
     # Filter out regions.
     def is_landmark(r: str) -> bool:
         return any(re.match(regex, r) for regex in landmark_regexps)
-    landmark_ids, landmark_contours = filter_lists(all_ids, all_contours, filt_fn=lambda ic: is_landmark(ic[0]))
+    landmark_ids, landmark_contours = filter_lists(all_ids, all_contours, key=lambda ic: is_landmark(ic[0]))
 
     # Filter on the presence of a 'ContourSequence' - sometimes empty.
-    landmark_ids, landmark_contours = filter_lists(landmark_ids, landmark_contours, filt_fn=lambda ic: getattr(ic[1], 'ContourSequence', None) is not None)
+    landmark_ids, landmark_contours = filter_lists(landmark_ids, landmark_contours, key=lambda ic: getattr(ic[1], 'ContourSequence', None) is not None)
 
     # Filter by 'landmark_ids'.
     if req_landmark_ids != 'all':
         req_landmark_ids = arg_to_list(req_landmark_ids, str)
-        landmark_ids, landmark_contours = filter_lists(landmark_ids, landmark_contours, filt_fn=lambda ic: ic[0] in req_landmark_ids)
+        landmark_ids, landmark_contours = filter_lists(landmark_ids, landmark_contours, key=lambda ic: ic[0] in req_landmark_ids)
         landmark_ids, landmark_contours = sort_lists(landmark_ids, landmark_contours, key=lambda ic: req_landmark_ids.index(ic[0]))
     else:
         landmark_ids, landmark_contours = sort_lists(landmark_ids, landmark_contours, key=lambda ic: ic[0])
@@ -545,15 +510,15 @@ def list_rtstruct_regions(
     # Filter out landmarks.
     def is_region(r: str) -> bool:
         return not any(re.match(regex, r) for regex in landmark_regexps)
-    region_ids, region_contours = filter_lists(all_ids, all_contours, filt_fn=lambda ic: is_region(ic[0]))
+    region_ids, region_contours = filter_lists(all_ids, all_contours, key=lambda ic: is_region(ic[0]))
 
     # Filter on the presence of a 'ContourSequence' - sometimes empty.
-    region_ids, region_contours = filter_lists(region_ids, region_contours, filt_fn=lambda ic: getattr(ic[1], 'ContourSequence', None) is not None)
+    region_ids, region_contours = filter_lists(region_ids, region_contours, key=lambda ic: getattr(ic[1], 'ContourSequence', None) is not None)
 
     # Filter by 'region_ids'.
     if req_region_ids != 'all':
         req_region_ids = arg_to_list(req_region_ids, str)
-        region_ids, region_contours = filter_lists(region_ids, region_contours, filt_fn=lambda ic: ic[0] in req_region_ids)
+        region_ids, region_contours = filter_lists(region_ids, region_contours, key=lambda ic: ic[0] in req_region_ids)
         # Sort by the order of 'region_id' list.
         region_ids, region_contours = sort_lists(region_ids, region_contours, key=lambda ic: req_region_ids.index(ic[0]))
     else:
@@ -564,6 +529,41 @@ def list_rtstruct_regions(
         return region_ids, region_contours
     else:
         return region_ids
+
+def load_dicom(
+    filepath: FilePath,
+    **kwargs,
+    ) -> dcm.dataset.FileDataset:
+    filepath = resolve_filepath(filepath)
+    return dcm.dcmread(filepath, **kwargs)
+
+def save_dicom(
+    dicom: dcm.dataset.FileDataset | List[dcm.dataset.FileDataset],
+    path: DirPath | FilePath | List[FilePath],
+    overwrite: bool = True,
+    ) -> None:
+    # Save single dicom.
+    if isinstance(dicom, dcm.dataset.FileDataset):
+        assert is_file(path), f"Expected filepath for single DICOM, got directory path '{path}'."
+        filepath = resolve_filepath(path)
+        if os.path.exists(filepath) and not overwrite:
+            raise ValueError(f"File '{filepath}' already exists, use overwrite=True.")
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        dcm.dcmwrite(filepath, dicom)
+        return
+
+    # Save multiple dicoms.
+    else:
+        assert isinstance(path, list) or is_dir(path), f"Expected directory path or list of filepaths for multiple DICOMs, got '{path}'."
+        if is_dir(path):
+            path = resolve_filepath(path)
+            filepaths = [os.path.join(path, f'{i:03}.dcm') for i in range(len(dicom))]
+        else:
+            filepaths = [resolve_filepath(p) for p in path]
+        if len(filepaths) != len(dicom):
+            raise ValueError(f"Number of DICOMs ({len(dicom)}) does not match number of filepaths ({len(filepaths)}).")
+        for d, f in zip(dicom, filepaths):
+            save_dicom(d, f, overwrite=overwrite)
 
 def to_ct_dicom(
     data: Image3D, 

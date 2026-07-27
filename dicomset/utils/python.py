@@ -54,14 +54,14 @@ def ensure_loaded(*pairs) -> Callable:
 # E.g: a = [1, 2, [3, 4], [5, [6, 7]], 8, 9]
 def filter_lists(
     *lists: List[Any],
-    filt_fn: Callable,
+    key: Callable,
     ) -> List[List[Any]]:
     n_lists = len(lists)
     n_elements = len(lists[0])
     for l in lists:
         if len(l) != n_elements:
             raise ValueError('All lists must have the same length.')
-    lists = tuple(map(list, zip(*[i for i in list(zip(*lists)) if filt_fn(i)])))
+    lists = tuple(map(list, zip(*[i for i in list(zip(*lists)) if key(i)])))
     if len(lists) == 0:
         lists = ([],) * n_lists
     return lists

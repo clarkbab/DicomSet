@@ -14,7 +14,7 @@ LAZY_IMPORTS = {
         'to_ct_dicom', 'to_rtdose_dicom', 'to_rtstruct_dicom',
     ],
     'geometry': [
-        'affine_origin', 'affine_spacing', 'centre_of_mass', 'change_orientation', 'combine_boxes', 'create_affine',
+        'affine_origin', 'affine_spacing', 'affine_2d', 'centre_of_mass', 'change_orientation', 'combine_boxes', 'create_affine',
         'foreground_fov', 'foreground_fov_centre', 'foreground_fov_width', 'fov', 'fov_centre', 'fov_width'
     ],
     'images': ['create_box_label'],
@@ -27,8 +27,8 @@ LAZY_IMPORTS = {
     'plotting': ['plot_hist', 'plot_slice', 'plot_volume'],
     'python': ['ensure_loaded', 'filter_lists', 'flatten_list', 'sort_lists', 'unzip'],
     'transforms': [
-        'crop', 'crop_affine', 'crop_points', 'from_sitk_image', 'hist_eq', 'minmax', 'one_hot_encode',
-        'resample', 'sample', 'standardise', 'to_sitk_image', 'transpose'
+        'centre_crop', 'centre_crop_points', 'crop', 'crop_affine', 'crop_points', 'from_sitk_image', 'hist_eq', 'minmax',
+        'one_hot_encode', 'resample', 'sample', 'standardise', 'to_sitk_image', 'transpose'
     ],
 }
 

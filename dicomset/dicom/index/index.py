@@ -12,12 +12,12 @@ from typing import Any, Dict, get_args
 from ... import config
 from ...dataset import CT_FROM_REGEXP
 from ...typing import DatasetID, DicomModality
+from ...utils.dicom import load_dicom
 from ...utils.io import assert_writeable, load_csv, load_yaml, save_csv, save_yaml
 from ...utils.logging import logger
 from ...utils.pandas import append_row, concat_dataframes
 from ...utils.python import deep_merge
 from ..series import DICOM_RTDOSE_REF_RTPLAN_KEY, DICOM_RTPLAN_REF_RTSTRUCT_KEY, DICOM_RTSTRUCT_REF_CT_KEY
-from ...utils.dicom import load_dicom
 
 filepath = os.path.join(os.path.dirname(__file__), 'default-policy.yaml')
 DEFAULT_POLICY = load_yaml(filepath)
