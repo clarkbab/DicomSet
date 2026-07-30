@@ -304,6 +304,11 @@ class DicomRtStructSeries(DicomSeries):
                 regions_data = np.zeros((len(region_ids), *reg_data.shape), dtype=bool)
             regions_data[i] = reg_data
 
+        # Collapse batch dimension if singular.
+        # TODO: Is this a good idea?
+        if regions_data is not None and len(regions_data) == 1:
+            regions_data = regions_data[0]
+
         if return_regions:
             return region_ids, regions_data
         else:

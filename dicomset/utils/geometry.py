@@ -305,6 +305,7 @@ def __spatial_centre_of_mass(
     if affine is not None:
         com = to_world_coords(com, affine)
 
+    print('returning centre of mass:', com)
     return com
 
 def to_image_coords(

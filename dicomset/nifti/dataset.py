@@ -61,7 +61,7 @@ class NiftiDataset(IndexMixin, Dataset):
         return landmarks
 
     @alias_kwargs(
-        ('g', 'group_id'),
+        (('g', 'group', 'group_id'), 'group_ids'),
         (('p', 'patient', 'patients', 'patient_id'), 'patient_ids'),
         (('r', 'region', 'regions', 'region_id'), 'region_ids'),
     )
@@ -72,7 +72,7 @@ class NiftiDataset(IndexMixin, Dataset):
     def list_patients(
         self,
         exclude: PatientID | List[PatientID] | Literal['all'] | None = None,
-        group_id: GroupID | List[GroupID] | Literal['all'] = 'all',
+        group_ids: GroupID | List[GroupID] | Literal['all'] = 'all',
         patient_ids: PatientID | List[PatientID] | Literal['all'] = 'all',
         region_ids: RegionID | List[RegionID] | Literal['all'] = 'all',
         ) -> List[PatientID]:
@@ -99,11 +99,11 @@ class NiftiDataset(IndexMixin, Dataset):
             ids = list(filter(filter_fn, ids))
 
         # Filter by group ID.
-        if group_id != 'all':
+        if group_ids != 'all':
             if self.__groups is None:
                 raise ValueError(f"File 'groups.csv' not found for dicom dataset '{self.__id}'.")
             all_groups = self.list_groups()
-            group_ids = arg_to_list(group_id, str, literals={ 'all': all_groups })
+            group_ids = arg_to_list(group_ids, str, literals={ 'all': all_groups })
             for g in group_ids:
                 if g not in all_groups:
                     raise ValueError(f"Group {g} not found.")
