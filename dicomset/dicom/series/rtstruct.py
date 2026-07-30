@@ -50,7 +50,7 @@ class DicomRtStructSeries(DicomSeries):
         return self.__filepath
 
     @alias_kwargs(
-        (('l', 'landmark', 'landmarks'), 'landmark_ids'),
+        (('l', 'landmark', 'landmarks', 'landmark_id'), 'landmark_ids'),
     )
     @ensure_loaded('__data', '__load_data')
     def has_landmark(

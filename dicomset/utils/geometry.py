@@ -309,18 +309,18 @@ def __spatial_centre_of_mass(
     return com
 
 def to_image_coords(
-    point: Point | Points | Landmarks,
+    points: Point | Points | Landmarks,
     affine: AffineMatrix,
     ) -> Pixel | Voxel:
     spacing = affine_spacing(affine)
     origin = affine_origin(affine)
-    if isinstance(point, pd.DataFrame):
-        landmarks = point
+    if isinstance(points, pd.DataFrame):
+        landmarks = points
         points = landmarks_to_points(landmarks)
         points = np.round((np.array(points) - origin) / spacing).astype(np.int32)
         points = points_to_landmarks(points, landmarks['landmark-id'])
     else:
-        points = np.round((np.array(point) - origin) / spacing).astype(np.int32)
+        points = np.round((np.array(points) - origin) / spacing).astype(np.int32)
     return points
 
 def to_world_coords(

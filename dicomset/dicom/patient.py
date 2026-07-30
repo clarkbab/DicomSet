@@ -8,7 +8,7 @@ from ..mixins import IndexWithErrorsMixin
 from ..patient import Patient
 from ..struct_map import StructMap
 from ..typing import PatientID, StudyID
-from ..utils.args import arg_to_list, resolve_id
+from ..utils.args import alias_kwargs, arg_to_list, resolve_id
 from ..utils.pandas import append_row
 from ..utils.python import get_private_attr
 from .study import DicomStudy
@@ -48,14 +48,17 @@ class DicomPatient(IndexWithErrorsMixin, Patient):
         else:
             return None
 
+    @alias_kwargs(
+        (('s', 'study_id'), 'study_ids'),
+    )
     def has_study(
         self,
-        study_id: StudyID | List[StudyID],
+        study_ids: StudyID | List[StudyID],
         any: bool = False,
         **kwargs,
         ) -> bool:
-        real_ids = self.list_studies(study_id=study_id, **kwargs)
-        req_ids = arg_to_list(study_id, str)
+        real_ids = self.list_studies(study_ids=study_ids, **kwargs)
+        req_ids = arg_to_list(study_ids, str)
         n_overlap = len(np.intersect1d(real_ids, req_ids))
         return n_overlap > 0 if any else n_overlap == len(req_ids)
 
@@ -85,18 +88,21 @@ class DicomPatient(IndexWithErrorsMixin, Patient):
 
         return df
 
+    @alias_kwargs(
+        (('s', 'study_id'), 'study_ids'),
+    )
     def list_studies(
         self,
         show_datetime: bool = False,
         sort: Callable[DicomStudy, int] | None = None,
-        study_id: StudyID | List[StudyID] | Literal['all'] = 'all',
+        study_ids: StudyID | List[StudyID] | Literal['all'] = 'all',
         ) -> List[StudyID]:
         # Sort studies by date/time - oldest first.
         ids = list(self.__index.sort_values(['study-date', 'study-time'])['study-id'].unique())
         
         # Filter by study ID.
-        if study_id != 'all':
-            study_ids = arg_to_list(study_id, str)
+        if study_ids != 'all':
+            study_ids = arg_to_list(study_ids, str)
             all_ids = ids.copy()
             ids = []
             for i, id in enumerate(all_ids):

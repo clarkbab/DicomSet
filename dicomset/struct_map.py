@@ -174,7 +174,7 @@ class StructMap:
                         regex = re.compile(v[3:], flags=re.IGNORECASE)
                         for d in true_disk_ids:
                             if regex.match(d):
-                                disk_ids.append(k)
+                                disk_ids.append(d)
                     else:
                         disk_ids.append(v)
             else:

@@ -15,7 +15,8 @@ LAZY_IMPORTS = {
     ],
     'geometry': [
         'affine_origin', 'affine_spacing', 'affine_2d', 'centre_of_mass', 'change_orientation', 'combine_boxes', 'create_affine',
-        'foreground_fov', 'foreground_fov_centre', 'foreground_fov_width', 'fov', 'fov_centre', 'fov_width'
+        'foreground_fov', 'foreground_fov_centre', 'foreground_fov_width', 'fov', 'fov_centre', 'fov_width', 'to_voxel_coords', 
+        'to_world_coords',
     ],
     'images': ['create_box_label'],
     'io': ['load_csv', 'load_json', 'load_nifti', 'load_nrrd', 'load_numpy', 'save_csv', 'save_json', 'save_nifti', 'save_numpy'],
@@ -25,7 +26,7 @@ LAZY_IMPORTS = {
     'metrics': ['centroid_error', 'distances', 'dice', 'tre', 'volume'],
     'pandas': ['append_row'],
     'plotting': ['plot_hist', 'plot_slice', 'plot_volume'],
-    'python': ['ensure_loaded', 'filter_lists', 'flatten_list', 'sort_lists', 'unzip'],
+    'python': ['ensure_loaded', 'filter_lists', 'flatten_list', 'is_windows', 'sort_lists', 'unzip'],
     'transforms': [
         'centre_crop', 'centre_crop_points', 'crop', 'crop_affine', 'crop_points', 'from_sitk_image', 'hist_eq', 'minmax',
         'one_hot_encode', 'resample', 'sample', 'standardise', 'to_sitk_image', 'transpose'

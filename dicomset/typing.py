@@ -82,6 +82,8 @@ Spacing2D = Tuple[float, float] | Float[np.ndarray, "2"]
 Spacing3D = Tuple[float, float, float] | Float[np.ndarray, "3"]
 SplitID = int
 StudyID = str
+Vector2D = Tuple[float, float] | Float[np.ndarray, "2"]
+Vector3D = Tuple[float, float, float] | Float[np.ndarray, "3"]
 View = Literal[0, 1, 2]
 Voxel = Tuple[int, int, int] | Int[np.ndarray, "3"]
 VoxelBox = Int[np.ndarray, "2 3"]
@@ -105,7 +107,17 @@ LabelImage = LabelImage2D | LabelImage3D
 LabelMap = LabelMap2D | LabelMap3D
 Landmark = Landmark2D | Landmark3D
 Landmarks = Landmarks2D | Landmarks3D
+Plane2D = Tuple[Point2D, Vector2D] | Float[np.ndarray, "2 2"]
+Plane3D = Tuple[Point3D, Vector3D] | Float[np.ndarray, "2 3"]
 Point = Point2D | Point3D
 Points = Points2D | Points3D
 Size = Size2D | Size3D
 Spacing = Spacing2D | Spacing3D
+
+# Third-order types.
+Plane = Plane2D | Plane3D
+Planes2D = List[Plane2D] | Float[np.ndarray, "N 2 2"]
+Planes3D = List[Plane3D] | Float[np.ndarray, "N 2 3"]
+
+# Fourth-order types.
+Planes = List[Plane2D] | List[Plane3D] | Planes2D | Planes3D

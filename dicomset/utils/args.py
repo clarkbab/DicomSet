@@ -229,6 +229,8 @@ def regions_to_list(
     region_ids = arg_to_list(region_ids, str, **kwargs)
     if struct_map is not None:
         region_ids = struct_map.expand_list(region_ids, disk_ids=disk_region_ids, sort=sort_regions)
+    if isinstance(region_ids, str):
+        return region_ids   # Allow for literal mappings, e.g, { 'all': 'all' }.
     region_ids = list(dict.fromkeys(region_ids))    # Remove duplicates without sorting.
     if sort_regions:
         region_ids = list(sorted(region_ids))

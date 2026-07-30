@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Literal, Tuple, Union
 from ..config import get_orientation
 from ..dicom.series import DicomSeries
 from ..nifti.series import NiftiSeries
-from ..typing import AffineMatrix, AffineMatrix2D, AffineMatrix3D, BatchBox, BatchBox2D, BatchBox3D, BatchLabelImage, BatchLabelImage2D, BatchLabelImage3D, BatchPoints, BatchPoints2D, BatchPoints3D, BatchVoxelBox, Box, Box2D, Box3D, Image, Image2D, Image3D, LabelImage, LabelImage2D, LabelImage3D, Landmark, Landmark2D, Landmark3D, LandmarkID, Landmarks, Landmarks2D, Landmarks3D, Number, Orientation2D, Orientation3D, Pixel, PixelBox, Point, Point2D, Point3D, Points, Points2D, Points3D, RegionID, Size, View, Voxel, VoxelBox, Window
+from ..typing import AffineMatrix, AffineMatrix2D, AffineMatrix3D, BatchBox, BatchBox2D, BatchBox3D, BatchLabelImage, BatchLabelImage2D, BatchLabelImage3D, BatchPoints, BatchPoints2D, BatchPoints3D, BatchVoxelBox, Box, Box2D, Box3D, Image, Image2D, Image3D, LabelImage, LabelImage2D, LabelImage3D, Landmark, Landmark2D, Landmark3D, LandmarkID, Landmarks, Landmarks2D, Landmarks3D, Number, Orientation2D, Orientation3D, Pixel, PixelBox, Planes3D, Point, Point2D, Point3D, Points, Points2D, Points3D, RegionID, Size, View, Voxel, VoxelBox, Window
 from . import logging
 from .args import alias_kwargs, arg_default, arg_to_list, assert_2d, assert_3d
 from .assertions import assert_orientation
@@ -984,6 +984,8 @@ def plot_hist(
     ('b', 'box'),
     ('c', 'crop'),
     ('cm', 'crop_margin'),
+    ('he', 'hist_eq'),
+    ('ii', 'invert_intensity'),
     ('l', 'labels'),
     ('ln', 'label_names'),
     ('o', 'orientation'),
@@ -1003,6 +1005,7 @@ def plot_slice(
     crop_margin: Number = 100.0,
     figsize: Tuple[Number, Number] = (8, 8),
     hist_eq: bool = False,
+    invert_intensity: bool = False,
     labels: LabelImage2D | BatchLabelImage2D | None = None,
     labels_alpha: Number = 0.3,
     label_names: RegionID | List[RegionID] | None = None,
@@ -1066,6 +1069,8 @@ def plot_slice(
     # Plot the image.
     if crop_box is not None:
         data = data[crop_box[0, 0]:crop_box[1, 0] + 1, crop_box[0, 1]:crop_box[1, 1] + 1]
+    if invert_intensity:
+        data = np.max(data) - data
     if hist_eq:
         data = hist_eq_fn(data)
     ax.imshow(data.T, aspect=aspect, cmap=cmap, origin=origin_y, vmax=vmax, vmin=vmin)
@@ -1175,6 +1180,7 @@ def plot_slice(
     ('l', 'labels'),
     ('ln', 'label_names'),
     ('p', 'points'),
+    ('pl', 'planes'),
     ('scc', 'show_crosshairs_coords'),
     ('sl', 'show_labels'),
     ('spn', 'show_point_names'),
@@ -1200,6 +1206,7 @@ def plot_volume(
     centre_method: Literal['com', 'fov'] = 'com',
     orientation: Orientation3D | None = None,
     labels_alpha: Number = 0.3,
+    planes: Planes3D | None = None,
     points: Point3D | Points3D | BatchPoints3D | List[Points3D] | Landmark3D | Landmarks3D | None = None,
     points_alpha: Number = 0.3,
     points_colour: str = 'yellow',
@@ -1262,6 +1269,9 @@ def plot_volume(
     if hist_eq:
         data = hist_eq_fn(data)
 
+    # Resolve planes.
+    planes = __resolve_planes(planes, affine=affine)
+
     # Resolve points and point names.
     points, point_names = __resolve_points(points, affine=affine, point_names=point_names)
 
@@ -1269,6 +1279,8 @@ def plot_volume(
     views = list(range(3)) if view == 'all' else (view if isinstance(view, list) else [view])
 
     # Resolve idx to a 3D voxel point.
+    print('idx')
+    print(idx)
     idx_vox = __resolve_point(idx, data.shape, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, point_names=point_names, points=points)
 
     # Resolve crosshairs to image coords.
@@ -1403,6 +1415,24 @@ def plot_volume(
                 else:
                     label = f'({ch_x}, {ch_y})'
                 col_ax.text(ch_x + 10, ch_y - 10, label, color=crosshairs_colour, fontsize=8)
+
+        # Inside the view loop, after crosshairs block:
+        if planes is not None:
+            # plane_palette = sns.color_palette('colorblind', len(planes))
+            xlim, ylim = col_ax.get_xlim(), col_ax.get_ylim()
+            for pi, pl in enumerate(planes):
+                nx, ny, d, _, _ = __get_plane_line(v, pl, view_idx)
+                if view_crop_box is not None:
+                    d -= nx * view_crop_box[0, 0] + ny * view_crop_box[0, 1]
+                if abs(ny) > 1e-9:
+                    xs = np.array(xlim)
+                    ys = (d - nx * xs) / ny
+                else:
+                    ys = np.array(ylim)
+                    xs = np.full(2, d / nx)
+                # col_ax.plot(xs, ys, color=plane_palette[pi % len(plane_palette)], linestyle='solid', linewidth=1, zorder=8)
+                col_ax.plot(xs, ys, color='yellow', linestyle='dashed', linewidth=1, zorder=8)
+            col_ax.set_xlim(xlim); col_ax.set_ylim(ylim)
 
         # Get tick positions in image coords.
         size_x, size_y = image.shape
@@ -1813,3 +1843,30 @@ def __resolve_window(
     vmin = level - width / 2
     vmax = level + width / 2
     return vmin, vmax
+
+def __get_plane_line(v, plane, view_idx, crop_offset=None):
+    p, n = plane
+    x_axis, y_axis = __get_view_xy(v, list(range(3)))
+    nx, ny, nv = n[x_axis], n[y_axis], n[v]
+    px, py, pv = p[x_axis], p[y_axis], p[v]
+    d = nx * px + ny * py - nv * (view_idx - pv)
+    return nx, ny, d, x_axis, y_axis
+
+def __resolve_planes(planes, affine=None):
+    if planes is None:
+        return None
+    planes = np.array(planes)
+    if planes.ndim == 2:
+        planes = planes[None]
+
+    if affine is not None:
+        A = affine[:3, :3]
+        A_inv = np.linalg.inv(A)
+        o = affine[:3, -1]
+        for i, (p, n) in enumerate(planes):
+            p_vox = A_inv @ (p - o)
+            n_vox = A.T @ n          # <-- was A_inv.T @ n
+            n_vox = n_vox / np.linalg.norm(n_vox)
+            planes[i] = np.stack([p_vox, n_vox])
+
+    return planes

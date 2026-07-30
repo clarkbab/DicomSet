@@ -176,7 +176,7 @@ class NiftiRegionsSeries(NiftiImageSeries):
                 api_regions = true_disk_regions
             api_regions = list(dict.fromkeys(api_regions))    # Remove duplicates without sorting.
         else:
-            region_ids = regions_to_list(region_ids, literals={ 'all': self.list_regions }, sort_regions=sort_regions, struct_map=self.__struct_map)
+            region_ids = regions_to_list(region_ids, disk_region_ids=true_disk_regions, literals={ 'all': self.list_regions }, sort_regions=sort_regions, struct_map=self.__struct_map)
             api_regions = []
             for r in region_ids:
                 # Only keep regions that map to a one or more disk regions.

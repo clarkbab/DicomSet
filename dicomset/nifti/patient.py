@@ -11,7 +11,7 @@ from ..mixins import IndexMixin
 from ..patient import Patient
 from ..struct_map import StructMap
 from ..typing import PatientID, StudyID
-from ..utils.args import arg_to_list, resolve_id
+from ..utils.args import alias_kwargs, arg_to_list, resolve_id
 from .study import NiftiStudy
 if TYPE_CHECKING:
     from ..dicom.patient import DicomPatient
@@ -47,27 +47,33 @@ class NiftiPatient(IndexMixin, Patient):
         row = index.iloc[0]
         return DicomDataset(row['dicom-dataset']).patient(row['dicom-patient-id'])
 
+    @alias_kwargs(
+        (('s', 'study_id'), 'study_ids'),
+    )
     def has_study(
         self,
-        study_id: StudyID | List[StudyID],
+        study_ids: StudyID | List[StudyID],
         any: bool = False,
         **kwargs,
         ) -> bool:
-        real_ids = self.list_studies(study_id=study_id, **kwargs)
-        req_ids = arg_to_list(study_id, StudyID)
+        real_ids = self.list_studies(study_ids=study_ids, **kwargs)
+        req_ids = arg_to_list(study_ids, StudyID)
         n_overlap = len(np.intersect1d(real_ids, req_ids))
         return n_overlap > 0 if any else n_overlap == len(req_ids)
 
+    @alias_kwargs(
+        (('s', 'study_id'), 'study_ids'),
+    )
     def list_studies(
         self,
-        study_id: StudyID | List[StudyID] | Literal['all'] = 'all',
+        study_ids: StudyID | List[StudyID] | Literal['all'] = 'all',
         ) -> List[StudyID]:
         # Might have to deal with sorting at some point for 'default_study'.
         # Right now sorting is just alphabetical, which is fine if we're using anonymous IDs,
         # as they're sorted during DICOM -> NIFTI conversion.
         ids = list(sorted(os.listdir(self.__dirpath)))
-        if study_id != 'all':
-            study_ids = arg_to_list(study_id, str)
+        if study_ids != 'all':
+            study_ids = arg_to_list(study_ids, str)
             all_ids = ids.copy()
             ids = []
             for i, id in enumerate(all_ids):
