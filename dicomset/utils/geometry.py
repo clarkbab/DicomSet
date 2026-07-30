@@ -7,6 +7,7 @@ import torch
 from typing import Callable, List
 
 from ..typing import AffineMatrix, AffineMatrix3D, AffineMatrix2D, BatchChannelImage, BatchImage, BatchLabelImage, Box, Image, LabelImage, Landmarks, Orientation, Pixel, Point, Points, Size, Spacing, SpatialDim, Voxel
+from .args import alias_kwargs
 from .assertions import assert_orientation
 from .conversion import to_numpy, to_tensor, to_tuple
 from .landmarks import landmarks_to_points, points_to_landmarks
@@ -55,6 +56,10 @@ def assert_box_width(
         if width <= 0:
             raise ValueError(f"Box width must be positive, got '{box}'.")
 
+@alias_kwargs(
+    ('a', 'affine'),
+    ('d', 'dim'),
+)
 def centre_of_mass(
     data: Image | LabelImage | BatchImage | BatchLabelImage,
     affine: AffineMatrix | None = None,
@@ -305,7 +310,6 @@ def __spatial_centre_of_mass(
     if affine is not None:
         com = to_world_coords(com, affine)
 
-    print('returning centre of mass:', com)
     return com
 
 def to_image_coords(

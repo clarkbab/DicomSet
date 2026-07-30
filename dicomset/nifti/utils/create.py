@@ -44,6 +44,17 @@ def create_index(
     filepath = os.path.join(set.path, 'index.csv')
     save_csv(index, filepath)
 
+def create_landmarks(
+    dataset: DatasetID,
+    patient_id: PatientID,
+    study_id: StudyID,
+    series_id: SeriesID,
+    data: Landmarks3D,
+    ) -> None:
+    set = NiftiDataset(dataset)
+    filepath = os.path.join(set.path, 'data', 'patients', patient_id, study_id, 'landmarks', f'{series_id}.csv')
+    save_csv(data, filepath)
+
 def create_region(
     dataset: DatasetID,
     patient_id: PatientID,

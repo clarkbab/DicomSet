@@ -9,6 +9,7 @@ from .typing import DirPath, DiskLandmarkID, DiskRegionID, FilePath, LandmarkID,
 from .utils.args import arg_to_list
 from .utils.conversion import to_list
 from .utils.io import load_yaml
+from .utils.logging import logger
 from .utils.python import ensure_loaded
 
 SM_FILENAME_REGEXP = r"struct[-_]?map\.ya?ml"
@@ -26,11 +27,11 @@ class StructMap:
 
     def expand_list(
         self,
-        id: LandmarkID | RegionID | LandmarkList | RegionList | List[LandmarkID | RegionID | LandmarkList | RegionList],
+        ids: LandmarkID | RegionID | LandmarkList | RegionList | List[LandmarkID | RegionID | LandmarkList | RegionList],
         disk_ids: List[DiskLandmarkID | DiskRegionID] | None = None,
         sort: bool = True,
         ) -> List[LandmarkID | RegionID]:
-        ids = arg_to_list(id, str)
+        ids = arg_to_list(ids, str)
         expanded = []
         for i in ids:
             if self.lists is not None and i in self.lists:
@@ -40,9 +41,13 @@ class StructMap:
                     if vi.startswith('re:'):
                         assert disk_ids is not None, "Disk IDs must be provided for regexp mapping."
                         regex = re.compile(vi[3:], flags=re.IGNORECASE)
+                        matched_one = False
                         for d in disk_ids:
                             if regex.match(d):
                                 expanded.append(d)
+                                matched_one = True
+                        if not matched_one:
+                            logger.warn(f"StructMap regexp '{vi}' did not match any disk IDs. Is it correct?")
                     else:
                         expanded.append(vi)
             else:
