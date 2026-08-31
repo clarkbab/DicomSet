@@ -10,8 +10,23 @@ if TYPE_CHECKING:
 from ... import config
 from ...typing import AffineMatrix3D, BatchLabelImage3D, DatasetID, Image3D, LabelImage3D, Landmarks3D, ModelID, NiftiModality, PatientID, RegionID, SeriesID, StudyID
 from ...utils.args import arg_to_list
-from ...utils.io import save_csv, save_nifti, save_transform
+from ...utils.io import load_csv, save_csv, save_nifti, save_transform
 from ..dataset import NiftiDataset
+
+def append_landmarks(
+    dataset: DatasetID,
+    patient_id: PatientID,
+    study_id: StudyID,
+    series_id: SeriesID,
+    data: Landmarks3D,
+    ) -> None:
+    set = NiftiDataset(dataset)
+    filepath = os.path.join(set.path, 'data', 'patients', patient_id, study_id, 'landmarks', f'{series_id}.csv')
+    if not os.path.exists(filepath):
+        raise ValueError(f"Landmarks file does not exist for patient {patient_id}, study {study_id}, series {series_id}. Use create_landmarks to create a new file.")
+    df = load_csv(filepath, map_cols={ '0': 0, '1': 1, '2': 2 })    # Loads a strings instead of ints.
+    df = pd.concat([df, data], ignore_index=True)
+    save_csv(df, filepath)
 
 def create_ct(
     dataset: DatasetID,
@@ -68,7 +83,7 @@ def create_region(
     filepath = os.path.join(set.path, 'data', 'patients', patient_id, study_id, 'regions', series_id, f'{region_id}.nii.gz')
     save_nifti(data, affine, filepath)
 
-def create_registered_image(
+def create_registration_moved_image(
     dataset: DatasetID,
     fixed_patient_id: PatientID,
     model: ModelID,
@@ -86,7 +101,7 @@ def create_registered_image(
     filepath = os.path.join(set.path, 'data', 'predictions', 'registration', 'patients', fixed_patient_id, fixed_study_id, fixed_series_id, moving_patient_id, moving_study_id, moving_series_id, modality, f'{model}.nii.gz')
     save_nifti(data, affine, filepath)
 
-def create_registered_landmarks(
+def create_registration_moved_landmarks(
     dataset: DatasetID,
     fixed_patient_id: PatientID,
     model: ModelID,
@@ -102,7 +117,7 @@ def create_registered_landmarks(
     filepath = os.path.join(set.path, 'data', 'predictions', 'registration', 'patients', fixed_patient_id, fixed_study_id, fixed_series_id, moving_patient_id, moving_study_id, moving_series_id, 'landmarks', f'{model}.csv')
     save_csv(data, filepath)
 
-def create_registered_regions(
+def create_registration_moved_regions(
     dataset: DatasetID,
     fixed_patient_id: PatientID,
     model: ModelID,
@@ -140,3 +155,26 @@ def create_registration_transform(
     moving_patient_id = fixed_patient_id if moving_patient_id is None else moving_patient_id
     filepath = os.path.join(set.path, 'data', 'predictions', 'registration', 'patients', fixed_patient_id, fixed_study_id, fixed_series_id, moving_patient_id, moving_study_id, moving_series_id, 'transform', f'{model}.hdf5')
     save_transform(transform, filepath)
+
+def create_segmentation(
+    dataset: DatasetID,
+    patient_id: PatientID,
+    study_id: StudyID,
+    series_id: SeriesID,
+    region_id: RegionID,
+    data: LabelImage3D,
+    affine: AffineMatrix3D,
+    ) -> None:
+    set = NiftiDataset(dataset)
+    filepath = os.path.join(set.path, 'data', 'patients', patient_id, study_id, 'segmentation', series_id, f'{region_id}.nii.gz')
+    save_nifti(data, affine, filepath)
+
+def landmarks_exist(
+    dataset: DatasetID,
+    patient_id: PatientID,
+    study_id: StudyID,
+    series_id: SeriesID,
+    ) -> bool:
+    set = NiftiDataset(dataset)
+    filepath = os.path.join(set.path, 'data', 'patients', patient_id, study_id, 'landmarks', f'{series_id}.csv')
+    return os.path.exists(filepath)

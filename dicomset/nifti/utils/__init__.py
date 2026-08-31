@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING
 
 LAZY_IMPORTS = {
     'create': [
-        'create_ct', 'create_dataset', 'create_index', 'create_landmarks', 'create_region',
-        'create_registered_image', 'create_registered_landmarks',
-        'create_registered_regions', 'create_registration_transform',
+        'append_landmarks', 'create_ct', 'create_dataset', 'create_index', 'create_landmarks', 'create_region',
+        'create_registered_image', 'create_registered_landmarks', 'create_registered_regions', 'create_registration_transform',
+        'landmarks_exist',
     ],
     'load': [
         'dataset_exists', 'list_datasets', 'load_ct', 'load_dataset', 'load_index', 'load_region',

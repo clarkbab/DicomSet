@@ -36,6 +36,13 @@ class Directories:
         return filepath
 
     @property
+    def predictions(self):
+        filepath = os.path.join(self.data, 'predictions')
+        if not os.path.exists(filepath):
+            os.makedirs(filepath)
+        return filepath
+
+    @property
     def runs(self):
         filepath = os.path.join(self.data, 'runs')
         if not os.path.exists(filepath):

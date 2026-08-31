@@ -10,9 +10,10 @@ import yaml
 if TYPE_CHECKING:
     import SimpleITK as sitk
 
-from ..typing import AffineMatrix3D, DirPath, FilePath, Image3D
+from ..typing import AffineMatrix3D, DirPath, FilePath, Image3D, Orientation3D
 from .args import arg_to_list, resolve_filepath
-from .geometry import create_affine
+from .geometry import create_affine, change_orientation
+from .transforms import from_sitk_image, to_sitk_image
 
 def assert_writeable(filepath: FilePath | List[FilePath]) -> None:
     filepaths = arg_to_list(filepath, str)
@@ -83,6 +84,16 @@ def load_json(filepath: FilePath) -> Any:
     filepath = resolve_filepath(filepath)
     with open(filepath, 'r') as f:
         return json.load(f)
+
+def load_mha(
+    filepath: FilePath,
+    ) -> Tuple[Image3D, AffineMatrix3D]:
+    # Slow import so postponing until method call.
+    import SimpleITK as sitk
+    filepath = resolve_filepath(filepath)
+    assert filepath.endswith('.mha'), f"Filepath must end with .mha, got: {filepath}"
+    img = sitk.ReadImage(filepath)
+    return from_sitk_image(img)
 
 def load_nifti(
     filepath: FilePath,
@@ -174,6 +185,25 @@ def save_json(
     data = make_serialisable(data)
     with open(filepath, 'w') as f:
         json.dump(data, f, indent=4)
+
+def save_mha(
+    data: Image3D,
+    affine: AffineMatrix3D,
+    filepath: FilePath,
+    orientation: Orientation3D = 'LPS',
+    overwrite: bool = True,
+    ) -> None:
+    # Slow import so postponing until method call.
+    import SimpleITK as sitk
+    filepath = resolve_filepath(filepath)
+    assert filepath.endswith('.mha'), f"Filepath must end with .mha, got: {filepath}"
+    if os.path.exists(filepath) and not overwrite:
+        raise ValueError(f"File '{filepath}' already exists, use overwrite=True.")
+    if orientation != 'LPS':
+        data, affine = change_orientation(data, affine, 'LPS', orientation, negative_spacing=False)
+    img = to_sitk_image(data, affine=affine)
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    sitk.WriteImage(img, filepath)
 
 def save_nifti(
     data: Image3D,

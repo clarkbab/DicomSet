@@ -15,11 +15,14 @@ LAZY_IMPORTS = {
     ],
     'geometry': [
         'affine_origin', 'affine_spacing', 'affine_2d', 'centre_of_mass', 'change_orientation', 'combine_boxes', 'create_affine',
-        'foreground_fov', 'foreground_fov_centre', 'foreground_fov_width', 'fov', 'fov_centre', 'fov_width', 'to_voxel_coords', 
+        'foreground_fov', 'foreground_fov_centre', 'foreground_fov_width', 'fov', 'fov_centre', 'fov_width', 'to_image_coords', 
         'to_world_coords',
     ],
     'images': ['create_box_label'],
-    'io': ['load_csv', 'load_json', 'load_nifti', 'load_nrrd', 'load_numpy', 'save_csv', 'save_json', 'save_nifti', 'save_numpy'],
+    'io': [
+        'load_csv', 'load_json', 'load_mha', 'load_nifti', 'load_nrrd', 'load_numpy', 'save_csv', 'save_json', 'save_mha',
+        'save_nifti', 'save_numpy',
+    ],
     'landmarks': ['landmarks_dim', 'landmarks_to_points', 'points_to_landmarks', 'replace_points'],
     'load_utils': ['list_datasets', 'load_dataset'],
     'logging': ['logger'],

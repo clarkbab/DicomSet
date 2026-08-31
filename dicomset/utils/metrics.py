@@ -3,7 +3,7 @@ import pandas as pd
 from typing import Callable, Dict, List
 
 from ..typing import AffineMatrix, BatchImage, BatchLabelImage, Image, LabelImage, Landmarks, Number, Point, Points, SpatialDim
-from .args import arg_to_list, bubble_args
+from .args import alias_kwargs, arg_to_list, bubble_args
 from .conversion import to_list, to_numpy
 from .geometry import affine_spacing, centre_of_mass
 from .landmarks import landmarks_dim, points_to_landmarks
@@ -112,27 +112,29 @@ def __spatial_ncc(
 
     return result
 
+@alias_kwargs(
+    ('a', 'affine'),
+)
 def __spatial_volume(
-    a: LabelImage,
+    label: LabelImage,
     affine: AffineMatrix | None = None,
     ) -> float:
-    a = to_numpy(a, dtype=bool)
+    label = to_numpy(label, dtype=bool)
     if affine is not None:
         spacing = affine_spacing(affine)
         voxel_volume = np.prod(spacing)
     else:
         voxel_volume = 1
-    volume = a.sum() * voxel_volume
-    return volume
+    volume = label.sum() * voxel_volume
+    return float(volume)
 
 @bubble_args(__spatial_centroid_error)
 def centroid_error(
     a: LabelImage | BatchLabelImage,
     b: LabelImage | BatchLabelImage,
-    dim: SpatialDim | None = None,
     **kwargs,
     ) -> float | List[float]:
-    return compute_channel_or_spatial_metrics(__spatial_centroid_error, a, b, dim=dim, **kwargs)
+    return compute_channel_or_spatial_metrics(__spatial_centroid_error, a, b, **kwargs)
 
 def compute_channel_or_spatial_metrics(
     spatial_metric_fn: Callable,
@@ -239,8 +241,7 @@ def tre(
 
 @bubble_args(__spatial_volume)
 def volume(
-    a: LabelImage | BatchLabelImage,
-    dim: SpatialDim | None = None,
+    labels: LabelImage | BatchLabelImage,
     **kwargs,
     ) -> float | List[float]:
-    return compute_channel_or_spatial_metrics(__spatial_volume, a, dim=dim, **kwargs)
+    return compute_channel_or_spatial_metrics(__spatial_volume, labels, **kwargs)

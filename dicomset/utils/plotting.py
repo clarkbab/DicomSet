@@ -8,12 +8,12 @@ from typing import Any, Dict, List, Literal, Tuple, Union
 from ..config import get_orientation
 from ..dicom.series import DicomSeries
 from ..nifti.series import NiftiSeries
-from ..typing import AffineMatrix, AffineMatrix2D, AffineMatrix3D, BatchBox, BatchBox2D, BatchBox3D, BatchLabelImage, BatchLabelImage2D, BatchLabelImage3D, BatchPoints, BatchPoints2D, BatchPoints3D, BatchVoxelBox, Box, Box2D, Box3D, Image, Image2D, Image3D, LabelImage, LabelImage2D, LabelImage3D, Landmark, Landmark2D, Landmark3D, LandmarkID, Landmarks, Landmarks2D, Landmarks3D, Number, Orientation2D, Orientation3D, Pixel, PixelBox, Planes3D, Point, Point2D, Point3D, Points, Points2D, Points3D, RegionID, Size, View, Voxel, VoxelBox, Window
+from ..typing import AffineMatrix, AffineMatrix2D, AffineMatrix3D, BatchBox, BatchBox2D, BatchBox3D, BatchLabelImage, BatchLabelImage2D, BatchLabelImage3D, BatchPoints, BatchPoints2D, BatchPoints3D, BatchVoxelBox, Box, Box2D, Box3D, Image, Image2D, Image3D, LabelImage, LabelImage2D, LabelImage3D, Landmark, Landmark2D, Landmark3D, LandmarkID, Landmarks, Landmarks2D, Landmarks3D, Number, Orientation, Orientation2D, Orientation3D, Pixel, PixelBox, Planes3D, Point, Point2D, Point3D, Points, Points2D, Points3D, RegionID, Size, View, Voxel, VoxelBox, Window
 from . import logging
 from .args import alias_kwargs, arg_default, arg_to_list, assert_2d, assert_3d
 from .assertions import assert_orientation
-from .conversion import to_numpy
-from .geometry import affine_origin, affine_spacing, centre_of_mass, foreground_fov, foreground_fov_centre, to_image_coords
+from .conversion import to_numpy, to_tuple
+from .geometry import affine_origin, affine_spacing, centre_of_mass, change_orientation, foreground_fov, foreground_fov_centre, to_image_coords
 from .landmarks import landmarks_to_points
 from .logging import logger
 from .transforms import crop, hist_eq as hist_eq_fn
@@ -25,7 +25,7 @@ WINDOW_PRESETS = {
     'bone': (1800, 400),
     'brain': (80, 40),
     'liver': (150, 30),
-    'lung': (1500, -600),
+    'lung': (1400, -500),
     'mediastinum': (350, 50),
     'tissue': (400, 50),
 }
@@ -49,22 +49,19 @@ def __get_view_aspect(
     aspect = float(np.abs(spacing[axes[1]] / spacing[axes[0]]))
     return aspect
 
+# Assuming data is in LPS orientation.
 def __get_view_origin(
     view: View,
-    orientation: Orientation3D,
     ) -> Tuple[Literal['lower', 'upper'], Literal['lower', 'upper']]:
-    assert_orientation(orientation, 3)
+    # Sagittal: x=P+, y=S+
     if view == 0:
-        origin_x = 'lower' if orientation[1] == 'P' else 'upper'
-        origin_y = 'lower' if orientation[2] == 'S' else 'upper'
+        return ('lower', 'lower')
+    # Coronal: x=L+, y=S+
     elif view == 1:
-        origin_x = 'lower' if orientation[0] == 'L' else 'upper'
-        origin_y = 'lower' if orientation[2] == 'S' else 'upper'
+        return ('lower', 'lower')
+    # Axial: x=L+, y=P+
     else:
-        origin_x = 'lower' if orientation[0] == 'L' else 'upper'
-        origin_y = 'upper' if orientation[1] == 'P' else 'lower'
-
-    return (origin_x, origin_y)
+        return ('lower', 'upper')
 
 def __get_view_slice(
     view: View,
@@ -81,6 +78,31 @@ def __get_view_xy(
     ) -> tuple:
     axes = [i for i in range(3) if i != view]
     return values[axes[0]], values[axes[1]]
+
+_PAIR_PRIORITY = {'L': 0, 'R': 0, 'A': 1, 'P': 1, 'I': 2, 'S': 2}
+
+def __resolve_orientation(
+    orientation: Orientation,
+    data: Image,
+    affine: AffineMatrix | None = None,
+    dose: Image | None = None,
+    labels: LabelImage | None = None,
+    ) -> Tuple[Image, AffineMatrix | None, Image | None, LabelImage | None]:
+    dim = len(orientation)
+    assert_orientation(orientation, dim)
+    if dim == 2:
+        target = orientation if _PAIR_PRIORITY[orientation[0]] <= _PAIR_PRIORITY[orientation[1]] else orientation[1] + orientation[0]
+    else:
+        target = 'LPS'
+    if orientation == target or affine is None:
+        return data, affine, dose, labels
+    data, new_aff = change_orientation(data, affine, orientation, target)
+    dummy = np.eye(dim + 1)
+    if dose is not None:
+        dose, _ = change_orientation(dose, dummy, orientation, target)
+    if labels is not None:
+        labels = np.stack([change_orientation(labels[i], dummy, orientation, target)[0] for i in range(len(labels))])
+    return data, new_aff, dose, labels
 
 def plot_dataframe(
     data: pd.DataFrame,
@@ -1037,13 +1059,16 @@ def plot_slice(
     assert_2d(data)
     affine = to_numpy(affine)
     orientation = arg_default(orientation, orientation, 'LS')
-    origin_x, origin_y = __get_origin_2d(orientation)
 
     # Resolve labels.
     labels = __resolve_labels(labels, dim=2)
 
+    data, affine, _, labels = __resolve_orientation(orientation, data, affine=affine, labels=labels)
+
+    origin_x, origin_y = __get_origin_2d(orientation)
+
     # Resolve window to vmin/vmax.
-    vmin, vmax = __resolve_window(window, affine=affine, data=data, labels=labels, vmax=vmax, vmin=vmin)
+    vmin, vmax = __resolve_window(window, affine=affine, data=data, label_names=label_names, labels=labels, vmax=vmax, vmin=vmin)
 
     # Resolve points and point names.
     points, point_names = __resolve_points(points, affine=affine, point_names=point_names)
@@ -1088,10 +1113,16 @@ def plot_slice(
             ax.imshow(l_bin.T, alpha=labels_alpha, cmap=cmap_label, origin=origin_y)
             ax.contour(l_bin.T, colors=[label_palette[i]], levels=[0.5], linestyles='solid')
 
+        # Add legend.
+        if label_names is not None:
+            label_names_list = arg_to_list(label_names, str)
+            handles = [mpl.patches.Patch(facecolor=label_palette[i], label=label_names_list[i]) for i in range(len(labels)) if i < len(label_names_list)]
+            ax.legend(fontsize='small', framealpha=0.7, handles=handles, loc='upper right')
+
     # Plot points.
     if points is not None:
         n_batches = len(points)
-        batch_palette = sns.color_palette('bright', n_batches)
+        batch_palette = sns.color_palette('colorblind', n_batches)
         for bi, (batch, batch_names) in enumerate(zip(points, point_names)):
             batch_colour = batch_palette[bi]
             if points_colour == 'gradient' and len(batch) > 1:
@@ -1167,7 +1198,7 @@ def plot_slice(
         plt.show()
 
     if return_axis:
-        return axs[0]
+        return ax
 
 @alias_kwargs(
     ('a', 'affine'),
@@ -1184,6 +1215,7 @@ def plot_slice(
     ('scc', 'show_crosshairs_coords'),
     ('sl', 'show_labels'),
     ('spn', 'show_point_names'),
+    ('uic', 'use_image_coords'),
 )
 def plot_volume(
     data: Image3D | DicomSeries | NiftiSeries | None,
@@ -1246,6 +1278,9 @@ def plot_volume(
     # Resolve labels.
     labels = __resolve_labels(labels, dim=3)
 
+    # Resolve all data to LPS orientation for plotting.
+    data, affine, dose, labels = __resolve_orientation(orientation, data, affine=affine, dose=dose, labels=labels)
+
     # Change the affine and any data so that the world coordinates always increase
     # to the right of and top of the image.
     if affine is not None:
@@ -1263,7 +1298,7 @@ def plot_volume(
 
 
     # Resolve window to vmin/vmax.
-    vmin, vmax = __resolve_window(window, affine=affine, data=data, labels=labels, vmax=vmax, vmin=vmin)
+    vmin, vmax = __resolve_window(window, affine=affine, data=data, label_names=label_names, labels=labels, vmax=vmax, vmin=vmin)
 
     # Histogram equalisation (applied to full volume for consistent slices across views).
     if hist_eq:
@@ -1279,9 +1314,8 @@ def plot_volume(
     views = list(range(3)) if view == 'all' else (view if isinstance(view, list) else [view])
 
     # Resolve idx to a 3D voxel point.
-    print('idx')
-    print(idx)
     idx_vox = __resolve_point(idx, data.shape, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, point_names=point_names, points=points)
+    idx_vox = to_tuple(np.round(to_numpy(idx_vox)).astype(int))
 
     # Resolve crosshairs to image coords.
     crosshairs_vox = __resolve_crosshairs(crosshairs, data.shape, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, point_names=point_names, points=points)
@@ -1312,7 +1346,7 @@ def plot_volume(
         if view_crop_box is not None:
             image = image[view_crop_box[0, 0]:view_crop_box[1, 0] + 1, view_crop_box[0, 1]:view_crop_box[1, 1] + 1]
         aspect = __get_view_aspect(v, affine)
-        origin_x, origin_y = __get_view_origin(v, orientation)
+        origin_x, origin_y = __get_view_origin(v)
 
         # The two non-view axes: first is displayed on x, second on y.
         col_ax.imshow(image.T, aspect=aspect, cmap=cmap, origin=origin_y, vmax=vmax, vmin=vmin)
@@ -1808,6 +1842,7 @@ def __resolve_window(
     affine: AffineMatrix | None = None,
     data: Image | None = None,
     labels: BatchLabelImage | None = None,
+    label_names: List[RegionID] | None = None,
     label_margin: float = 100,
     vmin: float | None = None,
     vmax: float | None = None,
@@ -1828,7 +1863,12 @@ def __resolve_window(
                 if value.lstrip('-').isdigit():
                     label_idx = int(value)
                 else:
-                    raise ValueError(f"window='{window}' uses a label name but 'label_names' is not supported for window presets.")
+                    if label_names is None:
+                        raise ValueError(f"window='{window}' uses a label name but no 'label_names' were provided.")
+                    label_names_list = arg_to_list(label_names, str)
+                    if value not in label_names_list:
+                        raise ValueError(f"Label name '{value}' not found in label_names: {label_names_list}.")
+                    label_idx = label_names_list.index(value)
                 label = labels[label_idx]
                 fov = foreground_fov(label, affine=affine)
                 fov[0] -= label_margin
