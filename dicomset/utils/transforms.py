@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     import SimpleITK as sitk
 
 from ..typing import AffineMatrix, BatchChannelImage, BatchChannelLabelImage, BatchImage, BatchLabelMap, Box, ChannelImage, Image, LabelMap, Landmark, Landmarks, Number, Point, Points, Size, Spacing, SpatialDim
-from .args import bubble_args
+from .args import alias_kwargs, bubble_args
 from .conversion import to_numpy, to_tensor
 from .geometry import affine_origin, affine_spacing, assert_box_width, create_affine, fov, to_image_coords
 from .landmarks import landmarks_to_points, replace_points
@@ -143,6 +143,16 @@ def __spatial_pad(
         image = to_numpy(image)
     return image
 
+# Could pass 'data/affine' or 'image' which will pull both.
+@alias_kwargs(
+    ('d', 'data'),
+    ('a', 'affine'),
+    ('i', 'image'),
+    ('oa', 'output_affine'),
+    ('oi', 'output_image'),
+    ('os', 'output_size'),
+    ('t', 'transform'),
+)
 def __spatial_resample(
     data: Image | None = None,
     affine: AffineMatrix | None = None,
@@ -162,7 +172,7 @@ def __spatial_resample(
         data = image.data
         affine = image.affine
     else:
-        assert data is not None, "Either 'data' or 'image' must be provided."
+        assert data is not None, "Data must be provided when image is not provided."
         data, return_type = to_numpy(data, return_type=True)
         if affine is None:
             affine = create_affine(dim=data.ndim)
@@ -544,6 +554,9 @@ def pad(
     ) -> Image:
     return compute_channel_or_spatial_transforms(__spatial_pad, image, *args, **kwargs)
 
+@alias_kwargs(
+    ('d', 'data'),
+)
 @bubble_args(__spatial_resample)
 def resample(
     data: BatchImage | Image | None = None, 
@@ -613,7 +626,8 @@ def to_sitk_image(
     # See C- (row-major) vs. Fortran- (column-major) style indexing.
     # Preprocessing, such as np.transpose and np.moveaxis can change the numpy array indexing style
     # from the default C-style to Fortran-style. SimpleITK will flip coordinates for C-style but not F-style.
-    data = __spatial_transpose(data)
+    # data = __spatial_transpose(data)
+    data = transpose(data, dim=dim)
     # We can use 'copy' to reset the indexing to C-style and ensure that SimpleITK flips coordinates. If we
     # don't do this, code called before 'to_sitk' could affect the behaviour of 'GetImageFromArray', which
     # was very confusing for me.
@@ -636,3 +650,39 @@ def transpose(
     **kwargs,
     ) -> BatchChannelImage | BatchImage | Image:
     return compute_channel_or_spatial_transforms(__spatial_transpose, data, *args, **kwargs)
+
+def transform_points(
+    points: Points | Landmarks,
+    transform: sitk.Transform,
+    ) -> Points | Landmarks:
+    is_landmarks = True if isinstance(points, pd.DataFrame) else False
+    if is_landmarks:
+        lms = points.copy()
+        points = points[list(range(3))].to_numpy()
+    assert points.shape[1] in (2, 3)
+    points = points.astype(np.float64)  # sitk expects double.
+    
+    # Apply transform to points.
+    points_t = []
+    for p in points:
+        p_t = transform.TransformPoint(p)
+        points_t.append(p_t)
+    points_t = np.vstack(points_t)
+
+    if is_landmarks:
+        lms[list(range(3))] = points_t
+        output = lms
+    else:
+        output = points_t
+
+    return output
+
+def to_transform(
+    dvf: ChannelImage,
+    affine: AffineMatrix | None = None,
+    ) -> sitk.Transform:
+    import SimpleITK as sitk
+    dvf = dvf.astype(np.float64)
+    assert dvf.shape[0] == 3
+    dvf_img = to_sitk_image(dvf, affine=affine, vector=True)
+    return sitk.DisplacementFieldTransform(dvf_img)

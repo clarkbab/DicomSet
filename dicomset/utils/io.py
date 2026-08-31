@@ -140,6 +140,16 @@ def load_numpy(
         data = data
     return data
 
+def load_transform(
+    filepath: FilePath,
+    ) -> None:
+    # Slow import so postponing until method call.
+    import SimpleITK as sitk
+    filepath = resolve_filepath(filepath)
+    if not os.path.exists(filepath):
+        raise ValueError(f"No transform found at: {filepath}")
+    return sitk.ReadTransform(filepath)
+
 def load_yaml(filepath: FilePath) -> Any:
     filepath = resolve_filepath(filepath)
     with open(filepath, 'r') as f:

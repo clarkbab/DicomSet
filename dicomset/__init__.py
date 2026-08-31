@@ -5,10 +5,12 @@ from typing import TYPE_CHECKING
 
 LAZY_IMPORTS = {
     'config': ['config_data'],
+    'dataset': ['Dataset'],
     'dicom': ['DicomDataset', 'DicomPatient', 'DicomSeries', 'DicomStudy'],
     'nifti': ['NiftiDataset', 'NiftiPatient', 'NiftiSeries', 'NiftiStudy'],
     'raw': ['RawDataset'],
     'training': ['TrainingDataset'],
+    'typing': ['DicomModality', 'NiftiModality'],
     'utils': [('load_dataset', 'load'), ('list_datasets', 'list')]
 }
 

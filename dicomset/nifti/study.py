@@ -173,7 +173,7 @@ setattr(NiftiStudy, 'region_filepaths', lambda self, region: self.default_series
 
 # Add image property shortcuts from 'default_series(mod)'.
 mods = ['ct', 'mr', 'dose']
-props = ['affine', 'data', 'fov', 'origin', 'size', 'spacing']
+props = ['affine', 'data', 'fov', 'image', 'origin', 'size', 'spacing']
 for m in mods:
     for p in props:
         setattr(NiftiStudy, f'{m}_{p}', property(lambda self, m=m, p=p: getattr(self.default_series(m), p) if self.default_series(m) is not None else None))

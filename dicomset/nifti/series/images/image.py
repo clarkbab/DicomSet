@@ -1,3 +1,5 @@
+from typing import Tuple
+
 from ....typing import AffineMatrix3D, Box3D, Image3D, Point3D, Size3D, Spacing3D
 from ....utils.geometry import affine_origin, affine_spacing, fov
 from ....utils.python import ensure_loaded, get_private_attr
@@ -28,6 +30,11 @@ class NiftiImageSeries(NiftiSeries):
         **kwargs,
         ) -> Box3D:
         return fov(get_private_attr(self, '__data'), get_private_attr(self, '__affine'), **kwargs)
+
+    @property
+    @ensure_loaded('__affine', '__load_data')
+    def image(self) -> Tuple[Image3D, AffineMatrix3D]:
+        return get_private_attr(self, '__data'), get_private_attr(self, '__affine')
 
     @property
     @ensure_loaded('__affine', '__load_data')

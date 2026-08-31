@@ -41,18 +41,18 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
 
     def has_patient(
         self,
-        patient: PatientID | List[PatientID],
+        ids: PatientID | List[PatientID],
         any: bool = False,
         **kwargs,
         ) -> bool:
-        real_ids = self.list_patients(patient_id=patient, **kwargs)
-        req_ids = arg_to_list(patient, str)
+        real_ids = self.list_patients(patient_ids=ids, **kwargs)
+        req_ids = arg_to_list(ids, str)
         n_overlap = len(np.intersect1d(real_ids, req_ids))
         return n_overlap > 0 if any else n_overlap == len(req_ids)
 
     @alias_kwargs(
-        ('g', 'group_id'),
-        ('p', 'patient_id'),
+        ('g', 'group_ids'),
+        ('p', 'patient_ids'),
         (('r', 'region', 'regions', 'region_id'), 'region_ids'),
     )
     @ensure_loaded(
@@ -61,8 +61,8 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
     )
     def list_patients(
         self,
-        group_id: GroupID | List[GroupID] | Literal['all'] = 'all',
-        patient_id: PatientID | List[PatientID] | Literal['all'] = 'all', 
+        group_ids: GroupID | List[GroupID] | Literal['all'] = 'all',
+        patient_ids: PatientID | List[PatientID] | Literal['all'] = 'all', 
         region_ids: RegionID | List[RegionID] | Literal['all'] = 'all',
         show_progress: bool = False,
         sort: Callable[DicomPatient, int] | None = None,    # Not yet implemented.
@@ -93,8 +93,8 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
                 ids = list(filter(filter_fn, tqdm(ids, disable=not show_progress)))
 
         # Filter by patient ID.
-        if patient_id != 'all':
-            patient_ids = arg_to_list(patient_id, str)
+        if patient_ids != 'all':
+            patient_ids = arg_to_list(patient_ids, str)
             all_ids = ids.copy()
             ids = []
             for i, id in enumerate(all_ids):
@@ -111,11 +111,11 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
                         break
 
         # Filter by group ID.
-        if group_id != 'all':
+        if group_ids != 'all':
             if self.__groups is None:
                 raise ValueError(f"File 'groups.csv' not found for dicom dataset '{self.__id}'.")
             all_groups = self.list_groups()
-            group_ids = arg_to_list(group_id, str, literals={ 'all': all_groups })
+            group_ids = arg_to_list(group_ids, str, literals={ 'all': all_groups })
             for g in group_ids:
                 if g not in all_groups:
                     raise ValueError(f"Group '{g}' not found.")
@@ -137,13 +137,13 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
 
     def list_regions(
         self,
-        group_id: GroupID | List[GroupID] | Literal['all'] = 'all',
-        patient_id: PatientID | List[PatientID] | Literal['all'] = 'all',
+        group_ids: GroupID | List[GroupID] | Literal['all'] = 'all',
+        patient_ids: PatientID | List[PatientID] | Literal['all'] = 'all',
         use_mapping: bool = True,
         use_regions_report: bool = True,
         ) -> List[RegionID]:
         # Load all patients.
-        patient_ids = self.list_patients(group=group_id, patient_id=patient_id)
+        patient_ids = self.list_patients(group_ids=group_ids, patient_ids=patient_ids)
 
         if use_regions_report:
             # Can't use 'load_patient_regions_report' due to circularity.
@@ -213,10 +213,10 @@ class DicomDataset(Dataset, IndexWithErrorsMixin):
     def patient(
         self,
         id: PatientID | int,
-        group_id: GroupID | List[GroupID] | Literal['all'] = 'all',
+        group_ids: GroupID | List[GroupID] | Literal['all'] = 'all',
         **kwargs,
         ) -> DicomPatient:
-        id = resolve_id(id, lambda: self.list_patients(group_id=group_id))
+        id = resolve_id(id, lambda: self.list_patients(group_ids=group_ids))
         if not self.has_patient(id):
             raise ValueError(f"Patient '{id}' not found in dataset '{self}'.")
         index = self.__index[self.__index['patient-id'] == str(id)]

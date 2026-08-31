@@ -96,6 +96,36 @@ def __spatial_distances(
 
     return metrics
 
+def __spatial_kll(
+    a: Image,
+    b: Image,
+    bins: int = 50,
+    eps: float = 1e-10,
+    ) -> float:
+    from scipy.stats import entropy
+    im_min = min(a.min(), b.min())
+    im_max = max(a.max(), b.max())
+    a_hist, _ = np.histogram(a.ravel(), bins=bins, range=(im_min, im_max), density=True)
+    b_hist, _ = np.histogram(b.ravel(), bins=bins, range=(im_min, im_max), density=True)
+    a_hist += eps
+    b_hist += eps
+    a_hist /= a_hist.sum()
+    b_hist /= b_hist.sum()
+    return entropy(a_hist, b_hist)
+
+def __spatial_mse(
+    a: Image,
+    b: Image,
+    ) -> float:
+    if a.shape != b.shape:
+        raise ValueError(f"Metric 'mse' expects arrays of equal shape. Got '{a.shape}' and '{b.shape}'.")
+    if (a.dtype != np.float32 and a.dtype != np.float64) or (b.dtype != np.float32 and b.dtype != np.float64):
+        raise ValueError(f"Metric 'mse' expects float32/64 arrays. Got '{a.dtype}' and '{b.dtype}'.")
+
+    # Calculate mean squared error.
+    error = np.mean((a - b) ** 2)
+    return error
+
 def __spatial_ncc(
     a: np.ndarray,
     b: np.ndarray,
@@ -111,6 +141,19 @@ def __spatial_ncc(
     result = (1 / a.size) * np.sum(norm_a * norm_b)
 
     return result
+
+def __spatial_ssim(
+    a: Image,
+    b: Image,
+    dim: SpatialDim = 3,
+    ) -> float:
+    if a.shape != b.shape:
+        raise ValueError(f"Metric 'ssim' expects arrays of equal shape. Got '{a.shape}' and '{b.shape}'.")
+    from skimage.metrics import structural_similarity
+    im_min = min(a.min(), b.min())
+    im_max = max(a.max(), b.max())
+    im_range = im_max - im_min
+    return structural_similarity(a, b, data_range=im_range)
 
 @alias_kwargs(
     ('a', 'affine'),
@@ -180,6 +223,24 @@ def distances(
     ) -> Dict[str, float] | List[Dict[str, float]]:
     return compute_channel_or_spatial_metrics(__spatial_distances, a, b, dim=dim, **kwargs)
 
+@bubble_args(__spatial_kll)
+def kll(
+    a: Image | BatchImage,
+    b: Image | BatchImage,
+    dim: SpatialDim | None = None,
+    **kwargs,
+    ) -> float | List[float]:
+    return compute_channel_or_spatial_metrics(__spatial_kll, a, b, dim=dim, **kwargs)
+
+@bubble_args(__spatial_mse)
+def mse(
+    a: Image | BatchImage,
+    b: Image | BatchImage,
+    dim: SpatialDim | None = None,
+    **kwargs,
+    ) -> float | List[float]:
+    return compute_channel_or_spatial_metrics(__spatial_mse, a, b, dim=dim, **kwargs)
+
 @bubble_args(__spatial_ncc)
 def ncc(
     a: Image | BatchImage,
@@ -188,6 +249,14 @@ def ncc(
     **kwargs,
     ) -> float | List[float]:
     return compute_channel_or_spatial_metrics(__spatial_ncc, a, b, dim=dim, **kwargs)
+
+@bubble_args(__spatial_ssim)
+def ssim(
+    a: Image | BatchImage,
+    b: Image | BatchImage,
+    dim: SpatialDim | None = None,
+    ) -> float | List[float]:
+    return compute_channel_or_spatial_metrics(__spatial_ssim, a, b, dim=dim)
 
 def tre(
     a: Point | Points | Landmarks,

@@ -237,11 +237,16 @@ def regions_to_list(
     return region_ids
 
 def resolve_filepath(filepath: FilePath) -> FilePath:
+    dataset_options = ['d', 'dataset', 'datasets']
+    for d in dataset_options:
+        if filepath.startswith(f"{d}:"):
+            filepath = os.path.join(config.dirs.datasets, filepath[len(d) + 1:])
+            return filepath
     file_options = ['f', 'file', 'files']
     for f in file_options:
         if filepath.startswith(f"{f}:"):
             filepath = os.path.join(config.dirs.files, filepath[len(f) + 1:])
-            break
+            return filepath
     return filepath
 
 def resolve_id(
