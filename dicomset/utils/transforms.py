@@ -63,6 +63,39 @@ def __spatial_crop(
         data = to_numpy(data)
     return data
 
+# Can be applied to spatial or channel image.
+def __spatial_crop_or_pad(
+    data: Image,
+    crop_box: Box,
+    affine: AffineMatrix | None = None,
+    ) -> Image:
+    data, return_type = to_tensor(data, return_type=True)
+    crop_box = __resolve_box(crop_box, data.shape, affine=affine)
+    assert_box_width(crop_box)
+
+    # Convert box to voxel coordinates.
+    if affine is not None:
+        crop_box = to_image_coords(crop_box, affine=affine)
+
+    # Perform padding - clip if padding is less than zero.
+    size = np.array(data.shape)
+    pad_min = (-np.array(min)).clip(0)
+    pad_max = (max - size).clip(0)
+    padding = list(reversed(list(zip(pad_min, pad_max))))  # torch 'pad' operates from back to front.
+    padding = tuple(torch.tensor(padding).flatten().tolist())
+    data = torch.nn.functional.pad(data, padding, value=fill)
+
+    # Perform cropping.
+    size = np.array(data.shape)
+    crop_min = np.array(crop_box[0]).clip(0)
+    crop_max = (size - np.array(crop_box[1])).clip(0)
+    slices = tuple(slice(int(mn), int(s - mx)) for mn, mx, s in zip(crop_min, crop_max, size))
+    data = data[slices]
+
+    if return_type is np.ndarray:
+        data = to_numpy(data)
+    return data
+
 def __spatial_minmax(
     data: Image,
     data_min: Number | Literal['min'] = 'min',
@@ -92,15 +125,15 @@ def __spatial_minmax(
     return data
 
 def __spatial_one_hot_encode(
-    image: LabelMap,
+    data: LabelMap,
     background: bool = False,
     n_classes: int | None = None,
     ) -> ChannelLabelImage:
-    image, return_type = to_tensor(image, dtype=torch.long, return_type=True)
+    data, return_type = to_tensor(data, dtype=torch.long, return_type=True)
     if n_classes is None:
-        n_classes = int(image.max()) + 1
-    label = torch.zeros((n_classes, *image.shape), dtype=torch.bool)
-    label.scatter_(0, image.unsqueeze(0), True)
+        n_classes = int(data.max()) + 1
+    label = torch.zeros((n_classes, *data.shape), dtype=torch.bool)
+    label.scatter_(0, data.unsqueeze(0), True)
     if not background:
         label = label[1:]
     if return_type is np.ndarray:
@@ -110,14 +143,14 @@ def __spatial_one_hot_encode(
 # Pulls image data/affine from "data/affine" or "image" series.
 # Output size/affine is pulled from "output_size/affine" or "output_image" series. 
 def __spatial_pad(
-    image: Image,
+    data: Image,
     box: Box,
     affine: AffineMatrix | None = None,
     fill: float | Literal['min'] = 'min',
     ) -> Image:
     assert_box_width(box)
-    image, return_type = to_tensor(image, return_type=True)
-    fill = image.min() if fill == 'min' else fill
+    data, return_type = to_tensor(data, return_type=True)
+    fill = data.min() if fill == 'min' else fill
     if isinstance(fill, torch.Tensor):
         fill = fill.item()
 
@@ -132,16 +165,16 @@ def __spatial_pad(
         min, max = box
 
     # Perform padding - clip if padding is less than zero.
-    size = np.array(image.shape)
+    size = np.array(data.shape)
     pad_min = (-np.array(min)).clip(0)
     pad_max = (max - size).clip(0)
     padding = list(reversed(list(zip(pad_min, pad_max))))  # torch 'pad' operates from back to front.
     padding = tuple(torch.tensor(padding).flatten().tolist())
-    image = torch.nn.functional.pad(image, padding, value=fill)
+    data = torch.nn.functional.pad(data, padding, value=fill)
 
     if return_type is np.ndarray:
-        image = to_numpy(image)
-    return image
+        data = to_numpy(data)
+    return data
 
 # Could pass 'data/affine' or 'image' which will pull both.
 @alias_kwargs(
@@ -430,6 +463,14 @@ def crop(
     ) -> BatchImage | Image:
     return compute_channel_or_spatial_transforms(__spatial_crop, data, *args, **kwargs)
 
+@bubble_args(__spatial_crop_or_pad)
+def crop_or_pad(
+    data: BatchImage | Image,
+    *args,
+    **kwargs,
+    ) -> BatchImage | Image:
+    return compute_channel_or_spatial_transforms(__spatial_crop_or_pad, data, *args, **kwargs)
+
 # To/from sitk image need to be here for circular import reasons (spatial transpose).
 def crop_affine(
     affine: AffineMatrix,
@@ -677,12 +718,18 @@ def transform_points(
 
     return output
 
+@alias_kwargs(
+    ('a', 'affine'),
+    ('d', 'dim'),
+)
 def to_transform(
     dvf: ChannelImage,
     affine: AffineMatrix | None = None,
+    dim: SpatialDim = 3,
     ) -> sitk.Transform:
     import SimpleITK as sitk
     dvf = dvf.astype(np.float64)
-    assert dvf.shape[0] == 3
-    dvf_img = to_sitk_image(dvf, affine=affine, vector=True)
+    if dvf.shape[0] != dim:
+        raise ValueError(f"Expected DVF with {dim} channels (first axis), got {dvf.shape[0]}")
+    dvf_img = to_sitk_image(dvf, affine=affine, dim=dim)
     return sitk.DisplacementFieldTransform(dvf_img)

@@ -164,35 +164,35 @@ class StructMap:
         api_ids: LandmarkID | RegionID | List[LandmarkID | RegionID],
         disk_ids: List[DiskLandmarkID | DiskRegionID] | None = None,
         ) -> List[DiskRegionID]:
-        print('map_api_to_disk')
         api_ids = arg_to_list(api_ids, str)
-        print(api_ids)
         true_disk_ids = disk_ids
-        print(true_disk_ids)
 
         disk_ids = [] 
         for i in api_ids:
+            # Under what conditions should we map an API region to a disk region?
+            # 1. When a mapping (e.g. Parotid_L -> r"$Parotid(_|\\s)L^) exists and
+            #   one of the disk regions matches the mapping.
+            # 2. When a mapping exists but there are no matches, we should still include
+            # the disk api region if it matches a disk region exactly.
+
             # Check mappings.
             if self.mappings is not None and i in self.mappings:
                 values = self.mappings[i]
-                print('values')
-                print(values)
                 for v in values: 
                     # Handle regexp - add all matching disk IDs.
                     if v.startswith('re:'):
                         assert true_disk_ids is not None, "Disk IDs must be provided for regexp mapping."
                         regex = re.compile(v[3:], flags=re.IGNORECASE)
-                        print('regex comp')
-                        print(regex)
                         for d in true_disk_ids:
-                            print(d)
                             if regex.match(d):
                                 # If the regexp matches to a disk region, then include the API region as a
                                 # viable option.
                                 disk_ids.append(i)
                     else:
                         disk_ids.append(v)
-            else:
+
+            # The api region may match a disk region exactly.
+            if i in true_disk_ids:
                 disk_ids.append(i)
 
         return list(sorted(set(disk_ids)))

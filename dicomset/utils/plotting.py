@@ -1216,6 +1216,7 @@ def plot_slice(
     ('sl', 'show_labels'),
     ('spn', 'show_point_names'),
     ('uic', 'use_image_coords'),
+    ('v', 'views'),
 )
 def plot_volume(
     data: Image3D | DicomSeries | NiftiSeries | None,
@@ -1256,7 +1257,7 @@ def plot_volume(
     show_title: bool = True,
     title_fontsize: float = 10,
     use_image_coords: bool = False,
-    view: View | List[View] | Literal['all'] = 'all',
+    views: View | List[View] | Literal['all'] = 'all',
     vmin: Number | None = None,
     vmax: Number | None = None,
     window: Window | None = None,
@@ -1311,7 +1312,7 @@ def plot_volume(
     points, point_names = __resolve_points(points, affine=affine, point_names=point_names)
 
     # Resolve views.
-    views = list(range(3)) if view == 'all' else (view if isinstance(view, list) else [view])
+    views = list(range(3)) if views == 'all' else (views if isinstance(views, list) else [views])
 
     # Resolve idx to a 3D voxel point.
     idx_vox = __resolve_point(idx, data.shape, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, point_names=point_names, points=points)

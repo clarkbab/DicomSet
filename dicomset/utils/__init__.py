@@ -20,8 +20,8 @@ LAZY_IMPORTS = {
     ],
     'images': ['create_box_label'],
     'io': [
-        'load_csv', 'load_json', 'load_mha', 'load_nifti', 'load_nrrd', 'load_numpy', 'save_csv', 'save_json', 'save_nifti',
-        'save_mha', 'save_numpy', 'save_transform',
+        'load_csv', 'load_json', 'load_mha', 'load_nifti', 'load_nrrd', 'load_numpy', 'load_transform', 
+        'save_csv', 'save_json', 'save_nifti', 'save_mha', 'save_numpy', 'save_transform',
     ],
     'landmarks': ['landmarks_dim', 'landmarks_to_points', 'points_to_landmarks', 'replace_points'],
     'load_utils': ['list_datasets', 'load_dataset'],
@@ -31,8 +31,9 @@ LAZY_IMPORTS = {
     'plotting': ['plot_hist', 'plot_slice', 'plot_volume'],
     'python': ['ensure_loaded', 'filter_lists', 'flatten_list', 'is_windows', 'sort_lists', 'unzip'],
     'transforms': [
-        'centre_crop', 'centre_crop_points', 'crop', 'crop_affine', 'crop_points', 'from_sitk_image', 'hist_eq', 'minmax',
-        'one_hot_encode', 'resample', 'sample', 'standardise', 'to_sitk_image', 'to_transform', 'transform_points', 'transpose'
+        'centre_crop', 'centre_crop_points', 'crop', 'crop_affine', 'crop_or_pad', 'crop_points', 'from_sitk_image', 'hist_eq',
+        'minmax', 'one_hot_encode', 'resample', 'sample', 'standardise', 'to_sitk_image', 'to_transform', 'transform_points',
+        'transpose',
     ],
 }
 
