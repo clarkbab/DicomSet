@@ -51,28 +51,21 @@ class NiftiRegionsSeries(NiftiImageSeries):
         sort_regions: bool = True,
         use_mapping: bool = True,
         ) -> Tuple[List[RegionID], BatchLabelImage3D]:
-        print('data')
         if self.__struct_map is None:
             use_mapping = False
-        print(region_ids)
         region_ids = self.list_regions(region_ids=region_ids, sort_regions=sort_regions, use_mapping=use_mapping)
-        print(region_ids)
 
         # Required for region mapping with regexps.
         true_disk_regions = self.__list_disk_regions()
-        print('tdr')
-        print(true_disk_regions)
 
         # Add regions data.
         regions_data = None    # We don't know the shape yet.
         for i, r in enumerate(region_ids):
-            print(i, r)
             # Get disk regions.
             if use_mapping:
                 disk_regions = self.__struct_map.map_api_to_disk(r, disk_ids=true_disk_regions)
             else:
                 disk_regions = [r]
-            print(disk_regions)
 
             # Load and sum multiple regions.
             reg_data = []
@@ -168,14 +161,10 @@ class NiftiRegionsSeries(NiftiImageSeries):
         sort_regions: bool = True,
         use_mapping: bool = True,
         ) -> List[RegionID]:
-        print('list_regions')
         if self.__struct_map is None:
             use_mapping = False
 
-        print(region_ids)
         true_disk_regions = self.__list_disk_regions()
-        print('tdr')
-        print(true_disk_regions)
         
         # Map disk regions back to API regions.
         if region_ids == 'all':
@@ -190,12 +179,9 @@ class NiftiRegionsSeries(NiftiImageSeries):
             region_ids = regions_to_list(region_ids, disk_region_ids=true_disk_regions, literals={ 'all': self.list_regions }, sort_regions=sort_regions, struct_map=self.__struct_map)
             api_regions = []
             for r in region_ids:
-                print(r)
                 # Only keep regions that map to one or more disk regions.
                 if use_mapping:
-                    print('mapping')
                     disk_regions = self.__struct_map.map_api_to_disk(r, disk_ids=true_disk_regions)
-                    print(disk_regions)
                     if len(np.intersect1d(disk_regions, true_disk_regions)) > 0:
                         api_regions.append(r)
                 else:

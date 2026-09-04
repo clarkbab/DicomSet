@@ -60,7 +60,6 @@ class NiftiLandmarksSeries(NiftiSeries):
 
         # Load landmarks.
         landmarks_data = self.__data.copy()
-        landmarks_data = landmarks_data.rename(columns={ '0': 0, '1': 1, '2': 2 })
         if not use_world_coords:
             if self.__ref_ct is None:
                 raise ValueError(f"Cannot convert landmarks to image coordinates without 'ref_ct'.")
@@ -176,7 +175,7 @@ class NiftiLandmarksSeries(NiftiSeries):
         return list(sorted(set(api_landmarks)))
 
     def __load_data(self) -> None:
-        self.__data = load_csv(self.__filepath)
+        self.__data = load_csv(self.__filepath, map_cols=dict((str(i), i) for i in range(3)))
 
     def __str__(self) -> str:
         return super().__str__(self.__class__.__name__)

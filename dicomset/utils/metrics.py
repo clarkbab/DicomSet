@@ -289,10 +289,6 @@ def tre(
     #     on_cols.insert(0, 'study-id')
     if 'patient-id' in a.columns and 'patient-id' in b.columns:
         on_cols.insert(0, 'patient-id')
-    print('=== merging ===')
-    print(a.head())
-    print(b.head())
-    print(on_cols)
     tre_df = a.merge(b, on=on_cols)
     assert len(tre_df) == len(a), f"Expected {len(a)} corresponding landmarks, but got {len(tre_df)}."
     dim = landmarks_dim(a)

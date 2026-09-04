@@ -1469,7 +1469,34 @@ def plot_volume(
                 col_ax.plot(xs, ys, color='yellow', linestyle='dashed', linewidth=1, zorder=8)
             col_ax.set_xlim(xlim); col_ax.set_ylim(ylim)
 
-        # Get tick positions in image coords.
+        # Title.
+        if show_title:
+            title = f'{VIEWS[v]}, slice {view_idx}'
+            if affine is not None:
+                s = affine_spacing(affine)
+                o = affine_origin(affine)
+                world_pos = view_idx * s[v] + o[v]
+                # title = f'Slice {view_idx} ({VIEWS[v]})'
+                title = f'Slice {view_idx} ({world_pos:.1f})mm'
+            else:
+                title = f'Slice {view_idx}'
+            col_ax.set_title(title, fontsize=title_fontsize)
+
+        # Labels.
+        if affine is not None:
+            s = affine_spacing(affine)
+            sx, sy = __get_view_xy(v, s)
+            if not use_image_coords:
+                col_ax.set_xlabel(f'mm [@ {sx:.3f} mm]')
+                col_ax.set_ylabel(f'mm [@ {sy:.3f} mm]')
+            else:
+                col_ax.set_xlabel(f'voxel [@ {sx:.3f} mm]')
+                col_ax.set_ylabel(f'voxel [@ {sy:.3f} mm]')
+        else:
+            col_ax.set_xlabel('voxel')
+            col_ax.set_ylabel('voxel')
+
+        # Tick positions.
         size_x, size_y = image.shape
         x_tick_spacing = np.unique(np.diff(col_ax.get_xticks()))[0]
         x_ticks = np.arange(0, size_x, x_tick_spacing)
@@ -1478,36 +1505,29 @@ def plot_volume(
         col_ax.set_xticks(x_ticks)
         col_ax.set_yticks(y_ticks)
 
-        # Create tick labels.
+        # Tick labels.
         # Apply crop. Only the labels get the offset applied,
         # positions in image coords don't change.
         if view_crop_box is not None:
             x_ticks += view_crop_box[0, 0]
             y_ticks += view_crop_box[0, 1]
-        # Convert tick labels to world coords.
         if not use_image_coords and affine is not None:
+            # Convert tick labels to world coords.
             s = affine_spacing(affine)
             o = affine_origin(affine)
             sx, sy = __get_view_xy(v, s)
             ox, oy = __get_view_xy(v, o)
             x_ticks = (x_ticks * sx + ox)
             y_ticks = (y_ticks * sy + oy)
-        col_ax.set_xticklabels([f'{t:.1f}' for t in x_ticks])
-        col_ax.set_yticklabels([f'{t:.1f}' for t in y_ticks])
+            col_ax.set_xticklabels([f'{t:.1f}' for t in x_ticks])
+            col_ax.set_yticklabels([f'{t:.1f}' for t in y_ticks])
+        else:
+            col_ax.set_xticklabels([str(int(t)) for t in x_ticks])
+            col_ax.set_yticklabels([str(int(t)) for t in y_ticks])
 
         # Hide spines.
         for p in ['right', 'top', 'bottom', 'left']:
             col_ax.spines[p].set_visible(False)
-
-        # Title.
-        if show_title:
-            title = f'{VIEWS[v]}, slice {view_idx}'
-            if affine is not None:
-                s = affine_spacing(affine)
-                o = affine_origin(affine)
-                world_pos = view_idx * s[v] + o[v]
-                title += f' ({world_pos:.1f}mm)'
-            col_ax.set_title(title, fontsize=title_fontsize)
 
     if show:
         plt.tight_layout()

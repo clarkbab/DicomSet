@@ -77,6 +77,7 @@ def load_registered_landmarks(
     model: ModelID,
     fixed_series_id: SeriesID = 'series_0',
     fixed_study_id: StudyID = 'study_1',
+    landmark_ids: LandmarkID | List[LandmarkID] | Literal['all'] = 'all',
     moving_patient_id: PatientID | None = None,
     moving_series_id: SeriesID = 'series_0',
     moving_study_id: StudyID = 'study_0',
@@ -84,7 +85,11 @@ def load_registered_landmarks(
     set = NiftiDataset(dataset)
     moving_patient_id = fixed_patient_id if moving_patient_id is None else moving_patient_id
     filepath = os.path.join(set.path, 'data', 'predictions', 'registration', 'patients', fixed_patient_id, fixed_study_id, fixed_series_id, moving_patient_id, moving_study_id, moving_series_id, 'landmarks', f'{model}.csv')
-    return load_csv(filepath)
+    df = load_csv(filepath, map_cols=dict((str(i), i) for i in range(3)))
+    if landmark_ids != 'all':
+        landmark_ids = arg_to_list(landmark_ids, str)
+        df = df[df['landmark-id'].isin(landmark_ids)]
+    return df
 
 def load_registered_regions(
     dataset: DatasetID,
@@ -96,19 +101,28 @@ def load_registered_regions(
     moving_patient_id: PatientID | None = None,
     moving_series_id: SeriesID = 'series_0',
     moving_study_id: StudyID = 'study_0',
-    ) -> Tuple[LabelImage3D | BatchLabelImage3D, AffineMatrix3D]:
+    ) -> Tuple[RegionID | List[RegionID] | None, LabelImage3D | BatchLabelImage3D | None, AffineMatrix3D | None]:
     region_ids = arg_to_list(region_ids, str)
     set = NiftiDataset(dataset)
     moving_patient_id = fixed_patient_id if moving_patient_id is None else moving_patient_id
-    data_list = []
+    loaded_region_ids = []
+    datas = []
     affine = None
     for r in region_ids:
         filepath = os.path.join(set.path, 'data', 'predictions', 'registration', 'patients', fixed_patient_id, fixed_study_id, fixed_series_id, moving_patient_id, moving_study_id, moving_series_id, 'regions', r, f'{model}.nii.gz')
+        if not os.path.exists(filepath):
+            continue
+        loaded_region_ids.append(r)
         d, a = load_nifti(filepath)
-        data_list.append(d)
+        datas.append(d)
         affine = a
-    data = data_list[0] if len(data_list) == 1 else np.stack(data_list, axis=0)
-    return data, affine
+    if len(datas) == 0:
+        loaded_region_ids = None
+        data = None
+    else:
+        loaded_region_ids = loaded_region_ids if len(loaded_region_ids) > 1 else loaded_region_ids[0]
+        data = np.stack(datas) if len(datas) > 1 else datas[0]
+    return loaded_region_ids, data, affine
 
 def load_registration_transform(
     dataset: DatasetID,
@@ -125,3 +139,29 @@ def load_registration_transform(
     moving_patient_id = fixed_patient_id if moving_patient_id is None else moving_patient_id
     filepath = os.path.join(set.path, 'data', 'predictions', 'registration', 'patients', fixed_patient_id, fixed_study_id, fixed_series_id, moving_patient_id, moving_study_id, moving_series_id, 'transform', f'{model}.hdf5')
     return load_transform(filepath)
+
+def load_registration(
+    dataset: DatasetID,
+    fixed_patient_id: PatientID,
+    model: ModelID,
+    fixed_series_id: SeriesID = 'series_0',
+    fixed_study_id: StudyID = 'study_1',
+    landmark_ids: LandmarkID | List[LandmarkID] | Literal['all'] | None = None,
+    moving_patient_id: PatientID | None = None,
+    moving_series_id: SeriesID = 'series_0',
+    moving_study_id: StudyID = 'study_0',
+    region_ids: RegionID | List[RegionID] | Literal['all'] | None = None,
+    ) -> Tuple[sitk.Transform | None, Tuple[CtImage | None, AffineMatrix3D | None], DoseImage | None, Landmarks | None, Tuple[RegionID | List[RegionID] | None, RegionLabel | RegionsLabel | None]]:
+    # Load components.
+    transform = load_registration_transform(dataset, fixed_patient_id, model, fixed_series_id=fixed_series_id, fixed_study_id=fixed_study_id, moving_patient_id=moving_patient_id, moving_series_id=moving_series_id, moving_study_id=moving_study_id)
+    ct, affine = load_registered_image(dataset, fixed_patient_id, model, 'ct', fixed_series_id=fixed_series_id, fixed_study_id=fixed_study_id, moving_patient_id=moving_patient_id, moving_series_id=moving_series_id, moving_study_id=moving_study_id)
+    dose, _ = load_registered_image(dataset, fixed_patient_id, model, 'dose', fixed_series_id=fixed_series_id, fixed_study_id=fixed_study_id, moving_patient_id=moving_patient_id, moving_series_id=moving_series_id, moving_study_id=moving_study_id)
+    if landmark_ids is not None:
+        landmarks_data = load_registered_landmarks(dataset, fixed_patient_id, model, landmark_ids=landmark_ids, fixed_series_id=fixed_series_id, fixed_study_id=fixed_study_id, moving_patient_id=moving_patient_id, moving_series_id=moving_series_id, moving_study_id=moving_study_id)
+    else:
+        landmarks_data = None
+    if region_ids is not None:
+        loaded_region_ids, regions_data, _ = load_registered_regions(dataset, fixed_patient_id, model, region_ids=region_ids, fixed_series_id=fixed_series_id, fixed_study_id=fixed_study_id, moving_patient_id=moving_patient_id, moving_series_id=moving_series_id, moving_study_id=moving_study_id)
+    else:
+        loaded_region_ids, regions_data = None, None
+    return transform, (ct, affine), dose, landmarks_data, (loaded_region_ids, regions_data)

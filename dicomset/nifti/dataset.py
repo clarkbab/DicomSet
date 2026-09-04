@@ -192,7 +192,7 @@ class NiftiDataset(IndexMixin, Dataset):
             study_ids = pat.list_studies()
             for s in study_ids:
                 study = pat.study(s)
-                series_ids = study.list_regions_series(region_ids=region_ids)
+                series_ids = study.list_regions_series()
                 for s in series_ids:
                     series = study.regions_series(s)
                     ids += series.list_regions(region_ids=region_ids)

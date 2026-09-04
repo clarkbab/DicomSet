@@ -13,7 +13,7 @@ LAZY_IMPORTS = {
     'load': [
         'dataset_exists', 'list_datasets', 'load_ct', 'load_dataset', 'load_index', 'load_region',
         'load_registered_image', 'load_registered_landmarks',
-        'load_registered_regions', 'load_registration_transform',
+        'load_registered_regions', 'load_registration', 'load_registration_transform',
     ],
     'rename': ['rename_patients'],
 }

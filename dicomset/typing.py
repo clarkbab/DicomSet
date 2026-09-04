@@ -101,6 +101,8 @@ BatchLabelMap = BatchLabelMap2D | BatchLabelMap3D
 BatchPoints = BatchPoints2D | BatchPoints3D
 Box = Box2D | Box3D
 ChannelImage = ChannelImage2D | ChannelImage3D
+CtImage = Image3D
+DoseImage = Image3D
 ID = DatasetID | PatientID | SeriesID | StudyID
 Image = Image2D | Image3D
 LabelImage = LabelImage2D | LabelImage3D
@@ -118,6 +120,8 @@ Spacing = Spacing2D | Spacing3D
 Plane = Plane2D | Plane3D
 Planes2D = List[Plane2D] | Float[np.ndarray, "N 2 2"]
 Planes3D = List[Plane3D] | Float[np.ndarray, "N 2 3"]
+RegionLabel = LabelImage
+RegionsLabel = BatchLabelImage
 
 # Fourth-order types.
 Planes = List[Plane2D] | List[Plane3D] | Planes2D | Planes3D
