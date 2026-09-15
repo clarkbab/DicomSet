@@ -1552,6 +1552,15 @@ def plot_volume(
                 col_ax.plot(xs, ys, color='yellow', linestyle='dashed', linewidth=1, zorder=8)
             col_ax.set_xlim(xlim); col_ax.set_ylim(ylim)
 
+        # Get tick positions in image coords.
+        size_x, size_y = image.shape
+        x_tick_spacing = np.unique(np.diff(col_ax.get_xticks()))[0]
+        x_ticks = np.arange(0, size_x, x_tick_spacing)
+        y_tick_spacing = np.unique(np.diff(col_ax.get_yticks()))[0]
+        y_ticks = np.arange(0, size_y, y_tick_spacing)
+        col_ax.set_xticks(x_ticks)
+        col_ax.set_yticks(y_ticks)
+
         # Labels.
         if affine is not None:
             s = affine_spacing(affine)
