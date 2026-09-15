@@ -135,7 +135,7 @@ class NiftiRegionsSeries(NiftiImageSeries):
     @alias_kwargs(
         (('r', 'region', 'regions', 'region_id'), 'region_ids'),
     )
-    def has_region(
+    def has_regions(
         self,
         region_ids: RegionID | List[RegionID] | Literal['all'] = 'all',
         any: bool = False,

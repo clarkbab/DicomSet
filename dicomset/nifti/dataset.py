@@ -60,9 +60,10 @@ class NiftiDataset(IndexMixin, Dataset):
         landmarks = list(sorted(np.unique(landmarks)))
         return landmarks
 
+    # Be nice to the user.
     @alias_kwargs(
         (('g', 'group', 'group_id'), 'group_ids'),
-        (('p', 'patient', 'patients', 'patient_id'), 'patient_ids'),
+        (('p', 'pat', 'pats', 'patient', 'patients', 'pat_id', 'pat_ids', 'patient_id'), 'patient_ids'),
         (('r', 'region', 'regions', 'region_id'), 'region_ids'),
     )
     @ensure_loaded(

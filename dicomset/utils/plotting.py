@@ -97,12 +97,12 @@ def __resolve_orientation(
         target = 'LPS'
     if orientation == target or affine is None:
         return data, affine, dose, labels
-    data, new_aff = change_image_orientation(data, affine, orientation, target)
+    data, new_aff = change_orientation(data, orientation, target, affine=affine)
     dummy = np.eye(dim + 1)
     if dose is not None:
-        dose, _ = change_image_orientation(dose, dummy, orientation, target)
+        dose, _ = change_orientation(dose, orientation, target, affine=dummy)
     if labels is not None:
-        labels = np.stack([change_image_orientation(labels[i], dummy, orientation, target)[0] for i in range(len(labels))])
+        labels = np.stack([change_orientation(labels[i], orientation, target, affine=dummy)[0] for i in range(len(labels))])
     return data, new_aff, dose, labels
 
 # Returns True for anything other than scaling/translation.

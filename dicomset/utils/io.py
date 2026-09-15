@@ -214,7 +214,7 @@ def save_mha(
     if os.path.exists(filepath) and not overwrite:
         raise ValueError(f"File '{filepath}' already exists, use overwrite=True.")
     if orientation != 'LPS':
-        data, affine = change_image_orientation(data, affine, 'LPS', orientation)
+        data, affine = change_orientation(data, 'LPS', orientation, affine=affine, negative_spacing=False)
     img = to_sitk_image(data, affine=affine)
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     sitk.WriteImage(img, filepath)
