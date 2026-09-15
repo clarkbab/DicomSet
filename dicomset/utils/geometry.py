@@ -365,13 +365,15 @@ def to_world_coords(
 # increase to patient right instead of left.
 def change_image_orientation(
     image: Image,
-    affine: AffineMatrix,
     old_orientation: Orientation,
     new_orientation: Orientation,
+    affine: AffineMatrix | None = None,
     ) -> Tuple[Image, AffineMatrix]:
     dim = len(old_orientation)
     assert_orientation(old_orientation, dim)
     assert_orientation(new_orientation, dim)
+    if affine is None:
+        affine = create_affine(dim=dim)
     affine = affine.copy()
 
     # Permute axes by pairing LR, AP, and IS axes. 
@@ -402,15 +404,17 @@ def change_image_orientation(
 def change_points_orientation(
     image_size: Size,
     points: Point | Points | Landmark | Landmarks,
-    affine: AffineMatrix,
     old_orientation: Orientation,
     new_orientation: Orientation,
+    affine: AffineMatrix | None = None,
     ) -> Tuple[Point | Points | Landmark | Landmarks, AffineMatrix]:
     dim = len(old_orientation)
     assert_orientation(old_orientation, dim)
     assert_orientation(new_orientation, dim)
     image_size = to_numpy(image_size)
     points = to_numpy(points).copy()
+    if affine is None:
+        affine = create_affine(dim=dim)
     affine = affine.copy()
     is_single = points.ndim == 1
     if is_single:
