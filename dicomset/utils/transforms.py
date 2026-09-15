@@ -18,6 +18,9 @@ if TYPE_CHECKING:
     from ..dicom import DicomSeries
     from ..nifti import NiftiImageSeries
 
+@alias_kwargs(
+    ('a', 'affine'),
+)
 def __spatial_centre_crop(
     data: Image,
     size: Size,
@@ -39,6 +42,9 @@ def __spatial_centre_crop(
     return __spatial_crop(data, crop_box)
 
 # Can be applied to spatial or channel image.
+@alias_kwargs(
+    ('a', 'affine'),
+)
 def __spatial_crop(
     data: Image,
     crop_box: Box,
@@ -96,6 +102,12 @@ def __spatial_crop_or_pad(
         data = to_numpy(data)
     return data
 
+@alias_kwargs(
+    ('dmn', 'data_min'),
+    ('dmx', 'data_max'),
+    ('mn', 'min'),
+    ('mx', 'max'),
+)
 def __spatial_minmax(
     data: Image,
     data_min: Number | Literal['min'] = 'min',
@@ -124,6 +136,10 @@ def __spatial_minmax(
         data = to_numpy(data)
     return data
 
+@alias_kwargs(
+    ('b', 'background'),
+    ('nc', 'n_classes'),
+)
 def __spatial_one_hot_encode(
     data: LabelMap,
     background: bool = False,
@@ -142,6 +158,10 @@ def __spatial_one_hot_encode(
 
 # Pulls image data/affine from "data/affine" or "image" series.
 # Output size/affine is pulled from "output_size/affine" or "output_image" series. 
+@alias_kwargs(
+    ('a', 'affine'),
+    ('f', 'fill'),
+)
 def __spatial_pad(
     data: Image,
     box: Box,
@@ -180,10 +200,12 @@ def __spatial_pad(
 @alias_kwargs(
     ('d', 'data'),
     ('a', 'affine'),
+    ('f', 'fill'),
     ('i', 'image'),
     ('oa', 'output_affine'),
     ('oi', 'output_image'),
     ('os', 'output_size'),
+    ('rt', 'return_transform'),
     ('t', 'transform'),
 )
 def __spatial_resample(
@@ -285,6 +307,14 @@ def __spatial_resample(
 # channel in a channel image. If 'combine_channels' is True, then
 # all channels are passed to the 'transform_fn' - this is useful
 # when normalising across channels for example.
+@alias_kwargs(
+    ('a', 'affine'),
+    ('f', 'fill'),
+    ('sc', 'sample_col'),
+    ('sz', 'sample_size'),
+    ('sp', 'sample_spacing'),
+    ('t', 'transform'),
+)
 def __spatial_sample(
     data: Image,
     points: Point | Points | Landmark | Landmarks,
@@ -360,6 +390,10 @@ def __spatial_sample(
 
     return result
 
+@alias_kwargs(
+    ('m', 'mean'),
+    ('s', 'std'),
+)
 def __standardise(
     data: Image,
     # Takes the data mean/std and puts them at these values.
@@ -390,6 +424,10 @@ def centre_crop(
     ) -> BatchImage | Image:
     return compute_channel_or_spatial_transforms(__spatial_centre_crop, data, *args, **kwargs)
 
+@alias_kwargs(
+    ('cc', 'combine_channels'),
+    ('d', 'dim'),
+)
 def compute_channel_or_spatial_transforms(
     transform_fn: Callable,
     data: Image | BatchImage | BatchChannelImage,
@@ -472,6 +510,9 @@ def crop_or_pad(
     return compute_channel_or_spatial_transforms(__spatial_crop_or_pad, data, *args, **kwargs)
 
 # To/from sitk image need to be here for circular import reasons (spatial transpose).
+@alias_kwargs(
+    ('a', 'affine'),
+)
 def crop_affine(
     affine: AffineMatrix,
     crop_box: Box,
@@ -487,6 +528,9 @@ def crop_affine(
 # in world coordinates and plotting code should just accept the new affine after
 # cropping to correctly place points.
 # With no affine, point values should change to reflect the new image coordinates.
+@alias_kwargs(
+    ('a', 'affine'),
+)
 def crop_points(
     points: Point | Points | Landmark | Landmarks,
     crop: Box,
@@ -523,6 +567,9 @@ def crop_points(
 
     return points
 
+@alias_kwargs(
+    ('a', 'affine'),
+)
 def centre_crop_points(
     points: Point | Points | Landmark | Landmarks,
     size: Size,
@@ -605,6 +652,9 @@ def resample(
     ) -> BatchImage | Image:
     return compute_channel_or_spatial_transforms(__spatial_resample, data, **kwargs) if data is not None else __spatial_resample(**kwargs)
 
+@alias_kwargs(
+    ('a', 'affine'),
+)
 def __resolve_box(
     box: Box,
     size: Size,
@@ -648,6 +698,10 @@ def standardise(
     ) -> Image | BatchImage:
     return compute_channel_or_spatial_transforms(__standardise, data, **kwargs)
 
+@alias_kwargs(
+    ('a', 'affine'),
+    ('d', 'dim'),
+)
 def to_sitk_image(
     data: ChannelImage | Image,
     affine: AffineMatrix | None = None,

@@ -14,7 +14,7 @@ LAZY_IMPORTS = {
         'to_ct_dicom', 'to_rtdose_dicom', 'to_rtstruct_dicom',
     ],
     'geometry': [
-        'affine_origin', 'affine_spacing', 'affine_2d', 'centre_of_mass', 'change_orientation', 'combine_boxes', 'create_affine',
+        'affine_origin', 'affine_spacing', 'affine_subset', 'centre_of_mass', 'change_image_orientation', 'change_points_orientation', 'combine_boxes', 'create_affine',
         'foreground_fov', 'foreground_fov_centre', 'foreground_fov_width', 'fov', 'fov_centre', 'fov_width', 'to_image_coords', 
         'to_world_coords',
     ],

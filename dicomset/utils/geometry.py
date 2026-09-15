@@ -4,8 +4,8 @@ import scipy
 import torch
 from typing import Callable, List, Tuple
 
-from ..typing import AffineMatrix, AffineMatrix3D, AffineMatrix2D, BatchChannelImage, BatchImage, BatchLabelImage, Box, Image, LabelImage, Landmark, Landmarks, Orientation, Pixel, Point, Points, Size, Spacing, SpatialDim, Voxel
-from .args import alias_kwargs
+from ..typing import AffineMatrix, BatchChannelImage, BatchImage, BatchLabelImage, Box, Image, LabelImage, Landmark, Landmarks, Orientation, Pixel, Point, Points, Size, Spacing, SpatialDim, Voxel
+from .args import alias_kwargs, arg_to_list
 from .assertions import assert_orientation
 from .conversion import to_numpy, to_tensor, to_tuple
 from .landmarks import landmarks_to_points, points_to_landmarks
@@ -32,18 +32,30 @@ def affine_spacing(
     affine: AffineMatrix,
     ) -> Spacing:
     affine, return_type = to_tensor(affine, return_type=True)
-
-    # Get spacing.
     dim = affine.shape[0] - 1
-    if dim == 2:
-        spacing = to_tensor([affine[0, 0], affine[1, 1]], device=affine.device)
-    else:
-        spacing = to_tensor([affine[0, 0], affine[1, 1], affine[2, 2]], device=affine.device)
+    spacing = torch.linalg.norm(affine[:dim, :dim], dim=0)
 
     if return_type is np.ndarray:
          spacing = to_numpy(spacing)
 
     return spacing
+
+def affine_subset(
+    affine: AffineMatrix,
+    dims: List[SpatialDim] | SpatialDim,
+    ) -> AffineMatrix:
+    affine, return_type = to_tensor(affine, return_type=True)
+    dims = arg_to_list(dims, int)
+
+    # Keep rows/cols for the requested dims, plus the final homogeneous row/col.
+    dim = affine.shape[0] - 1
+    idxs = dims + [dim]
+    subset = affine[np.ix_(idxs, idxs)]
+
+    if return_type is np.ndarray:
+        subset = to_numpy(subset)
+
+    return subset
 
 def assert_box_width(
     box: Box,
@@ -148,15 +160,6 @@ def create_affine(
         affine[0, 3] = origin[0]
         affine[1, 3] = origin[1]
         affine[2, 3] = origin[2]
-    return affine
-
-def affine_2d(
-    affine: AffineMatrix3D,
-    dim: SpatialDim,  # The dim to remove.
-    ) -> AffineMatrix2D:
-    affine = affine.copy()
-    affine = np.delete(affine, 1, axis=0)
-    affine = np.delete(affine, 1, axis=1)
     return affine
 
 def foreground_fov(
@@ -298,46 +301,74 @@ def __spatial_centre_of_mass(
 
     return to_tuple(com) 
 
+@alias_kwargs(
+    ('a', 'affine'),
+)
 def to_image_coords(
     points: Point | Points | Landmark | Landmarks,
     affine: AffineMatrix,
+    truncate: bool = True,
     ) -> Pixel | Voxel | Landmark | Landmarks:
-    spacing = affine_spacing(affine)
-    origin = affine_origin(affine)
+    def __to_image_coords(points, affine):
+        inv_affine = np.linalg.inv(affine)
+        is_single = points.ndim == 1
+        if is_single:
+            points = points[None]
+        dim = affine.shape[0] - 1
+        points_h = np.hstack([points, np.ones((points.shape[0], 1))])
+        result = (inv_affine @ points_h.T).T[:, :dim]
+        if truncate:
+            result = np.round(result).astype(np.int32)
+        return result[0] if is_single else result
+
     if isinstance(points, (pd.DataFrame, pd.Series)):
         landmark_ids = points['landmark-id'] if isinstance(points, pd.DataFrame) else points.index[0]
         points = landmarks_to_points(points)
-        points = np.round((np.array(points) - origin) / spacing).astype(np.int32)
+        points = __to_image_coords(points, affine)
         points = points_to_landmarks(points, landmark_ids)
     else:
-        points = np.round((np.array(points) - origin) / spacing).astype(np.int32)
+        points = to_numpy(points)
+        points = __to_image_coords(points, affine)
     return points
 
+@alias_kwargs(
+    ('a', 'affine'),
+)
 def to_world_coords(
     points: Point | Points | Landmark | Landmarks,
     affine: AffineMatrix,
     ) -> Point:
-    spacing = affine_spacing(affine)
-    origin = affine_origin(affine)
+    def __to_world_coords(points, affine):
+        is_single = points.ndim == 1
+        if is_single:
+            points = points[None]
+        dim = affine.shape[0] - 1
+        points_h = np.hstack([points, np.ones((points.shape[0], 1))])
+        result = ((affine @ points_h.T).T[:, :dim]).astype(np.float32)
+        return result[0] if is_single else result
+
     if isinstance(points, (pd.DataFrame, pd.Series)):
         landmark_ids = points['landmark-id'] if isinstance(points, pd.DataFrame) else points.index[0]
         points = landmarks_to_points(points)
-        points = (points * spacing + origin).astype(np.float32)
+        points = __to_world_coords(points, affine)
         points = points_to_landmarks(points, landmark_ids)
     else:
-        points = (np.array(points) * spacing + origin).astype(np.float32)
+        points = to_numpy(points)
+        points = __to_world_coords(points, affine)
     return points
 
-# Flips the numpy array data (e.g. to change L -> R) and updates
-# the affine matrix accordingly to preserve the mapping from voxel
-# to world coordinates.
-def change_orientation(
-    data: Image,
+# Note! This changes the underlying world coordinate system.
+# This method changes the mapping from image -> world coordinates whilst
+# preserving the position of the origin in world coordinates.
+# E.g. if changing from L+ to R+, the origin will remain at the same place
+# on the patient (left upper lobe for example), but world coordinates will
+# increase to patient right instead of left.
+def change_image_orientation(
+    image: Image,
     affine: AffineMatrix,
     old_orientation: Orientation,
     new_orientation: Orientation,
-    negative_spacing: bool = True,
-    ) -> tuple[Image, AffineMatrix]:
+    ) -> Tuple[Image, AffineMatrix]:
     dim = len(old_orientation)
     assert_orientation(old_orientation, dim)
     assert_orientation(new_orientation, dim)
@@ -349,15 +380,72 @@ def change_orientation(
     new_pairs = [pair(c) for c in new_orientation]
     perm = [old_pairs.index(p) for p in new_pairs]
     if perm != list(range(dim)):
-        data = np.transpose(data, perm)
+        image = np.transpose(image, perm)
         affine[:dim, :dim] = affine[:dim, :dim][np.ix_(perm, perm)]     # Permute the rotation/scale part.
         affine[:dim, dim] = affine[perm, dim]                           # Permute the translation part.
 
-    # Flip axes if the orientation has changed.
-    # This part preserves the origin of the original image in world coordinates, but
-    # other points in the world will now correspond to different voxels.
+    # Flip the data and update the affine translation to preserve the
+    # position of the world origin.
+    R = affine[:dim, :dim]
+    o_i = np.linalg.inv(affine) @ np.append(np.zeros(dim), 1)
+    o_i = o_i[:dim]
+    o_i_new = o_i.copy()
     for i in range(dim):
         if old_orientation[perm[i]] != new_orientation[i]:
-            data = np.flip(data, axis=i).copy()                                 # Flip the data.
-            n = data.shape[i]
-            affine[dim, i] = affine[dim, i] + (n - 1) * affine[i, i]            # Might not handle rotations data, affine
+            n = image.shape[i]
+            o_i_new[i] = n - o_i[i] - 1
+            image = np.flip(image, axis=i).copy()
+    affine[:dim, dim] = -R @ o_i_new
+
+    return image, affine
+
+def change_points_orientation(
+    image_size: Size,
+    points: Point | Points | Landmark | Landmarks,
+    affine: AffineMatrix,
+    old_orientation: Orientation,
+    new_orientation: Orientation,
+    ) -> Tuple[Point | Points | Landmark | Landmarks, AffineMatrix]:
+    dim = len(old_orientation)
+    assert_orientation(old_orientation, dim)
+    assert_orientation(new_orientation, dim)
+    image_size = to_numpy(image_size)
+    points = to_numpy(points).copy()
+    affine = affine.copy()
+    is_single = points.ndim == 1
+    if is_single:
+        points = points[np.newaxis, :]
+
+    # Permute axes by pairing LR, AP, and IS axes. 
+    pair = lambda c: 0 if c in 'LR' else (1 if c in 'AP' else 2)
+    old_pairs = [pair(c) for c in old_orientation]
+    new_pairs = [pair(c) for c in new_orientation]
+    perm = [old_pairs.index(p) for p in new_pairs]
+    if perm != list(range(dim)):
+        points = points[:, perm]
+        affine[:dim, :dim] = affine[:dim, :dim][np.ix_(perm, perm)]     # Permute the rotation/scale part.
+        affine[:dim, dim] = affine[perm, dim]                           # Permute the translation part.
+
+    # Map points to old image coordinates.
+    points = to_image_coords(points, affine)
+
+    # Flip the data and update the affine translation to preserve the
+    # position of the world origin.
+    R = affine[:dim, :dim]
+    o_i = np.linalg.inv(affine) @ np.append(np.zeros(dim), 1)
+    o_i = o_i[:dim]
+    o_i_new = o_i.copy()
+    for i in range(dim):
+        if old_orientation[perm[i]] != new_orientation[i]:
+            n = image_size[i]
+            o_i_new[i] = n - o_i[i] - 1
+    affine[:dim, dim] = -R @ o_i_new
+
+    # Map points to new image coords then new world coords.
+    points = image_size - points - 1
+    points = to_world_coords(points, affine)
+    
+    if is_single:
+        points = points[0]
+
+    return points, affine
