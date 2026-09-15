@@ -82,6 +82,7 @@ def __get_view_xy(
 
 _PAIR_PRIORITY = {'L': 0, 'R': 0, 'A': 1, 'P': 1, 'I': 2, 'S': 2}
 
+# Returns True for anything other than scaling/translation.
 def __affine_has_rotation(
     affine: AffineMatrix,
     tol: float = 1e-6,
@@ -1807,14 +1808,18 @@ def __resolve_orientation(
         target = orientation if _PAIR_PRIORITY[orientation[0]] <= _PAIR_PRIORITY[orientation[1]] else orientation[1] + orientation[0]
     else:
         target = 'LPS'
-    if orientation == target or affine is None:
+    if orientation == target:
         return data, affine, dose, labels
+    # Reorient data. If no affine was given, 'change_image_orientation' uses
+    # an identity affine; discard the result so 'affine is None' semantics
+    # (voxel-space plotting) are preserved downstream.
     data, new_aff = change_image_orientation(data, orientation, target, affine=affine)
-    dummy = np.eye(dim + 1)
+    if affine is None:
+        new_aff = None
     if dose is not None:
-        dose, _ = change_image_orientation(dose, orientation, target, affine=dummy)
+        dose, _ = change_image_orientation(dose, orientation, target)
     if labels is not None:
-        labels = np.stack([change_image_orientation(labels[i], orientation, target, affine=dummy)[0] for i in range(len(labels))])
+        labels = np.stack([change_image_orientation(labels[i], orientation, target)[0] for i in range(len(labels))])
     return data, new_aff, dose, labels
 
 def __resolve_planes(planes, affine=None):

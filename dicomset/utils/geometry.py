@@ -85,9 +85,10 @@ def change_image_orientation(
     dim = len(old_orientation)
     assert_orientation(old_orientation, dim)
     assert_orientation(new_orientation, dim)
+    image, return_type = to_tensor(image, return_type=True)
     if affine is None:
         affine = create_affine(dim=dim)
-    affine = affine.copy()
+    affine = to_numpy(affine).copy()
 
     # Permute axes by pairing LR, AP, and IS axes. 
     pair = lambda c: 0 if c in 'LR' else (1 if c in 'AP' else 2)
@@ -95,7 +96,7 @@ def change_image_orientation(
     new_pairs = [pair(c) for c in new_orientation]
     perm = [old_pairs.index(p) for p in new_pairs]
     if perm != list(range(dim)):
-        image = np.transpose(image, perm)
+        image = image.permute(*perm)
         affine[:dim, :dim] = affine[:dim, :dim][np.ix_(perm, perm)]     # Permute the rotation/scale part.
         affine[:dim, dim] = affine[perm, dim]                           # Permute the translation part.
 
@@ -105,12 +106,19 @@ def change_image_orientation(
     o_i = np.linalg.inv(affine) @ np.append(np.zeros(dim), 1)
     o_i = o_i[:dim]
     o_i_new = o_i.copy()
+    flip_axes = []
     for i in range(dim):
         if old_orientation[perm[i]] != new_orientation[i]:
             n = image.shape[i]
             o_i_new[i] = n - o_i[i] - 1
-            image = np.flip(image, axis=i).copy()
+            flip_axes.append(i)
+    if len(flip_axes) > 0:
+        image = torch.flip(image, dims=flip_axes)
+    image = image.contiguous()
     affine[:dim, dim] = -R @ o_i_new
+
+    if return_type is np.ndarray:
+        image = to_numpy(image)
 
     return image, affine
 
