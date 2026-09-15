@@ -105,8 +105,8 @@ def __spatial_kll(
     from scipy.stats import entropy
     im_min = min(a.min(), b.min())
     im_max = max(a.max(), b.max())
-    a_hist, _ = np.histogram(a.ravel(), bins=bins, range=(im_min, im_max), density=True)
-    b_hist, _ = np.histogram(b.ravel(), bins=bins, range=(im_min, im_max), density=True)
+    a_hist, _ = np.histogram(a.ravel(), bins=bins, density=True, range=(im_min, im_max))
+    b_hist, _ = np.histogram(b.ravel(), bins=bins, density=True, range=(im_min, im_max))
     a_hist += eps
     b_hist += eps
     a_hist /= a_hist.sum()

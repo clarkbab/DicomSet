@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 from ..typing import AffineMatrix3D, DirPath, FilePath, Image3D, Orientation3D
 from .args import arg_to_list, resolve_filepath
-from .geometry import create_affine, change_image_orientation
+from .geometry import change_image_orientation, create_affine
 from .transforms import from_sitk_image, to_sitk_image
 
 def assert_writeable(filepath: FilePath | List[FilePath]) -> None:

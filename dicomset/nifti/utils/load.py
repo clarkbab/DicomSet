@@ -3,12 +3,12 @@ from __future__ import annotations
 import numpy as np
 import os
 import pandas as pd
-from typing import List, Tuple, TYPE_CHECKING
+from typing import List, Literal, Tuple, TYPE_CHECKING
 if TYPE_CHECKING:
     import SimpleITK as sitk
 
 from ... import config
-from ...typing import AffineMatrix3D, BatchLabelImage3D, DatasetID, Image3D, LabelImage3D, Landmarks3D, ModelID, NiftiModality, PatientID, RegionID, SeriesID, StudyID
+from ...typing import AffineMatrix3D, BatchLabelImage3D, CtImage, DatasetID, DoseImage, Image3D, LabelImage3D, LandmarkID, Landmarks, Landmarks3D, ModelID, NiftiModality, PatientID, RegionID, RegionLabel, RegionsLabel, SeriesID, StudyID
 from ...utils.args import arg_to_list
 from ...utils.io import load_csv, load_nifti, load_transform
 from ..dataset import NiftiDataset
@@ -124,22 +124,6 @@ def load_registered_regions(
         data = np.stack(datas) if len(datas) > 1 else datas[0]
     return loaded_region_ids, data, affine
 
-def load_registration_transform(
-    dataset: DatasetID,
-    fixed_patient_id: PatientID,
-    model: ModelID,
-    fixed_series_id: SeriesID = 'series_0',
-    fixed_study_id: StudyID = 'study_1',
-    moving_patient_id: PatientID | None = None,
-    moving_series_id: SeriesID = 'series_0',
-    moving_study_id: StudyID = 'study_0',
-    ) -> sitk.Transform:
-    import SimpleITK as sitk    # Slow import.
-    set = NiftiDataset(dataset)
-    moving_patient_id = fixed_patient_id if moving_patient_id is None else moving_patient_id
-    filepath = os.path.join(set.path, 'data', 'predictions', 'registration', 'patients', fixed_patient_id, fixed_study_id, fixed_series_id, moving_patient_id, moving_study_id, moving_series_id, 'transform', f'{model}.hdf5')
-    return load_transform(filepath)
-
 def load_registration(
     dataset: DatasetID,
     fixed_patient_id: PatientID,
@@ -157,11 +141,27 @@ def load_registration(
     ct, affine = load_registered_image(dataset, fixed_patient_id, model, 'ct', fixed_series_id=fixed_series_id, fixed_study_id=fixed_study_id, moving_patient_id=moving_patient_id, moving_series_id=moving_series_id, moving_study_id=moving_study_id)
     dose, _ = load_registered_image(dataset, fixed_patient_id, model, 'dose', fixed_series_id=fixed_series_id, fixed_study_id=fixed_study_id, moving_patient_id=moving_patient_id, moving_series_id=moving_series_id, moving_study_id=moving_study_id)
     if landmark_ids is not None:
-        landmarks_data = load_registered_landmarks(dataset, fixed_patient_id, model, landmark_ids=landmark_ids, fixed_series_id=fixed_series_id, fixed_study_id=fixed_study_id, moving_patient_id=moving_patient_id, moving_series_id=moving_series_id, moving_study_id=moving_study_id)
+        landmarks_data = load_registered_landmarks(dataset, fixed_patient_id, model, fixed_series_id=fixed_series_id, fixed_study_id=fixed_study_id, landmark_ids=landmark_ids, moving_patient_id=moving_patient_id, moving_series_id=moving_series_id, moving_study_id=moving_study_id)
     else:
         landmarks_data = None
     if region_ids is not None:
-        loaded_region_ids, regions_data, _ = load_registered_regions(dataset, fixed_patient_id, model, region_ids=region_ids, fixed_series_id=fixed_series_id, fixed_study_id=fixed_study_id, moving_patient_id=moving_patient_id, moving_series_id=moving_series_id, moving_study_id=moving_study_id)
+        loaded_region_ids, regions_data, _ = load_registered_regions(dataset, fixed_patient_id, model, fixed_series_id=fixed_series_id, fixed_study_id=fixed_study_id, moving_patient_id=moving_patient_id, moving_series_id=moving_series_id, moving_study_id=moving_study_id, region_ids=region_ids)
     else:
         loaded_region_ids, regions_data = None, None
     return transform, (ct, affine), dose, landmarks_data, (loaded_region_ids, regions_data)
+
+def load_registration_transform(
+    dataset: DatasetID,
+    fixed_patient_id: PatientID,
+    model: ModelID,
+    fixed_series_id: SeriesID = 'series_0',
+    fixed_study_id: StudyID = 'study_1',
+    moving_patient_id: PatientID | None = None,
+    moving_series_id: SeriesID = 'series_0',
+    moving_study_id: StudyID = 'study_0',
+    ) -> sitk.Transform:
+    import SimpleITK as sitk    # Slow import.
+    set = NiftiDataset(dataset)
+    moving_patient_id = fixed_patient_id if moving_patient_id is None else moving_patient_id
+    filepath = os.path.join(set.path, 'data', 'predictions', 'registration', 'patients', fixed_patient_id, fixed_study_id, fixed_series_id, moving_patient_id, moving_study_id, moving_series_id, 'transform', f'{model}.hdf5')
+    return load_transform(filepath)

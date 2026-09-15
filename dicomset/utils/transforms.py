@@ -425,6 +425,30 @@ def centre_crop(
     return compute_channel_or_spatial_transforms(__spatial_centre_crop, data, *args, **kwargs)
 
 @alias_kwargs(
+    ('a', 'affine'),
+)
+def centre_crop_points(
+    points: Point | Points | Landmark | Landmarks,
+    size: Size,
+    image_size: Size,
+    affine: AffineMatrix | None = None,
+    ) -> Points | Landmarks:
+    # Convert size from world coords (mm) to voxels if affine is provided.
+    if affine is not None:
+        spacing = affine_spacing(affine)
+        size_vox = np.round(np.array(size) / spacing).astype(int)
+    else:
+        size_vox = np.array(size)
+
+    # Compute crop box in voxels (same logic as __spatial_centre_crop).
+    to_crop = np.array(image_size) - size_vox
+    crop_start = np.sign(to_crop) * np.ceil(np.abs(to_crop / 2)).astype(int)
+    crop_end = crop_start + size_vox
+    crop_box = np.stack([crop_start, crop_end])
+
+    return crop_points(points, crop_box, affine=affine)
+
+@alias_kwargs(
     ('cc', 'combine_channels'),
     ('d', 'dim'),
 )
@@ -501,14 +525,6 @@ def crop(
     ) -> BatchImage | Image:
     return compute_channel_or_spatial_transforms(__spatial_crop, data, *args, **kwargs)
 
-@bubble_args(__spatial_crop_or_pad)
-def crop_or_pad(
-    data: BatchImage | Image,
-    *args,
-    **kwargs,
-    ) -> BatchImage | Image:
-    return compute_channel_or_spatial_transforms(__spatial_crop_or_pad, data, *args, **kwargs)
-
 # To/from sitk image need to be here for circular import reasons (spatial transpose).
 @alias_kwargs(
     ('a', 'affine'),
@@ -528,6 +544,14 @@ def crop_affine(
 # in world coordinates and plotting code should just accept the new affine after
 # cropping to correctly place points.
 # With no affine, point values should change to reflect the new image coordinates.
+@bubble_args(__spatial_crop_or_pad)
+def crop_or_pad(
+    data: BatchImage | Image,
+    *args,
+    **kwargs,
+    ) -> BatchImage | Image:
+    return compute_channel_or_spatial_transforms(__spatial_crop_or_pad, data, *args, **kwargs)
+
 @alias_kwargs(
     ('a', 'affine'),
 )
@@ -566,30 +590,6 @@ def crop_points(
     points = points[to_keep]
 
     return points
-
-@alias_kwargs(
-    ('a', 'affine'),
-)
-def centre_crop_points(
-    points: Point | Points | Landmark | Landmarks,
-    size: Size,
-    image_size: Size,
-    affine: AffineMatrix | None = None,
-    ) -> Points | Landmarks:
-    # Convert size from world coords (mm) to voxels if affine is provided.
-    if affine is not None:
-        spacing = affine_spacing(affine)
-        size_vox = np.round(np.array(size) / spacing).astype(int)
-    else:
-        size_vox = np.array(size)
-
-    # Compute crop box in voxels (same logic as __spatial_centre_crop).
-    to_crop = np.array(image_size) - size_vox
-    crop_start = np.sign(to_crop) * np.ceil(np.abs(to_crop / 2)).astype(int)
-    crop_end = crop_start + size_vox
-    crop_box = np.stack([crop_start, crop_end])
-
-    return crop_points(points, crop_box, affine=affine)
 
 def from_sitk_image(
     img: sitk.Image,
@@ -739,12 +739,21 @@ def to_sitk_image(
 
     return img
 
-def transpose(
-    data: BatchChannelImage | BatchImage | Image,
-    *args,
-    **kwargs,
-    ) -> BatchChannelImage | BatchImage | Image:
-    return compute_channel_or_spatial_transforms(__spatial_transpose, data, *args, **kwargs)
+@alias_kwargs(
+    ('a', 'affine'),
+    ('d', 'dim'),
+)
+def to_transform(
+    dvf: ChannelImage,
+    affine: AffineMatrix | None = None,
+    dim: SpatialDim = 3,
+    ) -> sitk.Transform:
+    import SimpleITK as sitk
+    dvf = dvf.astype(np.float64)
+    if dvf.shape[0] != dim:
+        raise ValueError(f"Expected DVF with {dim} channels (first axis), got {dvf.shape[0]}")
+    dvf_img = to_sitk_image(dvf, affine=affine, dim=dim)
+    return sitk.DisplacementFieldTransform(dvf_img)
 
 def transform_points(
     points: Points | Landmarks,
@@ -772,18 +781,9 @@ def transform_points(
 
     return output
 
-@alias_kwargs(
-    ('a', 'affine'),
-    ('d', 'dim'),
-)
-def to_transform(
-    dvf: ChannelImage,
-    affine: AffineMatrix | None = None,
-    dim: SpatialDim = 3,
-    ) -> sitk.Transform:
-    import SimpleITK as sitk
-    dvf = dvf.astype(np.float64)
-    if dvf.shape[0] != dim:
-        raise ValueError(f"Expected DVF with {dim} channels (first axis), got {dvf.shape[0]}")
-    dvf_img = to_sitk_image(dvf, affine=affine, dim=dim)
-    return sitk.DisplacementFieldTransform(dvf_img)
+def transpose(
+    data: BatchChannelImage | BatchImage | Image,
+    *args,
+    **kwargs,
+    ) -> BatchChannelImage | BatchImage | Image:
+    return compute_channel_or_spatial_transforms(__spatial_transpose, data, *args, **kwargs)

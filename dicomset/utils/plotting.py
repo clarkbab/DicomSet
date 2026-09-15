@@ -82,30 +82,6 @@ def __get_view_xy(
 
 _PAIR_PRIORITY = {'L': 0, 'R': 0, 'A': 1, 'P': 1, 'I': 2, 'S': 2}
 
-def __resolve_orientation(
-    orientation: Orientation,
-    data: Image,
-    affine: AffineMatrix | None = None,
-    dose: Image | None = None,
-    labels: LabelImage | None = None,
-    ) -> Tuple[Image, AffineMatrix | None, Image | None, LabelImage | None]:
-    dim = len(orientation)
-    assert_orientation(orientation, dim)
-    if dim == 2:
-        target = orientation if _PAIR_PRIORITY[orientation[0]] <= _PAIR_PRIORITY[orientation[1]] else orientation[1] + orientation[0]
-    else:
-        target = 'LPS'
-    if orientation == target or affine is None:
-        return data, affine, dose, labels
-    data, new_aff = change_orientation(data, orientation, target, affine=affine)
-    dummy = np.eye(dim + 1)
-    if dose is not None:
-        dose, _ = change_orientation(dose, orientation, target, affine=dummy)
-    if labels is not None:
-        labels = np.stack([change_orientation(labels[i], orientation, target, affine=dummy)[0] for i in range(len(labels))])
-    return data, new_aff, dose, labels
-
-# Returns True for anything other than scaling/translation.
 def __affine_has_rotation(
     affine: AffineMatrix,
     tol: float = 1e-6,
@@ -126,45 +102,14 @@ def __affine_has_rotation(
 
     return False
 
-def __resolve_rotation(
-    data: Image3D,
-    affine: AffineMatrix3D,
-    dose: Image3D | None = None,
-    labels: BatchLabelImage3D | None = None,
-    ) -> Tuple[Image3D, AffineMatrix3D, Image3D | None, BatchLabelImage3D | None]:
-    # Resamples onto an axis-aligned (LPS) grid, extended to cover the full rotated field
-    # of view, so downstream slicing/plotting can assume an unrotated affine.
-    import SimpleITK as sitk
-
-    dim = affine.shape[0] - 1
-    size = np.array(data.shape)
-    corners_vox = np.array(list(itertools.product(*[(0, s - 1) for s in size])), dtype=np.float32)
-    corners_world = to_world_coords(corners_vox, affine)
-    bbox_min = corners_world.min(axis=0)
-    bbox_max = corners_world.max(axis=0)
-
-    # Project the unit cube along each axis to determine the spacing required to 
-    # resample the rotated image without data loss.
-    spacing = np.abs(affine[:dim, :dim]).sum(axis=1)
-    out_size = tuple(int(s) for s in np.ceil((bbox_max - bbox_min) / spacing).astype(int) + 1)
-    out_affine = create_affine(spacing=spacing, origin=bbox_min, dim=dim)
-
-    # 'transform' maps output world points to input voxel indices (SITK resamples by
-    # querying the input at 'transform(output_point)'); the input image is treated as having
-    # an identity affine (voxel index == physical point) since 'to_sitk_image' can't encode
-    # rotated direction cosines.
-    affine_inv = np.linalg.inv(affine)
-    transform = sitk.AffineTransform(dim)
-    transform.SetMatrix(affine_inv[:dim, :dim].flatten())
-    transform.SetTranslation(affine_inv[:dim, dim])
-
-    data = resample(data=data, output_affine=out_affine, output_size=out_size, transform=transform, fill='min', dim=dim)
-    if dose is not None:
-        dose = resample(data=dose, output_affine=out_affine, output_size=out_size, transform=transform, fill=0.0, dim=dim)
-    if labels is not None:
-        labels = resample(data=labels, output_affine=out_affine, output_size=out_size, transform=transform, fill=0, dim=dim)
-
-    return data, out_affine, dose, labels
+# Returns True for anything other than scaling/translation.
+def __get_plane_line(v, plane, view_idx, crop_offset=None):
+    p, n = plane
+    x_axis, y_axis = __get_view_xy(v, list(range(3)))
+    nx, ny, nv = n[x_axis], n[y_axis], n[v]
+    px, py, pv = p[x_axis], p[y_axis], p[v]
+    d = nx * px + ny * py - nv * (view_idx - pv)
+    return nx, ny, d, x_axis, y_axis
 
 def plot_dataframe(
     data: pd.DataFrame,
@@ -1058,7 +1003,7 @@ def plot_hist(
         if not isinstance(points, (list, tuple)):
             points = [points]
         for point in points:
-            ax.axvline(x=point, color='yellow', linestyle='--')
+            ax.axvline(color='yellow', linestyle='--', x=point)
 
     # Add text.
     if title is not None:
@@ -1804,6 +1749,34 @@ def __resolve_crosshairs(
         return None
     return __resolve_point(crosshairs, size, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, point_names=point_names, points=points)
 
+def __resolve_grid_planes(
+    grid_affine: AffineMatrix3D,
+    size: Size,
+    affine: AffineMatrix3D | None = None,
+    ) -> np.ndarray:
+    # Grid origin/spacing/directions, as defined by 'grid_affine' - directions may be
+    # rotated relative to the image axes.
+    origin = affine_origin(grid_affine)
+    spacing = affine_spacing(grid_affine)
+    directions = grid_affine[:3, :3] / spacing
+
+    # Get image FOV corners in world coords, so the grid can be extended to cover them.
+    corners_vox = np.array(list(itertools.product(*[(0, s - 1) for s in size])), dtype=np.float32)
+    corners_world = to_world_coords(corners_vox, affine) if affine is not None else corners_vox
+
+    # Build parallel planes along each grid axis, spanning the image FOV.
+    planes = []
+    for i in range(3):
+        direction = directions[:, i]
+        offsets = (corners_world - origin) @ direction
+        n_min = int(np.floor(offsets.min() / spacing[i]))
+        n_max = int(np.ceil(offsets.max() / spacing[i]))
+        for n in range(n_min, n_max + 1):
+            point = origin + n * spacing[i] * direction
+            planes.append(np.stack([point, direction]))
+
+    return __resolve_planes(planes, affine=affine)
+
 def __resolve_labels(
     labels: LabelImage | BatchLabelImage | None,
     dim: int,
@@ -1820,6 +1793,48 @@ def __resolve_labels(
             if labels_max > labels_min:
                 labels = (labels - labels_min) / (labels_max - labels_min)
     return labels
+
+def __resolve_orientation(
+    orientation: Orientation,
+    data: Image,
+    affine: AffineMatrix | None = None,
+    dose: Image | None = None,
+    labels: LabelImage | None = None,
+    ) -> Tuple[Image, AffineMatrix | None, Image | None, LabelImage | None]:
+    dim = len(orientation)
+    assert_orientation(orientation, dim)
+    if dim == 2:
+        target = orientation if _PAIR_PRIORITY[orientation[0]] <= _PAIR_PRIORITY[orientation[1]] else orientation[1] + orientation[0]
+    else:
+        target = 'LPS'
+    if orientation == target or affine is None:
+        return data, affine, dose, labels
+    data, new_aff = change_image_orientation(data, orientation, target, affine=affine)
+    dummy = np.eye(dim + 1)
+    if dose is not None:
+        dose, _ = change_image_orientation(dose, orientation, target, affine=dummy)
+    if labels is not None:
+        labels = np.stack([change_image_orientation(labels[i], orientation, target, affine=dummy)[0] for i in range(len(labels))])
+    return data, new_aff, dose, labels
+
+def __resolve_planes(planes, affine=None):
+    if planes is None:
+        return None
+    planes = np.array(planes)
+    if planes.ndim == 2:
+        planes = planes[None]
+
+    if affine is not None:
+        A = affine[:3, :3]
+        A_inv = np.linalg.inv(A)
+        o = affine[:3, -1]
+        for i, (p, n) in enumerate(planes):
+            p_vox = A_inv @ (p - o)
+            n_vox = A.T @ n          # <-- was A_inv.T @ n
+            n_vox = n_vox / np.linalg.norm(n_vox)
+            planes[i] = np.stack([p_vox, n_vox])
+
+    return planes
 
 def __resolve_point(
     idx: int | float | str | Point | None,
@@ -1965,6 +1980,46 @@ def __resolve_points(
 
     return batches, batch_names_list
 
+def __resolve_rotation(
+    data: Image3D,
+    affine: AffineMatrix3D,
+    dose: Image3D | None = None,
+    labels: BatchLabelImage3D | None = None,
+    ) -> Tuple[Image3D, AffineMatrix3D, Image3D | None, BatchLabelImage3D | None]:
+    # Resamples onto an axis-aligned (LPS) grid, extended to cover the full rotated field
+    # of view, so downstream slicing/plotting can assume an unrotated affine.
+    import SimpleITK as sitk
+
+    dim = affine.shape[0] - 1
+    size = np.array(data.shape)
+    corners_vox = np.array(list(itertools.product(*[(0, s - 1) for s in size])), dtype=np.float32)
+    corners_world = to_world_coords(corners_vox, affine)
+    bbox_min = corners_world.min(axis=0)
+    bbox_max = corners_world.max(axis=0)
+
+    # Project the unit cube along each axis to determine the spacing required to 
+    # resample the rotated image without data loss.
+    spacing = np.abs(affine[:dim, :dim]).sum(axis=1)
+    out_size = tuple(int(s) for s in np.ceil((bbox_max - bbox_min) / spacing).astype(int) + 1)
+    out_affine = create_affine(dim=dim, origin=bbox_min, spacing=spacing)
+
+    # 'transform' maps output world points to input voxel indices (SITK resamples by
+    # querying the input at 'transform(output_point)'); the input image is treated as having
+    # an identity affine (voxel index == physical point) since 'to_sitk_image' can't encode
+    # rotated direction cosines.
+    affine_inv = np.linalg.inv(affine)
+    transform = sitk.AffineTransform(dim)
+    transform.SetMatrix(affine_inv[:dim, :dim].flatten())
+    transform.SetTranslation(affine_inv[:dim, dim])
+
+    data = resample(data=data, dim=dim, fill='min', output_affine=out_affine, output_size=out_size, transform=transform)
+    if dose is not None:
+        dose = resample(data=dose, dim=dim, fill=0.0, output_affine=out_affine, output_size=out_size, transform=transform)
+    if labels is not None:
+        labels = resample(data=labels, dim=dim, fill=0, output_affine=out_affine, output_size=out_size, transform=transform)
+
+    return data, out_affine, dose, labels
+
 def __resolve_window(
     window: Window | None,
     affine: AffineMatrix | None = None,
@@ -2020,58 +2075,3 @@ def __resolve_window(
     vmin = level - width / 2
     vmax = level + width / 2
     return vmin, vmax
-
-def __get_plane_line(v, plane, view_idx, crop_offset=None):
-    p, n = plane
-    x_axis, y_axis = __get_view_xy(v, list(range(3)))
-    nx, ny, nv = n[x_axis], n[y_axis], n[v]
-    px, py, pv = p[x_axis], p[y_axis], p[v]
-    d = nx * px + ny * py - nv * (view_idx - pv)
-    return nx, ny, d, x_axis, y_axis
-
-def __resolve_planes(planes, affine=None):
-    if planes is None:
-        return None
-    planes = np.array(planes)
-    if planes.ndim == 2:
-        planes = planes[None]
-
-    if affine is not None:
-        A = affine[:3, :3]
-        A_inv = np.linalg.inv(A)
-        o = affine[:3, -1]
-        for i, (p, n) in enumerate(planes):
-            p_vox = A_inv @ (p - o)
-            n_vox = A.T @ n          # <-- was A_inv.T @ n
-            n_vox = n_vox / np.linalg.norm(n_vox)
-            planes[i] = np.stack([p_vox, n_vox])
-
-    return planes
-
-def __resolve_grid_planes(
-    grid_affine: AffineMatrix3D,
-    size: Size,
-    affine: AffineMatrix3D | None = None,
-    ) -> np.ndarray:
-    # Grid origin/spacing/directions, as defined by 'grid_affine' - directions may be
-    # rotated relative to the image axes.
-    origin = affine_origin(grid_affine)
-    spacing = affine_spacing(grid_affine)
-    directions = grid_affine[:3, :3] / spacing
-
-    # Get image FOV corners in world coords, so the grid can be extended to cover them.
-    corners_vox = np.array(list(itertools.product(*[(0, s - 1) for s in size])), dtype=np.float32)
-    corners_world = to_world_coords(corners_vox, affine) if affine is not None else corners_vox
-
-    # Build parallel planes along each grid axis, spanning the image FOV.
-    planes = []
-    for i in range(3):
-        direction = directions[:, i]
-        offsets = (corners_world - origin) @ direction
-        n_min = int(np.floor(offsets.min() / spacing[i]))
-        n_max = int(np.ceil(offsets.max() / spacing[i]))
-        for n in range(n_min, n_max + 1):
-            point = origin + n * spacing[i] * direction
-            planes.append(np.stack([point, direction]))
-
-    return __resolve_planes(planes, affine=affine)
