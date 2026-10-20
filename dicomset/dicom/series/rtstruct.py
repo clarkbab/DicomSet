@@ -251,7 +251,7 @@ class DicomRtStructSeries(DicomSeries):
         self,
         region_ids: RegionID | List[RegionID] | RegionList | Literal['all'] = 'all',
         landmark_regexp: RegExp | List[RegExp] | None = None,
-        return_regions: bool = True,
+        return_regions: bool = False,
         use_mapping: bool = True,
         **kwargs,
         ) -> Tuple[List[RegionID], BatchLabelImage3D]:

@@ -88,7 +88,6 @@ View = Literal[0, 1, 2]
 Voxel = Tuple[int, int, int] | Int[np.ndarray, "3"]
 VoxelBox = Int[np.ndarray, "2 3"]
 Voxels = Int[np.ndarray, "N 3"]
-Window = Tuple[float, float]
 
 # Second-order types (composed of first-order types).
 AffineMatrix = AffineMatrix2D | AffineMatrix3D
@@ -122,6 +121,7 @@ Planes2D = List[Plane2D] | Float[np.ndarray, "N 2 2"]
 Planes3D = List[Plane3D] | Float[np.ndarray, "N 2 3"]
 RegionLabel = LabelImage
 RegionsLabel = BatchLabelImage
+Window = Tuple[float, float] | str | Box
 
 # Fourth-order types.
 Planes = List[Plane2D] | List[Plane3D] | Planes2D | Planes3D

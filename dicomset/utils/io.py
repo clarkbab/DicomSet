@@ -72,7 +72,8 @@ def load_csv(
     if eval_cols is not None:
         eval_cols = arg_to_list(eval_cols, str)
         for c in eval_cols:
-            df[c] = df[c].apply(lambda s: ast.literal_eval(s))
+            if c in df.columns:
+                df[c] = df[c].apply(lambda s: ast.literal_eval(s))
 
     # Apply filters.
     for k, v in filters.items():
@@ -214,7 +215,7 @@ def save_mha(
     if os.path.exists(filepath) and not overwrite:
         raise ValueError(f"File '{filepath}' already exists, use overwrite=True.")
     if orientation != 'LPS':
-        data, affine = change_orientation(data, 'LPS', orientation, affine=affine, negative_spacing=False)
+        data, affine = change_image_orientation(data, 'LPS', orientation, affine=affine, negative_spacing=False)
     img = to_sitk_image(data, affine=affine)
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     sitk.WriteImage(img, filepath)

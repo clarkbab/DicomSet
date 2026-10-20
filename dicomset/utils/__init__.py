@@ -15,8 +15,8 @@ LAZY_IMPORTS = {
     ],
     'geometry': [
         'affine_origin', 'affine_spacing', 'affine_subset', 'centre_of_mass', 'change_image_orientation', 'change_points_orientation', 'combine_boxes', 'create_affine',
-        'foreground_fov', 'foreground_fov_centre', 'foreground_fov_width', 'fov', 'fov_centre', 'fov_width', 'to_image_coords', 
-        'to_world_coords',
+        'create_box', 'diameter', 'foreground_fov', 'foreground_fov_centre', 'foreground_fov_width', 'fov', 'fov_centre', 'fov_width', 'to_image_coords', 
+        'to_world_coords', 'volume',
     ],
     'images': ['create_box_label'],
     'io': [
@@ -26,14 +26,15 @@ LAZY_IMPORTS = {
     'landmarks': ['landmarks_dim', 'landmarks_to_points', 'points_to_landmarks', 'replace_points'],
     'load_utils': ['list_datasets', 'load_dataset'],
     'logging': ['logger'],
-    'metrics': ['centroid_error', 'distances', 'dice', 'kll', 'mse', 'ncc', 'ssim', 'tre', 'volume'],
+    'metrics': ['centroid_error', 'cnr', 'distances', 'dice', 'kll', 'mse', 'ncc', 'ssim', 'tre'],
     'pandas': ['append_row'],
     'plotting': ['plot_hist', 'plot_slice', 'plot_volume'],
     'python': ['ensure_loaded', 'filter_lists', 'flatten_list', 'is_windows', 'sort_lists', 'unzip'],
     'transforms': [
-        'centre_crop', 'centre_crop_points', 'crop', 'crop_affine', 'crop_or_pad', 'crop_points', 'from_sitk_image', 'hist_eq',
-        'minmax', 'one_hot_encode', 'resample', 'sample', 'standardise', 'to_sitk_image', 'to_transform', 'transform_points',
-        'transpose',
+        'centre_crop', 'centre_crop_points', 'combine_labels', 'crop', 'crop_affine', 'crop_or_pad', 'crop_points', 'from_sitk_image',
+        'hist_eq',
+        'minmax', 'one_hot_encode', 'resample', 'rotate_affine', 'rotate_image', 'rotate_points', 'sample', 'standardise',
+        'to_sitk_image', 'to_transform', 'transform_points', 'transpose', 'window',
     ],
 }
 

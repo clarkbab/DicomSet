@@ -2,12 +2,13 @@ import numpy as np
 import pandas as pd
 from typing import Callable, Dict, List
 
-from ..typing import AffineMatrix, BatchImage, BatchLabelImage, Image, LabelImage, Landmarks, Number, Point, Points, SpatialDim
+from ..typing import AffineMatrix, BatchImage, BatchLabelImage, Box, Image, LabelImage, Landmarks, Number, Point, Points, SpatialDim
 from .args import alias_kwargs, arg_to_list, bubble_args
 from .conversion import to_list, to_numpy
 from .geometry import affine_spacing, centre_of_mass
 from .landmarks import landmarks_dim, points_to_landmarks
 from .logging import logger
+from .transforms import crop
 
 # Allows us to compute metrics on image batches by applying metric to 
 # the underlying spatial volumes.
@@ -34,6 +35,31 @@ def __spatial_centroid_error(
     error = np.linalg.norm(np.array(b_centroid) - np.array(a_centroid))
 
     return error
+
+@alias_kwargs(
+    ('a', 'affine'),
+    ('bg', 'bg_box'),
+    ('fg', 'fg_box'),
+)
+def __spatial_cnr(
+    image: Image,
+    fg_box: Box,
+    bg_box: Box,
+    affine: AffineMatrix | None = None,
+    ) -> float:
+    # Boxes are in world coords if 'affine' is provided, otherwise voxels. 
+    image = to_numpy(image)
+    fg = to_numpy(crop(image, fg_box, affine=affine, dim=image.ndim)).astype(np.float64)
+    bg = to_numpy(crop(image, bg_box, affine=affine, dim=image.ndim)).astype(np.float64)
+    if fg.size == 0 or bg.size == 0:
+        raise ValueError(f"Metric 'cnr' expects 'fg_box' and 'bg_box' to overlap with the image.")
+
+    # Contrast between regions relative to the noise (std) in the background.
+    bg_std = bg.std()
+    if bg_std == 0:
+        raise ValueError(f"Metric 'cnr' can't be calculated when the background region has zero variance.")
+
+    return float(np.abs(fg.mean() - bg.mean()) / bg_std)
 
 def __spatial_dice(
     a: LabelImage,
@@ -155,54 +181,41 @@ def __spatial_ssim(
     im_range = im_max - im_min
     return structural_similarity(a, b, data_range=im_range)
 
-@alias_kwargs(
-    ('a', 'affine'),
-)
-def __spatial_volume(
-    label: LabelImage,
-    affine: AffineMatrix | None = None,
-    ) -> float:
-    label = to_numpy(label, dtype=bool)
-    if affine is not None:
-        spacing = affine_spacing(affine)
-        voxel_volume = np.prod(spacing)
-    else:
-        voxel_volume = 1
-    volume = label.sum() * voxel_volume
-    return float(volume)
-
 @bubble_args(__spatial_centroid_error)
 def centroid_error(
     a: LabelImage | BatchLabelImage,
     b: LabelImage | BatchLabelImage,
     **kwargs,
     ) -> float | List[float]:
-    return compute_channel_or_spatial_metrics(__spatial_centroid_error, a, b, **kwargs)
+    return compute_channel_or_spatial_metrics(__spatial_centroid_error, [a, b], **kwargs)
 
+# Should I return a list of floats for metrics or a numpy array?
 def compute_channel_or_spatial_metrics(
     spatial_metric_fn: Callable,
-    # E.g. List[a, b] for dice or List[a] for centre of mass. 
-    *data: List[Image] | List[LabelImage], 
+    # Images that are batched together, e.g. [a, b] for dice or [image] for cnr.
+    data: List[Image] | List[LabelImage],
+    # Passed unchanged to every call of the spatial metric (don't affect batching), e.g. boxes for cnr.
+    *args,
     dim: SpatialDim | None = None, 
     **kwargs,
     ) -> float | List[float]:
     if data[0].ndim == 2:    # 2D image.
-        return spatial_metric_fn(*data, **kwargs) 
+        return spatial_metric_fn(*data, *args, **kwargs) 
     elif data[0].ndim == 3:  # 2D batch or 3D image.
         # Could be 3D label or batch of 2D labels - assume 3D. 
         if dim is None or dim == 3: # 3D image.
             logger.warn(f"Metric function '{spatial_metric_fn.__name__}' received 3D arrays with no specified 'dim'. Assuming 3D labels. If these are batches of 2D labels, specify 'dim=2' to compute metric per image in batch.") 
-            return spatial_metric_fn(*data, **kwargs)
+            return spatial_metric_fn(*data, *args, **kwargs)
         elif dim == 2:                       # Batch of 2D images.
             # Split data into lists.
             interleaved_data = list(zip(*data)) 
-            return [spatial_metric_fn(*d, **kwargs) for d in interleaved_data]
+            return [spatial_metric_fn(*d, *args, **kwargs) for d in interleaved_data]
         else:
             raise ValueError(f"Invalid 'dim' argument '{dim}'. Expected 2 or 3.")
     elif data[0].ndim == 4:  # Batch of 3D images.
         # Split data into lists.
         interleaved_data = list(zip(*data)) 
-        return [spatial_metric_fn(*d, **kwargs) for d in interleaved_data]
+        return [spatial_metric_fn(*d, *args, **kwargs) for d in interleaved_data]
     else:
         raise ValueError(f"Metric function '{spatial_metric_fn.__name__}' expects arrays of spatial dimension 2 or 3, with optional batch dimension. Got arrays of shape '{data[0].shape}' with inferred spatial dimension {data[0].ndim}. Specify 'dim' to override inference.")        
 
@@ -212,7 +225,7 @@ def dice(
     b: LabelImage | BatchLabelImage,
     dim: SpatialDim | None = None,
     ) -> float | List[float]:
-    return compute_channel_or_spatial_metrics(__spatial_dice, a, b, dim=dim)
+    return compute_channel_or_spatial_metrics(__spatial_dice, [a, b], dim=dim)
 
 @bubble_args(__spatial_distances)
 def distances(
@@ -221,7 +234,7 @@ def distances(
     dim: SpatialDim | None = None,
     **kwargs,
     ) -> Dict[str, float] | List[Dict[str, float]]:
-    return compute_channel_or_spatial_metrics(__spatial_distances, a, b, dim=dim, **kwargs)
+    return compute_channel_or_spatial_metrics(__spatial_distances, [a, b], dim=dim, **kwargs)
 
 @bubble_args(__spatial_kll)
 def kll(
@@ -230,7 +243,7 @@ def kll(
     dim: SpatialDim | None = None,
     **kwargs,
     ) -> float | List[float]:
-    return compute_channel_or_spatial_metrics(__spatial_kll, a, b, dim=dim, **kwargs)
+    return compute_channel_or_spatial_metrics(__spatial_kll, [a, b], dim=dim, **kwargs)
 
 @bubble_args(__spatial_mse)
 def mse(
@@ -239,7 +252,7 @@ def mse(
     dim: SpatialDim | None = None,
     **kwargs,
     ) -> float | List[float]:
-    return compute_channel_or_spatial_metrics(__spatial_mse, a, b, dim=dim, **kwargs)
+    return compute_channel_or_spatial_metrics(__spatial_mse, [a, b], dim=dim, **kwargs)
 
 @bubble_args(__spatial_ncc)
 def ncc(
@@ -248,7 +261,7 @@ def ncc(
     dim: SpatialDim | None = None,
     **kwargs,
     ) -> float | List[float]:
-    return compute_channel_or_spatial_metrics(__spatial_ncc, a, b, dim=dim, **kwargs)
+    return compute_channel_or_spatial_metrics(__spatial_ncc, [a, b], dim=dim, **kwargs)
 
 @bubble_args(__spatial_ssim)
 def ssim(
@@ -256,7 +269,7 @@ def ssim(
     b: Image | BatchImage,
     dim: SpatialDim | None = None,
     ) -> float | List[float]:
-    return compute_channel_or_spatial_metrics(__spatial_ssim, a, b, dim=dim)
+    return compute_channel_or_spatial_metrics(__spatial_ssim, [a, b], dim=dim)
 
 def tre(
     a: Point | Points | Landmarks,
@@ -304,9 +317,10 @@ def tre(
 
     return result
 
-@bubble_args(__spatial_volume)
-def volume(
-    labels: LabelImage | BatchLabelImage,
+@bubble_args(__spatial_cnr)
+def cnr(
+    image: Image | BatchImage,
+    *args,
     **kwargs,
     ) -> float | List[float]:
-    return compute_channel_or_spatial_metrics(__spatial_volume, labels, **kwargs)
+    return compute_channel_or_spatial_metrics(__spatial_cnr, [image], *args, **kwargs)

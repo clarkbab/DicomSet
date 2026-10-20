@@ -18,7 +18,10 @@ if TYPE_CHECKING:
     from ..dataset import NiftiDataset
     from ..patient import NiftiPatient
     from ..study import NiftiStudy
+    from .images import NiftiCtSeries
 
+# Behaves differently to other 'NiftiImageSeries' because 'data' can return
+# a variable batch size of regions and return region names alongside the data.
 class NiftiRegionsSeries(NiftiImageSeries):
     def __init__(
         self,
@@ -27,6 +30,7 @@ class NiftiRegionsSeries(NiftiImageSeries):
         study: NiftiStudy,
         id: SeriesID,
         index: pd.DataFrame | None = None,
+        ref_ct: NiftiCtSeries | None = None,
         struct_map: StructMap | None = None,
         ) -> None:
         super().__init__('regions', dataset, patient, study, id, index=index)
@@ -34,6 +38,7 @@ class NiftiRegionsSeries(NiftiImageSeries):
         if not os.path.exists(dirpath):
             raise ValueError(f"No regions series '{self.__id}' found for study '{self.__study.id}'. Dirpath: {dirpath}")
         self.__dirpath = dirpath
+        self.__ref_ct = ref_ct
         self.__struct_map = struct_map
 
     @alias_kwargs(
@@ -45,12 +50,24 @@ class NiftiRegionsSeries(NiftiImageSeries):
     def data(
         self,
         region_ids: RegionID | List[RegionID] | Literal['all'] = 'all',
+        # Maybe you could be smarter about this.
+        # I.e. if patient passes "region_ids" (i.e. it's not 'all'), don't return
+        # the region_ids unless requested. It could be annoying if they ask for a 
+        # mapped list of regions but don't get the individual regions back. Going 
+        # further, if the list of regions returned is different from the list of
+        # regions passed, maybe we should return it to the user? I.e. you should
+        # probably take note of these regions, they're different to what you expected.
+        # This could be a reasonable default, that could then be overridden with
+        # return_regions True/False. This could actually be really annoying for 
+        # the user if the output format changes depending on the input data. Might
+        # be best to keep it simple and always return the region IDs. This is the
+        # safer option.
         return_regions: bool = True,
         # Should probably not exist. Just sort if 'region_ids' is 'all',
         # otherwise, use the passed order of 'region_ids'.
         sort_regions: bool = True,
         use_mapping: bool = True,
-        ) -> Tuple[List[RegionID], BatchLabelImage3D]:
+        ) -> Tuple[List[RegionID], LabelImage3D | BatchLabelImage3D] | Tuple[LabelImage3D | BatchLabelImage3D]:
         if self.__struct_map is None:
             use_mapping = False
         region_ids = self.list_regions(region_ids=region_ids, sort_regions=sort_regions, use_mapping=use_mapping)
@@ -94,7 +111,7 @@ class NiftiRegionsSeries(NiftiImageSeries):
             regions_data[i] = reg_data
 
         # Collapse batch dimension if singular.
-        # TODO: Is this a good idea?
+        # TODO: Is this a good idea? Should I collapse the region IDs also?
         if regions_data is not None and len(regions_data) == 1:
             regions_data = regions_data[0]
 
@@ -191,6 +208,10 @@ class NiftiRegionsSeries(NiftiImageSeries):
         if sort_regions:
             api_regions = list(sorted(api_regions))
         return api_regions
+
+    @property
+    def ref_ct(self) -> NiftiCtSeries | None:
+        return self.__ref_ct
 
     def __str__(self) -> str:
         return super().__str__(self.__class__.__name__)

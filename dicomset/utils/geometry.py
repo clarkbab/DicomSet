@@ -4,9 +4,9 @@ import scipy
 import torch
 from typing import Callable, List, Tuple
 
-from ..typing import AffineMatrix, BatchChannelImage, BatchImage, BatchLabelImage, Box, Image, LabelImage, Landmark, Landmarks, Orientation, Pixel, Point, Points, Size, Spacing, SpatialDim, Voxel
+from ..typing import AffineMatrix, BatchChannelImage, BatchImage, BatchLabelImage, Box, Image, LabelImage, Landmark, Landmarks, Number, Orientation, Pixel, Point, Points, Size, Spacing, SpatialDim, Voxel
 from .args import alias_kwargs, arg_to_list
-from .assertions import assert_orientation
+from .assertions import assert_image, assert_orientation
 from .conversion import to_numpy, to_tensor, to_tuple
 from .landmarks import landmarks_to_points, points_to_landmarks
 from .logging import logger
@@ -39,6 +39,21 @@ def affine_spacing(
          spacing = to_numpy(spacing)
 
     return spacing
+
+# Direction cosine matrix (columns are unit vectors giving the world direction of each
+# image axis) - i.e. 'affine[:dim, :dim] == direction * spacing'.
+def affine_direction(
+    affine: AffineMatrix,
+    ) -> np.ndarray:
+    affine, return_type = to_tensor(affine, return_type=True)
+    dim = affine.shape[0] - 1
+    spacing = torch.linalg.norm(affine[:dim, :dim], dim=0)
+    direction = affine[:dim, :dim] / spacing
+
+    if return_type is np.ndarray:
+         direction = to_numpy(direction)
+
+    return direction
 
 def affine_subset(
     affine: AffineMatrix,
@@ -76,6 +91,9 @@ def centre_of_mass(
     ) -> Point | Pixel | Voxel | List[Point | Pixel | Voxel | None] | None:
     return compute_channel_or_spatial_geometry(__spatial_centre_of_mass, data, dim=dim, **kwargs)
 
+@alias_kwargs(
+    ('a', 'affine'),
+)
 def change_image_orientation(
     image: Image,
     old_orientation: Orientation,
@@ -123,7 +141,6 @@ def change_image_orientation(
     return image, affine
 
 def change_points_orientation(
-    image_size: Size,
     points: Point | Points | Landmark | Landmarks,
     old_orientation: Orientation,
     new_orientation: Orientation,
@@ -132,46 +149,46 @@ def change_points_orientation(
     dim = len(old_orientation)
     assert_orientation(old_orientation, dim)
     assert_orientation(new_orientation, dim)
-    image_size = to_numpy(image_size)
-    points = to_numpy(points).copy()
     if affine is None:
         affine = create_affine(dim=dim)
     affine = affine.copy()
-    is_single = points.ndim == 1
-    if is_single:
-        points = points[np.newaxis, :]
 
-    # Permute axes by pairing LR, AP, and IS axes. 
+    # Pair LR, AP, and IS axes to find the permutation and flips between orientations.
     pair = lambda c: 0 if c in 'LR' else (1 if c in 'AP' else 2)
     old_pairs = [pair(c) for c in old_orientation]
     new_pairs = [pair(c) for c in new_orientation]
     perm = [old_pairs.index(p) for p in new_pairs]
-    if perm != list(range(dim)):
-        points = points[:, perm]
-        affine[:dim, :dim] = affine[:dim, :dim][np.ix_(perm, perm)]     # Permute the rotation/scale part.
-        affine[:dim, dim] = affine[perm, dim]                           # Permute the translation part.
+    flip = [old_orientation[perm[i]] != new_orientation[i] for i in range(dim)]
 
-    # Map points to old image coordinates.
-    points = to_image_coords(points, affine)
-
-    # Flip the data and update the affine translation to preserve the
-    # position of the world origin.
-    R = affine[:dim, :dim]
-    o_i = np.linalg.inv(affine) @ np.append(np.zeros(dim), 1)
-    o_i = o_i[:dim]
-    o_i_new = o_i.copy()
+    # Permute the affine's rotation/scale and translation parts, then mirror the
+    # spacing direction (about the world origin) for any axis that's flipped.
+    affine[:dim, :dim] = affine[:dim, :dim][np.ix_(perm, perm)]
+    affine[:dim, dim] = affine[perm, dim]
     for i in range(dim):
-        if old_orientation[perm[i]] != new_orientation[i]:
-            n = image_size[i]
-            o_i_new[i] = n - o_i[i] - 1
-    affine[:dim, dim] = -R @ o_i_new
+        if flip[i]:
+            affine[:dim, i] *= -1
 
-    # Map points to new image coords then new world coords.
-    points = image_size - points - 1
-    points = to_world_coords(points, affine)
-    
-    if is_single:
-        points = points[0]
+    def __change_points_orientation(points):
+        points = to_numpy(points).copy()
+        is_single = points.ndim == 1
+        if is_single:
+            points = points[np.newaxis, :]
+
+        # Swap axes, then mirror flipped axes about the origin.
+        points = points[:, perm]
+        for i in range(dim):
+            if flip[i]:
+                points[:, i] = -points[:, i]
+
+        return points[0] if is_single else points
+
+    if isinstance(points, (pd.DataFrame, pd.Series)):
+        landmark_ids = points['landmark-id']
+        points = landmarks_to_points(points)
+        points = __change_points_orientation(points)
+        points = points_to_landmarks(points, landmark_ids)
+    else:
+        points = __change_points_orientation(points)
 
     return points, affine
 
@@ -182,6 +199,7 @@ def combine_boxes(
     max = np.stack([box[1] for box in boxes]).max(axis=0)
     return np.stack([min, max])
 
+# Return list or numpy array?
 def compute_channel_or_spatial_geometry(
     geometry_fn: Callable,
     data: Image | BatchImage | BatchChannelImage,
@@ -190,6 +208,7 @@ def compute_channel_or_spatial_geometry(
     dim: SpatialDim | None = None,
     **kwargs,
     ) -> Box | Point | Pixel | Size | Voxel | List[Box | Point | Pixel | Size | Voxel | None] | None:
+    assert_image(data)
     if data.ndim == 2:    # 2D image.
         return geometry_fn(data, *args, **kwargs)
     elif data.ndim == 3:  # 2D batch or 3D image.
@@ -232,6 +251,7 @@ def compute_channel_or_spatial_geometry(
 def create_affine(
     spacing: Spacing | None = None,
     origin: Point | None = None,
+    direction: np.ndarray | None = None,
     dim: SpatialDim | None = None,
     ) -> AffineMatrix:
     # Resolve dim.
@@ -240,26 +260,30 @@ def create_affine(
             dim = len(spacing)
         elif origin is not None:
             dim = len(origin)
+        elif direction is not None:
+            dim = len(direction)
         else:
-            raise ValueError("Must provide 'dim' if 'spacing' and 'origin' are not provided.")
+            raise ValueError("Must provide 'dim' if 'spacing', 'origin' and 'direction' are not provided.")
     if spacing is None:
         spacing = np.ones(dim)
     if origin is None:
         origin = np.zeros(dim)
+    if direction is None:
+        direction = np.eye(dim)
     affine = np.eye(dim + 1)
-    if dim == 2:
-        affine[0, 0] = spacing[0]
-        affine[1, 1] = spacing[1]
-        affine[0, 2] = origin[0]
-        affine[1, 2] = origin[1]
-    else:
-        affine[0, 0] = spacing[0]
-        affine[1, 1] = spacing[1]
-        affine[2, 2] = spacing[2]
-        affine[0, 3] = origin[0]
-        affine[1, 3] = origin[1]
-        affine[2, 3] = origin[2]
+    affine[:dim, :dim] = np.asarray(direction) * np.asarray(spacing)
+    affine[:dim, dim] = origin
     return affine
+
+@alias_kwargs(
+    ('d', 'dim'),
+)
+def diameter(
+    data: LabelImage | BatchLabelImage,
+    dim: SpatialDim | None = None,
+    **kwargs,
+    ) -> float | List[float]:
+    return compute_channel_or_spatial_geometry(__spatial_diameter, data, dim=dim, **kwargs)
 
 @alias_kwargs(
     ('d', 'dim'),
@@ -312,6 +336,16 @@ def fov_width(
     return __spatial_fov_width(size, **kwargs)
 
 @alias_kwargs(
+    ('d', 'dim'),
+)
+def volume(
+    data: LabelImage | BatchLabelImage,
+    dim: SpatialDim | None = None,
+    **kwargs,
+    ) -> float | List[float]:
+    return compute_channel_or_spatial_geometry(__spatial_volume, data, dim=dim, **kwargs)
+
+@alias_kwargs(
     ('a', 'affine'),
 )
 def __spatial_centre_of_mass(
@@ -332,6 +366,43 @@ def __spatial_centre_of_mass(
 @alias_kwargs(
     ('a', 'affine'),
 )
+def __spatial_diameter(
+    data: LabelImage,
+    affine: AffineMatrix | None = None,
+    ) -> float:
+    label = to_numpy(data, dtype=bool)
+    if label.sum() == 0:
+        raise ValueError(f"Geometry 'diameter' can't be calculated on empty labels.")
+
+    # Slow imports so postponing until method call.
+    from scipy.spatial import ConvexHull
+    from scipy.spatial.distance import pdist
+
+    # Diameter is the largest distance between any two foreground voxel centres.
+    points = np.argwhere(label).astype(np.float64)
+    if affine is not None:
+        points = to_world_coords(points, to_numpy(affine, dtype=np.float64)).astype(np.float64)
+    if len(points) < 2:
+        return 0.0
+
+    # The farthest pair lies on the convex hull, so we can avoid O(n^2) distances over all voxels.
+    # Project onto the subspace spanned by the points, as the hull is undefined for degenerate
+    # (e.g. collinear or coplanar) sets.
+    centred = points - points.mean(axis=0)
+    _, s, vt = np.linalg.svd(centred, full_matrices=False)
+    rank = int((s > 1e-8 * max(s[0], 1.0)).sum())
+    if rank == 0:
+        return 0.0
+    proj = centred @ vt[:rank].T
+    if rank == 1:
+        return float(proj.max() - proj.min())
+    hull_points = points[ConvexHull(proj).vertices]
+
+    return float(pdist(hull_points).max())
+
+@alias_kwargs(
+    ('a', 'affine'),
+)
 def __spatial_foreground_fov(
     data: LabelImage,
     affine: AffineMatrix | None = None,
@@ -347,10 +418,10 @@ def __spatial_foreground_fov(
     fov_vox = torch.stack([
         non_zero.min(dim=0).values,
         non_zero.max(dim=0).values,
-    ]).type(torch.float32)
+    ])
 
     # Get fov in mm - transforms all box corners to handle rotated affines.
-    fov_d = __transform_box(fov_vox, affine) if affine is not None else fov_vox
+    fov_d = __transform_box(fov_vox.type(torch.float32), affine) if affine is not None else fov_vox
 
     if return_type is np.ndarray:
         fov_d = to_numpy(fov_d)
@@ -411,14 +482,14 @@ def __spatial_fov(
     fov_vox = torch.stack([
         torch.zeros(n_dims, dtype=torch.int32),
         size - 1,
-    ], dim=0).type(torch.float32)
+    ], dim=0)
     if affine is None:
         if return_type is np.ndarray:
             fov_vox = to_numpy(fov_vox)
         return fov_vox
 
     # Get fov in mm - transforms all box corners to handle rotated affines.
-    fov_mm = __transform_box(fov_vox, affine)
+    fov_mm = __transform_box(fov_vox.type(torch.float32), affine)
 
     if return_type is np.ndarray:
          fov_mm = to_numpy(fov_mm)
@@ -468,6 +539,22 @@ def __spatial_fov_width(
 @alias_kwargs(
     ('a', 'affine'),
 )
+def __spatial_volume(
+    data: LabelImage,
+    affine: AffineMatrix | None = None,
+    ) -> float:
+    label = to_numpy(data, dtype=bool)
+    if affine is not None:
+        spacing = affine_spacing(affine)
+        voxel_volume = np.prod(spacing)
+    else:
+        voxel_volume = 1
+    volume = label.sum() * voxel_volume
+    return float(volume)
+
+@alias_kwargs(
+    ('a', 'affine'),
+)
 def to_image_coords(
     points: Point | Points | Landmark | Landmarks,
     affine: AffineMatrix,
@@ -486,7 +573,7 @@ def to_image_coords(
         return result[0] if is_single else result
 
     if isinstance(points, (pd.DataFrame, pd.Series)):
-        landmark_ids = points['landmark-id'] if isinstance(points, pd.DataFrame) else points.index[0]
+        landmark_ids = points['landmark-id']
         points = landmarks_to_points(points)
         points = __to_image_coords(points, affine)
         points = points_to_landmarks(points, landmark_ids)
@@ -518,7 +605,7 @@ def to_world_coords(
         return result[0] if is_single else result
 
     if isinstance(points, (pd.DataFrame, pd.Series)):
-        landmark_ids = points['landmark-id'] if isinstance(points, pd.DataFrame) else points.index[0]
+        landmark_ids = points['landmark-id']
         points = landmarks_to_points(points)
         points = __to_world_coords(points, affine)
         points = points_to_landmarks(points, landmark_ids)
@@ -535,3 +622,17 @@ def __transform_box(
     corners = torch.cartesian_prod(*[box[:, i] for i in range(dim)])
     corners = to_tensor(to_world_coords(to_numpy(corners), to_numpy(affine)), device=box.device)
     return torch.stack([corners.min(dim=0).values, corners.max(dim=0).values])
+
+def create_box(
+    centre: Point,
+    width: Number | Tuple[Number, ...],
+    ) -> Box:
+    centre, return_type = to_tensor(centre, return_type=True)
+    half_width = width / 2
+    min = centre - half_width
+    max = centre + half_width
+    box = torch.stack([min, max])
+
+    if return_type is np.ndarray:
+        box = to_numpy(box)
+    return box

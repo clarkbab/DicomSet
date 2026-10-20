@@ -32,6 +32,8 @@ def points_to_landmarks(
     ) -> Landmark | Landmarks:
     if isinstance(points, tuple):
         points = np.array([points])
+    if points.ndim == 1:
+        points = points[np.newaxis, :]
     dim = points.shape[1]
     assert points.ndim == 2 and dim in (2, 3), f"Points must be of shape (n_landmarks, 2/3) or (2/3,), got {points.shape}."
     landmark_ids = arg_to_list(landmark_ids, str)
@@ -39,7 +41,7 @@ def points_to_landmarks(
 
     # Create series
     if len(landmark_ids) == 1:
-        return pd.Series(points.flatten(), index=landmark_ids)
+        return pd.Series([*points.flatten(), landmark_ids[0]], index=[*range(dim), 'landmark-id'])
 
     # Create dataframe.
     landmark_ids = np.array(landmark_ids)[:, np.newaxis]

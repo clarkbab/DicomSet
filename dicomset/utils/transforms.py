@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import numpy as np
 import pandas as pd
 import skimage as ski
@@ -8,10 +9,10 @@ from typing import Callable, List, Literal, Tuple, TYPE_CHECKING
 if TYPE_CHECKING:
     import SimpleITK as sitk
 
-from ..typing import AffineMatrix, BatchChannelImage, BatchChannelLabelImage, BatchImage, BatchLabelMap, Box, ChannelImage, Image, LabelMap, Landmark, Landmarks, Number, Point, Points, Size, Spacing, SpatialDim
-from .args import alias_kwargs, bubble_args
+from ..typing import AffineMatrix, BatchChannelImage, BatchChannelLabelImage, BatchImage, BatchLabelImage, BatchLabelMap, Box, ChannelImage, Image, LabelImage, LabelMap, Landmark, Landmarks, Number, Point, Points, Size, Spacing, SpatialDim
+from .args import alias_kwargs, arg_to_list, bubble_args
 from .conversion import to_numpy, to_tensor
-from .geometry import affine_origin, affine_spacing, assert_box_width, create_affine, fov, to_image_coords
+from .geometry import affine_direction, affine_origin, affine_spacing, assert_box_width, create_affine, fov, to_image_coords, to_world_coords
 from .landmarks import landmarks_to_points, replace_points
 from .logging import logger
 if TYPE_CHECKING:
@@ -41,6 +42,26 @@ def __spatial_centre_crop(
 
     return __spatial_crop(data, crop_box)
 
+def __box_slices(
+    box: Box,
+    shape: Size,
+    affine: AffineMatrix | None = None,
+    ) -> Tuple[slice, ...]:
+    box = __resolve_box(box, shape, affine=affine)
+    assert_box_width(box)
+
+    # Convert box to voxel coordinates.
+    if affine is not None:
+        box = to_image_coords(box, affine=affine)
+        # A flipped axis (negative affine direction) swaps the min/max corners.
+        box = np.sort(box, axis=0)
+
+    # Clip the box to the image bounds.
+    size = np.array(shape)
+    box_min = np.array(box[0]).clip(0)
+    box_max = (size - np.array(box[1])).clip(0)
+    return tuple(slice(int(mn), int(s - mx)) for mn, mx, s in zip(box_min, box_max, size))
+
 # Can be applied to spatial or channel image.
 @alias_kwargs(
     ('a', 'affine'),
@@ -51,33 +72,26 @@ def __spatial_crop(
     affine: AffineMatrix | None = None,
     ) -> Image:
     data, return_type = to_tensor(data, return_type=True)
-    crop_box = __resolve_box(crop_box, data.shape, affine=affine)
-    assert_box_width(crop_box)
-
-    # Convert box to voxel coordinates.
-    if affine is not None:
-        crop_box = to_image_coords(crop_box, affine=affine)
-
-    # Perform cropping.
-    size = np.array(data.shape)
-    crop_min = np.array(crop_box[0]).clip(0)
-    crop_max = (size - np.array(crop_box[1])).clip(0)
-    slices = tuple(slice(int(mn), int(s - mx)) for mn, mx, s in zip(crop_min, crop_max, size))
-    data = data[slices]
+    data = data[__box_slices(crop_box, data.shape, affine=affine)]
 
     if return_type is np.ndarray:
         data = to_numpy(data)
     return data
 
 # Can be applied to spatial or channel image.
+@alias_kwargs(
+    ('a', 'affine'),
+)
 def __spatial_crop_or_pad(
     data: Image,
     crop_box: Box,
     affine: AffineMatrix | None = None,
+    fill: float | Literal['max', 'mean', 'median', 'min'] = 'min',
     ) -> Image:
     data, return_type = to_tensor(data, return_type=True)
     crop_box = __resolve_box(crop_box, data.shape, affine=affine)
     assert_box_width(crop_box)
+    fill = __resolve_fill(data, fill)
 
     # Convert box to voxel coordinates.
     if affine is not None:
@@ -85,8 +99,8 @@ def __spatial_crop_or_pad(
 
     # Perform padding - clip if padding is less than zero.
     size = np.array(data.shape)
-    pad_min = (-np.array(min)).clip(0)
-    pad_max = (max - size).clip(0)
+    pad_min = (-np.array(crop_box[0])).clip(0)
+    pad_max = (np.array(crop_box[1]) - size).clip(0)
     padding = list(reversed(list(zip(pad_min, pad_max))))  # torch 'pad' operates from back to front.
     padding = tuple(torch.tensor(padding).flatten().tolist())
     data = torch.nn.functional.pad(data, padding, value=fill)
@@ -94,12 +108,34 @@ def __spatial_crop_or_pad(
     # Perform cropping.
     size = np.array(data.shape)
     crop_min = np.array(crop_box[0]).clip(0)
-    crop_max = (size - np.array(crop_box[1])).clip(0)
+    crop_max = (size - (np.array(crop_box[1]) + pad_min)).clip(0)
     slices = tuple(slice(int(mn), int(s - mx)) for mn, mx, s in zip(crop_min, crop_max, size))
     data = data[slices]
 
     if return_type is np.ndarray:
         data = to_numpy(data)
+    return data
+
+# Equalises using the histogram of the intensities inside 'box' only (world coords if 'affine' is
+# provided, otherwise voxels), but the resulting mapping is applied to the whole image.
+@alias_kwargs(
+    ('a', 'affine'),
+)
+def __spatial_hist_eq(
+    data: Image,
+    box: Box | None = None,
+    affine: AffineMatrix | None = None,
+    ) -> Image:
+    data, return_type = to_numpy(data, return_type=True)
+    mask = None
+    if box is not None:
+        mask = np.zeros(data.shape, dtype=bool)
+        mask[__box_slices(box, data.shape, affine=affine)] = True
+        if not mask.any():
+            raise ValueError(f"Histogram equalisation 'box' doesn't overlap with the image.")
+    data = ski.exposure.equalize_hist(data, mask=mask)
+    if return_type is torch.Tensor:
+        data = to_tensor(data)
     return data
 
 @alias_kwargs(
@@ -170,9 +206,7 @@ def __spatial_pad(
     ) -> Image:
     assert_box_width(box)
     data, return_type = to_tensor(data, return_type=True)
-    fill = data.min() if fill == 'min' else fill
-    if isinstance(fill, torch.Tensor):
-        fill = fill.item()
+    fill = __resolve_fill(data, fill)
 
     # Convert box to voxel coordinates.
     if affine is not None:
@@ -211,7 +245,7 @@ def __spatial_pad(
 def __spatial_resample(
     data: Image | None = None,
     affine: AffineMatrix | None = None,
-    fill: Number | Literal['min'] = 'min',
+    fill: Number | Literal['max', 'mean', 'median', 'min'] = 'min',
     image: DicomSeries | NiftiImageSeries | None = None,
     output_affine: AffineMatrix | None = None, 
     output_image: DicomSeries | NiftiImageSeries | None = None,
@@ -248,6 +282,7 @@ def __spatial_resample(
             output_affine = affine
     output_spacing = affine_spacing(output_affine)
     output_origin = affine_origin(output_affine) 
+    output_direction = affine_direction(output_affine)
 
     # Slow import so postponing until method call.
     import SimpleITK as sitk
@@ -261,13 +296,13 @@ def __spatial_resample(
 
     # Set resample filter params.
     filter = sitk.ResampleImageFilter()
-    if isinstance(fill, str) and fill == 'min':
-        fill = float(data.min())
+    fill = __resolve_fill(data, fill)
     filter.SetDefaultPixelValue(fill)
     if data.dtype == bool:
         filter.SetInterpolator(sitk.sitkNearestNeighbor)
     filter.SetOutputSpacing(output_spacing)
     filter.SetOutputOrigin(output_origin)
+    filter.SetOutputDirection(output_direction.flatten())
     if output_size is not None:
         filter.SetSize(output_size)
     else:
@@ -355,8 +390,7 @@ def __spatial_sample(
 
     # Create resample filter.
     filter = sitk.ResampleImageFilter()
-    if fill == 'min':
-        fill = float(data.min())
+    fill = __resolve_fill(data, fill)
     filter.SetDefaultPixelValue(fill)
     if is_boolean:
         filter.SetInterpolator(sitk.sitkNearestNeighbor)
@@ -533,10 +567,8 @@ def crop_affine(
     affine: AffineMatrix,
     crop_box: Box,
     ) -> AffineMatrix:
-    origin = affine_origin(affine)
     spacing = affine_spacing(affine)
-    affine = create_affine(spacing, crop_box[0])
-    return affine
+    return create_affine(spacing, crop_box[0])
 
 # You might expect this to change point values so that they remain in the same
 # position on an image after cropping.
@@ -602,18 +634,17 @@ def from_sitk_image(
     data = data.transpose()
     spacing = img.GetSpacing()
     origin = img.GetOrigin()
-    affine = create_affine(spacing, origin)
+    dim = len(spacing)
+    direction = np.array(img.GetDirection()).reshape(dim, dim)
+    affine = create_affine(spacing, origin, direction=direction)
     return data, affine
 
-# Handle 'np.nan' values in box.
+@bubble_args(__spatial_hist_eq)
 def hist_eq(
-    data: Image,
-    ) -> Image:
-    data, return_type = to_numpy(data, return_type=True)
-    data = ski.exposure.equalize_hist(data)
-    if return_type is torch.Tensor:
-        data = to_tensor(data)
-    return data
+    data: Image | BatchImage,
+    **kwargs,
+    ) -> Image | BatchImage:
+    return compute_channel_or_spatial_transforms(__spatial_hist_eq, data, **kwargs)
 
 # What if we want to pass image series? This is probably bad
 # design as we're then loading data and cropping in the same function.
@@ -700,6 +731,56 @@ def standardise(
 
 @alias_kwargs(
     ('a', 'affine'),
+)
+def __spatial_window(
+    data: Image,
+    affine: AffineMatrix | None = None,
+    box: Box | None = None,
+    range: Tuple[float | None, float | None] | str | None = None,
+    ) -> Image:
+    data, return_type = to_tensor(data, return_type=True)
+    if box is None and range is None:
+        raise ValueError("Window: 'box' or 'range' must be provided.")
+    if box is not None and range is not None:
+        raise ValueError("Window: only 'box' or 'range' must be provided, not both.")
+
+    # Get min/max intensities.
+    if range is not None:
+        if isinstance(range, str):
+            # E.g. "p:99" keeps the central 99% of intensities.
+            if not range.startswith('p:'):
+                raise ValueError(f"Unknown window range '{range}'. Expected a (min, max) tuple or a percentile string like 'p:99'.")
+            percentile = float(range[2:])
+            if not 0 <= percentile <= 100:
+                raise ValueError(f"Window percentile must be in [0, 100]. Got '{percentile}'.")
+            tail = (100 - percentile) / 2
+            vmin, vmax = np.percentile(to_numpy(data), [tail, 100 - tail])
+            # Keep integer images integer-valued.
+            if not data.is_floating_point():
+                vmin, vmax = int(np.floor(vmin)), int(np.ceil(vmax))
+        else:
+            vmin, vmax = range
+    else:
+        region = crop(data, box, affine=affine)
+        vmin, vmax = region.min(), region.max()
+
+    # Apply the intensity window.
+    data = torch.clamp(data, min=vmin, max=vmax)
+
+    if return_type is np.ndarray:
+        data = to_numpy(data)
+    return data
+
+# Intensity transform.
+@bubble_args(__spatial_window)
+def window(
+    data: Image | BatchImage,
+    **kwargs,
+    ) -> Image | BatchImage:
+    return compute_channel_or_spatial_transforms(__spatial_window, data, **kwargs)
+
+@alias_kwargs(
+    ('a', 'affine'),
     ('d', 'dim'),
 )
 def to_sitk_image(
@@ -734,8 +815,10 @@ def to_sitk_image(
     if affine is not None:
         spacing = affine_spacing(affine)
         origin = affine_origin(affine)
+        direction = affine_direction(affine)
         img.SetSpacing(spacing)
         img.SetOrigin(origin)
+        img.SetDirection(direction.flatten())
 
     return img
 
@@ -787,3 +870,148 @@ def transpose(
     **kwargs,
     ) -> BatchChannelImage | BatchImage | Image:
     return compute_channel_or_spatial_transforms(__spatial_transpose, data, *args, **kwargs)
+
+def __resolve_fill(
+    data: np.ndarray,
+    fill: Number | Literal['max', 'mean', 'median', 'min'] = 'min',
+    ) -> Number:
+    if isinstance(fill, (int, float)):
+        return fill
+    if fill == 'mean':
+        return float(np.mean(data))
+    if fill == 'median':
+        return float(np.median(data))
+    if fill == 'min':
+        return float(np.min(data))
+    raise ValueError(f"Unsupported fill value: {fill}")
+
+def rotate_affine(
+    affine: AffineMatrix,
+    theta: float | Tuple[float],
+    ):
+    dim = affine.shape[0] - 1
+    R = __rotation_matrix(theta, dim)
+
+    new_affine = affine.copy()
+    new_affine[:dim, :dim] = R @ affine[:dim, :dim]
+    new_affine[:dim, dim]  = R @ affine[:dim, dim]
+
+    return new_affine
+
+# Rotates points about the world origin - same convention as 'rotate_affine'.
+def rotate_points(
+    points: Point | Points | Landmark | Landmarks,
+    theta: float | Tuple[float],
+    ) -> Points | Landmarks:
+    was_landmarks = False
+    if isinstance(points, (pd.DataFrame, pd.Series)):
+        was_landmarks = True
+        landmarks_tmp = points.copy()
+        points = landmarks_to_points(landmarks_tmp)
+    else:
+        points = to_numpy(points)
+    is_single = points.ndim == 1
+    if is_single:
+        points = points[np.newaxis, :]
+
+    dim = points.shape[1]
+    R = __rotation_matrix(theta, dim)
+    points = points @ R.T
+
+    if is_single:
+        points = points[0]
+    if was_landmarks:
+        points = replace_points(landmarks_tmp, points)
+
+    return points
+
+def __rotation_matrix(
+    theta: float | Tuple[float],
+    dim: SpatialDim,
+    ) -> np.ndarray:
+    if dim == 2:
+        assert isinstance(theta, (float, int)), "For 2D rotation, theta must be a single float or int."
+        theta = np.radians(theta)
+        R = np.array([
+            [np.cos(theta),  np.sin(theta)],
+            [-np.sin(theta), np.cos(theta)],
+        ])
+    elif dim == 3:
+        thetas = arg_to_list(theta, (int, float),  broadcast=3)
+        assert len(thetas) == 3, "For 3D rotation, theta must have three elements."
+        tx, ty, tz = np.radians(thetas)
+        Rx = np.array([
+            [1, 0, 0],
+            [0, np.cos(tx), np.sin(tx)],
+            [0, -np.sin(tx), np.cos(tx)]
+        ])
+        Ry = np.array([
+            [np.cos(ty), 0, -np.sin(ty)],
+            [0, 1, 0],
+            [np.sin(ty), 0, np.cos(ty)]
+        ])
+        Rz = np.array([
+            [np.cos(tz), np.sin(tz), 0],
+            [-np.sin(tz), np.cos(tz), 0],
+            [0, 0, 1]
+        ])
+        R = Rz @ Ry @ Rx
+    else:
+        raise ValueError(f"Rotation not supported for dimension {dim}.")
+
+    return R
+
+# Rotates 'image' by 'theta' about the world origin (same convention as 'rotate_affine'/
+# 'rotate_points'), then resamples onto an axis-aligned grid - extended to cover the full
+# rotated field-of-view - so callers (e.g. slicing/plotting code) can assume an unrotated
+# affine. 'affine' describes the image's location in world coords (defaults to identity).
+# Call separately for each of image/dose/labels, passing 'output_affine'/'output_size' from
+# the first call to keep them co-registered.
+@alias_kwargs(
+    ('a', 'affine'),
+    ('f', 'fill'),
+    ('oa', 'output_affine'),
+    ('os', 'output_size'),
+)
+def rotate_image(
+    image: Image | LabelImage | BatchImage | BatchLabelImage,
+    theta: float | Tuple[float],
+    affine: AffineMatrix | None = None,
+    fill: Number | Literal['max', 'mean', 'median', 'min'] = 'min',
+    output_affine: AffineMatrix | None = None,
+    output_size: Size | None = None,
+    ) -> Tuple[Image | LabelImage | BatchImage | BatchLabelImage, AffineMatrix]:
+    dim = affine.shape[0] - 1 if affine is not None else image.ndim
+    if affine is None:
+        affine = create_affine(dim=dim)
+    affine = rotate_affine(affine, theta)
+
+    if output_affine is None or output_size is None:
+        size = np.array(image.shape[-dim:])
+        corners_vox = np.array(list(itertools.product(*[(0, s - 1) for s in size])), dtype=np.float32)
+        corners_world = to_world_coords(corners_vox, affine)
+        bbox_min = corners_world.min(axis=0)
+        bbox_max = corners_world.max(axis=0)
+
+        # Project the unit cube along each axis to determine the spacing required to
+        # resample the rotated image without data loss.
+        out_spacing = np.abs(affine[:dim, :dim]).sum(axis=1)
+        if output_size is None:
+            output_size = tuple(int(s) for s in np.ceil((bbox_max - bbox_min) / out_spacing).astype(int) + 1)
+        if output_affine is None:
+            output_affine = create_affine(dim=dim, origin=bbox_min, spacing=out_spacing)
+
+    image = resample(data=image, affine=affine, dim=dim, fill=fill, output_affine=output_affine, output_size=output_size)
+    return image, output_affine
+
+# Union (logical OR) of multiple boolean labels of the same shape.
+def combine_labels(
+    labels: List[BatchLabelImage | LabelImage],
+    ) -> BatchLabelImage | LabelImage:
+    assert len(labels) > 0, "At least one label must be provided."
+    _, return_type = to_tensor(labels[0], return_type=True)
+    labels_t = [to_tensor(l, dtype=torch.bool) for l in labels]
+    combined = torch.stack(labels_t, dim=0).any(dim=0)
+    if return_type is np.ndarray:
+        combined = to_numpy(combined)
+    return combined

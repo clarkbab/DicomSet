@@ -136,7 +136,8 @@ class NiftiStudy(IndexMixin, Study):
         elif modality == 'regions':
             id = resolve_id(id, lambda: self.list_series('regions'))
             index = self.__index[(self.__index['dataset'] == self.__dataset.id) & (self.__index['patient-id'] == self.__patient.id) & (self.__index['study-id'] == self.__id) & (self.__index['series-id'] == id) & (self.__index['modality'] == 'regions')].copy() if self.__index is not None else None
-            return NiftiRegionsSeries(self.__dataset, self.__patient, self, id, index=index, struct_map=self.__struct_map)
+            ref_ct = self.default_series('ct')
+            return NiftiRegionsSeries(self.__dataset, self.__patient, self, id, index=index, ref_ct=ref_ct, struct_map=self.__struct_map)
         else:
             raise ValueError(f"Unknown NiftiSeries modality '{modality}'.")
 

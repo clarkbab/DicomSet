@@ -17,7 +17,7 @@ from .conversion import to_numpy, to_tuple
 from .geometry import affine_origin, affine_spacing, centre_of_mass, change_image_orientation, create_affine, foreground_fov, foreground_fov_centre, to_image_coords, to_world_coords
 from .landmarks import landmarks_to_points
 from .logging import logger
-from .transforms import crop, hist_eq as hist_eq_fn, resample
+from .transforms import crop, hist_eq as hist_eq_fn, resample, rotate_image
 
 VIEWS = ['Sagittal', 'Coronal', 'Axial']
 
@@ -1025,14 +1025,22 @@ def plot_hist(
     ('b', 'box'),
     ('c', 'crop'),
     ('cm', 'crop_margin'),
+    ('ga', 'grid_affine'),
+    ('gal', 'grid_alpha'),
     ('he', 'hist_eq'),
     ('ii', 'invert_intensity'),
     ('l', 'labels'),
     ('ln', 'label_names'),
     ('o', 'orientation'),
     ('p', 'points'),
+    ('pa', 'points_alpha'),
+    ('pc', 'points_colour'),
+    ('sg', 'show_grid'),
     ('sl', 'show_labels'),
     ('spn', 'show_point_names'),
+    ('sat', 'show_axis_ticks'),
+    ('satl', 'show_axis_tick_labels'),
+    ('t', 'title'),
     ('w', 'window'),
 )
 def plot_slice(
@@ -1040,14 +1048,16 @@ def plot_slice(
     affine: AffineMatrix2D | None = None,
     aspect: Number | None = None,
     ax: mpl.axes.Axes | None = None,
-    box: Box2D | BatchBox2D | RegionID | List[RegionID] | None = None,
+    box: Box2D | BatchBox2D | RegionID | List[Box2D | RegionID] | None = None,
     cmap: str = 'gray',
     crop: Box2D | Point2D | RegionID | None = None,
     crop_margin: Number = 100.0,
     figsize: Tuple[Number, Number] = (8, 8),
+    grid_affine: AffineMatrix2D | None = None,
+    grid_alpha: Number = 1.0,
     hist_eq: bool = False,
     invert_intensity: bool = False,
-    labels: LabelImage2D | BatchLabelImage2D | None = None,
+    labels: LabelImage2D | BatchLabelImage2D | List[LabelImage2D] | None = None,
     labels_alpha: Number = 0.3,
     label_names: RegionID | List[RegionID] | None = None,
     orientation: Orientation2D | None = None,
@@ -1058,6 +1068,10 @@ def plot_slice(
     points_size: Number = 20,
     point_names: LandmarkID | List[LandmarkID] | None = None,
     return_axis: bool = False,
+    show_axis_ticks: bool = True,
+    show_axis_tick_labels: bool = True,
+    show_grid: bool = False,
+    show_grid_origin: bool | None = None,   # Follows 'show_grid'.
     show_labels: bool = True,
     show_point_idxs: bool = False,
     show_point_names: bool = False,
@@ -1077,9 +1091,10 @@ def plot_slice(
     data = data.squeeze()  # Remove any singleton dimensions.
     assert_2d(data)
     affine = to_numpy(affine)
-    orientation = arg_default(orientation, orientation, 'LS')
+    orientation = arg_default(orientation, orientation, get_orientation(2))
 
     # Resolve labels.
+    labels = to_numpy(labels)
     labels = __resolve_labels(labels, dim=2)
 
     data, affine, _, labels = __resolve_orientation(orientation, data, affine=affine, labels=labels)
@@ -1093,10 +1108,25 @@ def plot_slice(
     points, point_names = __resolve_points(points, affine=affine, point_names=point_names)
 
     # Resolve crop.
-    crop_box = __resolve_crop(crop, crop_margin, data.shape, affine=affine, label_names=None, labels=labels, point_names=point_names, points=points)
+    crop_box = __resolve_crop(crop, crop_margin, data.shape, affine=affine, label_names=label_names, labels=labels, point_names=point_names, points=points)
 
     # Resolve boxes for overlay.
     boxes = __resolve_boxes(box, data.shape, affine=affine, label_names=label_names, labels=labels, point_names=point_names, points=points)
+
+    # Resolve grid lines - a set of parallel lines per grid axis, for a reference grid.
+    if show_grid or (show_grid_origin if show_grid_origin is not None else False):
+        grid_affine = to_numpy(grid_affine) if grid_affine is not None else to_numpy(create_affine([50, 50], dim=2))
+    if show_grid:
+        grid_lines = __resolve_grid_planes(grid_affine, data.shape, affine=affine)
+    else:
+        grid_lines = None
+
+    # Resolve grid origin point - follows 'show_grid' unless explicitly set.
+    show_grid_origin = show_grid if show_grid_origin is None else show_grid_origin
+    if show_grid_origin:
+        grid_origin_vox = to_image_coords(affine_origin(grid_affine), affine, truncate=False) if affine is not None else affine_origin(grid_affine)
+    else:
+        grid_origin_vox = None
 
     if ax is None:
         _, axs = plt.subplots(1, 1, figsize=figsize)
@@ -1171,35 +1201,74 @@ def plot_slice(
         # Get 2D boxes.
         box_palette = sns.color_palette('colorblind', len(boxes))
         for bi, b in enumerate(boxes):
+            # Boxes are in uncropped voxel coords - shift to the cropped image.
+            if crop_box is not None:
+                b = b - crop_box[0]
             # Draw rectangle from min/max corners.
             width = b[1][0] - b[0][0]
             height = b[1][1] - b[0][1]
             rect = mpl.patches.Rectangle((b[0][0], b[0][1]), width, height, edgecolor=box_palette[bi % len(box_palette)], facecolor='none', linestyle='dotted', linewidth=2, zorder=10)
             ax.add_patch(rect)
 
-    # Get tick positions in image coords.
-    size = data.shape
-    x_tick_spacing = np.unique(np.diff(ax.get_xticks()))[0]
-    x_ticks = np.arange(0, size[0], x_tick_spacing)
-    y_tick_spacing = np.unique(np.diff(ax.get_yticks()))[0]
-    y_ticks = np.arange(0, size[1], y_tick_spacing)
-    ax.set_xticks(x_ticks)
-    ax.set_yticks(y_ticks)
+    # Reference grid - lines from families of lines parallel to each grid axis, spanning the image FOV.
+    if grid_lines is not None:
+        xlim, ylim = ax.get_xlim(), ax.get_ylim()
+        for pl in grid_lines:
+            p, n = pl
+            nx, ny = n
+            if abs(nx) < 1e-9 and abs(ny) < 1e-9:
+                continue
+            d = nx * p[0] + ny * p[1]
+            if crop_box is not None:
+                d -= nx * crop_box[0, 0] + ny * crop_box[0, 1]
+            if abs(ny) > 1e-9:
+                xs = np.array(xlim)
+                ys = (d - nx * xs) / ny
+            else:
+                ys = np.array(ylim)
+                xs = np.full(2, d / nx)
+            ax.plot(xs, ys, alpha=grid_alpha, color='yellow', linestyle='dashed', linewidth=0.5, zorder=4)
+        ax.set_xlim(xlim); ax.set_ylim(ylim)
 
-    # Create tick labels.
-    # Apply crop. Only the labels get the offset applied,
-    # positions in image coords don't change.
-    if crop_box is not None:
-        x_ticks += crop_box[0, 0]
-        y_ticks += crop_box[0, 1]
-    # Convert tick labels to world coords.
-    if not use_image_coords and affine is not None:
-        sx, sy = affine_spacing(affine)
-        ox, oy = affine_origin(affine)
-        x_ticks = (x_ticks * sx + ox)
-        y_ticks = (y_ticks * sy + oy)
-    ax.set_xticklabels([f'{t:.1f}' for t in x_ticks])
-    ax.set_yticklabels([f'{t:.1f}' for t in y_ticks])
+    # Grid origin.
+    if grid_origin_vox is not None:
+        go_x, go_y = grid_origin_vox
+        if crop_box is not None:
+            go_x -= crop_box[0, 0]
+            go_y -= crop_box[0, 1]
+        ax.scatter(go_x, go_y, color='red', marker='o', s=points_size, zorder=6)
+
+    # Get tick positions in image coords.
+    if show_axis_ticks:
+        size = data.shape
+        x_tick_spacing = np.unique(np.diff(ax.get_xticks()))[0]
+        x_ticks = np.arange(0, size[0], x_tick_spacing)
+        y_tick_spacing = np.unique(np.diff(ax.get_yticks()))[0]
+        y_ticks = np.arange(0, size[1], y_tick_spacing)
+        ax.set_xticks(x_ticks)
+        ax.set_yticks(y_ticks)
+
+        if show_axis_tick_labels:
+            # Create tick labels.
+            # Apply crop. Only the labels get the offset applied,
+            # positions in image coords don't change.
+            if crop_box is not None:
+                x_ticks = x_ticks + crop_box[0, 0]
+                y_ticks = y_ticks + crop_box[0, 1]
+            # Convert tick labels to world coords.
+            if not use_image_coords and affine is not None:
+                sx, sy = affine_spacing(affine)
+                ox, oy = affine_origin(affine)
+                x_ticks = (x_ticks * sx + ox)
+                y_ticks = (y_ticks * sy + oy)
+            ax.set_xticklabels([f'{t:.1f}' for t in x_ticks])
+            ax.set_yticklabels([f'{t:.1f}' for t in y_ticks])
+        else:
+            ax.set_xticklabels([])
+            ax.set_yticklabels([])
+    else:
+        ax.set_xticks([])
+        ax.set_yticks([])
 
     # Hide axis spines.
     for p in ['right', 'top', 'bottom', 'left']:
@@ -1225,15 +1294,23 @@ def plot_slice(
     ('c', 'crop'),
     ('ch', 'crosshairs'),
     ('cm', 'crop_margin'),
+    ('ga', 'grid_affine'),
+    ('gal', 'grid_alpha'),
     ('d', 'dose'),
     ('i', 'idx'),
     ('l', 'labels'),
     ('ln', 'label_names'),
     ('p', 'points'),
+    ('pa', 'points_alpha'),
+    ('pc', 'points_colour'),
     ('pl', 'planes'),
+    ('sat', 'show_axis_ticks'),
+    ('satl', 'show_axis_tick_labels'),
     ('scc', 'show_crosshairs_coords'),
+    ('sg', 'show_grid'),
     ('sl', 'show_labels'),
     ('spn', 'show_point_names'),
+    ('t', 'title'),
     ('uic', 'use_image_coords'),
     ('v', 'views'),
     ('w', 'window'),
@@ -1242,7 +1319,7 @@ def plot_volume(
     data: Image3D | DicomSeries | NiftiSeries | None,
     affine: AffineMatrix3D | None = None,
     ax: mpl.axes.Axes | List[mpl.axes.Axes] | None = None,
-    box: Box3D | BatchBox3D | RegionID | List[RegionID] | None = None,
+    box: Box3D | BatchBox3D | RegionID | List[Box3D | RegionID] | None = None,
     cmap: str = 'gray',
     crop: Box3D | Point3D | RegionID | None = None,
     crop_margin: Number = 100.0,
@@ -1252,10 +1329,11 @@ def plot_volume(
     dose_cmap: str = 'turbo',
     dose_cmap_trunc: Number = 0.15,
     figsize: Tuple[Number, Number] = (16, 6),
-    grid_affine: AffineMatrix3D | None = create_affine([50, 50, 50], dim=3),
+    grid_affine: AffineMatrix3D | None = None,
+    grid_alpha: Number = 1.0,
     hist_eq: bool = False,
-    idx: int | float | str | Point3D | None = None,
-    labels: LabelImage3D | BatchLabelImage3D | None = None,
+    idx: int | float | Literal['com', 'l:0', 'p:0'] | Point3D | None = None,
+    labels: LabelImage3D | BatchLabelImage3D | List[LabelImage3D] | None = None,
     label_names: RegionID | List[RegionID] | None = None,
     centre_method: Literal['com', 'fov'] = 'com',
     orientation: Orientation3D | None = None,   # Remains None because can be set in config.
@@ -1270,6 +1348,8 @@ def plot_volume(
     crosshairs: Point3D | str | None = None,
     crosshairs_colour: str = 'yellow',
     return_axis: bool = False,
+    show_axis_ticks: bool = True,
+    show_axis_tick_labels: bool = True,
     show_crosshairs_coords: bool = True,
     show_grid: bool = False,
     show_grid_origin: bool | None = None,   # Follows 'show_grid'.
@@ -1278,6 +1358,7 @@ def plot_volume(
     show_points: bool = True,
     show_point_names: bool = False,
     show_title: bool = True,
+    title: str | None = None,
     title_fontsize: float = 10,
     use_image_coords: bool = False,
     views: View | List[View] | Literal['all'] = 'all',
@@ -1300,6 +1381,7 @@ def plot_volume(
     orientation = arg_default(orientation, orientation, get_orientation(3))
 
     # Resolve labels.
+    labels = to_numpy(labels)
     labels = __resolve_labels(labels, dim=3)
 
     # Changes to the display orientation (i.e. LPS+ by default) if passed data is in a
@@ -1309,7 +1391,14 @@ def plot_volume(
     # If the affine has a rotation, we'll need to resample the image to display.
     if affine is not None and __affine_has_rotation(affine):
         logger.warn("Resampling images for display due to affine with rotational component.")
-        data, affine, dose, labels = __resolve_rotation(data, affine, dose=dose, labels=labels)
+        # 'theta=0' - the rotation is already present in 'affine', we just need to resample
+        # onto an axis-aligned grid for display.
+        data, out_affine = rotate_image(data, 0, affine=affine)
+        if dose is not None:
+            dose, _ = rotate_image(dose, 0, affine=affine, fill=0.0, output_affine=out_affine, output_size=data.shape)
+        if labels is not None:
+            labels, _ = rotate_image(labels, 0, affine=affine, fill=0, output_affine=out_affine, output_size=data.shape)
+        affine = out_affine
 
     # Resolve window to vmin/vmax.
     vmin, vmax = __resolve_window(window, affine=affine, data=data, label_names=label_names, labels=labels, vmax=vmax, vmin=vmin)
@@ -1322,9 +1411,9 @@ def plot_volume(
     planes = __resolve_planes(planes, affine=affine)
 
     # Resolve grid lines - a set of parallel planes per grid axis, for a reference grid.
+    if show_grid or (show_grid_origin if show_grid_origin is not None else False):
+        grid_affine = to_numpy(grid_affine) if grid_affine is not None else to_numpy(create_affine([50, 50, 50], dim=3))
     if show_grid:
-        if grid_affine is None:
-            raise ValueError("'grid_affine' must be provided if 'show_grid' is True.")
         grid_planes = __resolve_grid_planes(grid_affine, data.shape, affine=affine)
     else:
         grid_planes = None
@@ -1332,8 +1421,6 @@ def plot_volume(
     # Resolve grid origin point - follows 'show_grid' unless explicitly set.
     show_grid_origin = show_grid if show_grid_origin is None else show_grid_origin
     if show_grid_origin:
-        if grid_affine is None:
-            raise ValueError("'grid_affine' must be provided if 'show_grid_origin' is True.")
         grid_origin_vox = to_image_coords(affine_origin(grid_affine), affine, truncate=False) if affine is not None else affine_origin(grid_affine)
     else:
         grid_origin_vox = None
@@ -1345,11 +1432,11 @@ def plot_volume(
     views = list(range(3)) if views == 'all' else (views if isinstance(views, list) else [views])
 
     # Resolve idx to a 3D voxel point.
-    idx_vox = __resolve_point(idx, data.shape, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, point_names=point_names, points=points)
+    idx_vox = __resolve_point(idx, data.shape, affine=affine, centre_method=centre_method, data=data, label_names=label_names, labels=labels, point_names=point_names, points=points)
     idx_vox = to_tuple(np.round(to_numpy(idx_vox)).astype(int))
 
     # Resolve crosshairs to image coords.
-    crosshairs_vox = __resolve_crosshairs(crosshairs, data.shape, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, point_names=point_names, points=points)
+    crosshairs_vox = __resolve_crosshairs(crosshairs, data.shape, affine=affine, centre_method=centre_method, data=data, label_names=label_names, labels=labels, point_names=point_names, points=points)
 
     # Resolve crop to a voxel bounding box.
     crop_box = __resolve_crop(crop, crop_margin, data.shape, affine=affine, label_names=label_names, labels=labels, point_names=point_names, points=points)
@@ -1391,6 +1478,9 @@ def plot_volume(
             boxes2d = boxes[:, :, [x_axis, y_axis]]
             box_palette = sns.color_palette('colorblind', len(boxes2d))
             for bi, b in enumerate(boxes2d):
+                # Boxes are in uncropped voxel coords - shift to the cropped image.
+                if view_crop_box is not None:
+                    b = b - view_crop_box[0]
                 # Draw rectangle from min/max corners.
                 width = b[1][0] - b[0][0]
                 height = b[1][1] - b[0][1]
@@ -1499,13 +1589,17 @@ def plot_volume(
             col_ax.set_xlim(xlim); col_ax.set_ylim(ylim)
 
         # Get tick positions in image coords.
-        size_x, size_y = image.shape
-        x_tick_spacing = np.unique(np.diff(col_ax.get_xticks()))[0]
-        x_ticks = np.arange(0, size_x, x_tick_spacing)
-        y_tick_spacing = np.unique(np.diff(col_ax.get_yticks()))[0]
-        y_ticks = np.arange(0, size_y, y_tick_spacing)
-        col_ax.set_xticks(x_ticks)
-        col_ax.set_yticks(y_ticks)
+        if show_axis_ticks:
+            size_x, size_y = image.shape
+            x_tick_spacing = np.unique(np.diff(col_ax.get_xticks()))[0]
+            x_ticks = np.arange(0, size_x, x_tick_spacing)
+            y_tick_spacing = np.unique(np.diff(col_ax.get_yticks()))[0]
+            y_ticks = np.arange(0, size_y, y_tick_spacing)
+            col_ax.set_xticks(x_ticks)
+            col_ax.set_yticks(y_ticks)
+        else:
+            col_ax.set_xticks([])
+            col_ax.set_yticks([])
 
         # Labels.
         if affine is not None:
@@ -1537,7 +1631,7 @@ def plot_volume(
                 else:
                     ys = np.array(ylim)
                     xs = np.full(2, d / nx)
-                col_ax.plot(xs, ys, color='yellow', linestyle='dashed', linewidth=0.5, zorder=4)
+                col_ax.plot(xs, ys, alpha=grid_alpha, color='yellow', linestyle='dashed', linewidth=0.5, zorder=4)
             col_ax.set_xlim(xlim); col_ax.set_ylim(ylim)
 
         # Grid origin.
@@ -1549,27 +1643,31 @@ def plot_volume(
             col_ax.scatter(go_x, go_y, color='red', marker='o', s=points_size, zorder=6)
 
         # Tick labels.
-        # Apply crop. Only the labels get the offset applied,
-        # positions in image coords don't change.
-        if view_crop_box is not None:
-            x_ticks += view_crop_box[0, 0]
-            y_ticks += view_crop_box[0, 1]
+        if show_axis_ticks and show_axis_tick_labels:
+            # Apply crop. Only the labels get the offset applied,
+            # positions in image coords don't change.
+            if view_crop_box is not None:
+                x_ticks = x_ticks + view_crop_box[0, 0]
+                y_ticks = y_ticks + view_crop_box[0, 1]
 
-        # Convert tick labels to world coords. Build full voxel points (holding the
-        # depth axis at 'view_idx' and the other in-plane axis at 0) so rotated
-        # affines are handled correctly.
-        if not use_image_coords and affine is not None:
-            x_points = np.zeros((len(x_ticks), 3), dtype=np.float32)
-            x_points[:, v] = view_idx
-            x_points[:, x_axis] = x_ticks
-            x_ticks = to_world_coords(x_points, affine)[:, x_axis]
+            # Convert tick labels to world coords. Build full voxel points (holding the
+            # depth axis at 'view_idx' and the other in-plane axis at 0) so rotated
+            # affines are handled correctly.
+            if not use_image_coords and affine is not None:
+                x_points = np.zeros((len(x_ticks), 3), dtype=np.float32)
+                x_points[:, v] = view_idx
+                x_points[:, x_axis] = x_ticks
+                x_ticks = to_world_coords(x_points, affine)[:, x_axis]
 
-            y_points = np.zeros((len(y_ticks), 3), dtype=np.float32)
-            y_points[:, v] = view_idx
-            y_points[:, y_axis] = y_ticks
-            y_ticks = to_world_coords(y_points, affine)[:, y_axis]
-        col_ax.set_xticklabels([f'{t:.1f}' for t in x_ticks])
-        col_ax.set_yticklabels([f'{t:.1f}' for t in y_ticks])
+                y_points = np.zeros((len(y_ticks), 3), dtype=np.float32)
+                y_points[:, v] = view_idx
+                y_points[:, y_axis] = y_ticks
+                y_ticks = to_world_coords(y_points, affine)[:, y_axis]
+            col_ax.set_xticklabels([f'{t:.1f}' for t in x_ticks])
+            col_ax.set_yticklabels([f'{t:.1f}' for t in y_ticks])
+        elif show_axis_ticks:
+            col_ax.set_xticklabels([])
+            col_ax.set_yticklabels([])
 
         # Hide spines.
         for p in ['right', 'top', 'bottom', 'left']:
@@ -1577,13 +1675,17 @@ def plot_volume(
 
         # Title.
         if show_title:
-            title = f'{VIEWS[v]}, slice {view_idx}'
+            view_title = f'{VIEWS[v]}, slice {view_idx}'
             if affine is not None:
                 point = np.zeros(3, dtype=np.float32)
                 point[v] = view_idx
                 world_pos = to_world_coords(point, affine)[v]
-                title += f' ({world_pos:.1f}mm)'
-            col_ax.set_title(title, fontsize=title_fontsize)
+                view_title += f' ({world_pos:.1f}mm)'
+            col_ax.set_title(view_title, fontsize=title_fontsize)
+
+    # Overall title above all views.
+    if title is not None:
+        axs[0].figure.suptitle(title, fontsize=title_fontsize)
 
     if show:
         plt.tight_layout()
@@ -1593,7 +1695,7 @@ def plot_volume(
         return axs
 
 def __resolve_boxes(
-    box: Box | BatchBox | RegionID | List[RegionID] | None,
+    box: Box | BatchBox | RegionID | List[Box | RegionID] | None,
     size: Size,
     affine: AffineMatrix | None = None,
     labels: LabelImage | BatchLabelImage | None = None,
@@ -1603,43 +1705,46 @@ def __resolve_boxes(
     ) -> BatchVoxelBox | None:
     if box is None:
         return None
-    box = box.copy()    # Otherwise it modifies box passed to the plotting method.
 
-    # Resolve foreground fov for region IDs.
-    if isinstance(box, (str, list)):
-        if labels is None:
-            raise ValueError("If box is a region ID, labels must be provided.")
-        if label_names is not None:
-            label_names_list = arg_to_list(label_names, str)
-        else:
-            label_names_list = None
-        region_ids = arg_to_list(box, str)
-        boxes = []
-        for r in region_ids:
+    # Normalise to a list of items, each either a region ID (str) or an
+    # explicit box array - supports mixing both within a single list.
+    if isinstance(box, str):
+        items = [box]
+    elif isinstance(box, (list, tuple)):
+        items = [i if isinstance(i, str) else to_numpy(i) for i in box]
+        # A single box given as nested lists/tensors, e.g. [[x0, y0], [x1, y1]].
+        if all(not isinstance(i, str) and i.ndim == 1 for i in items):
+            items = [np.stack(items)]
+    else:
+        box = to_numpy(box)
+        items = list(box) if box.ndim == 3 else [box]
+
+    label_names_list = arg_to_list(label_names, str) if label_names is not None else None
+
+    boxes = []
+    for item in items:
+        if isinstance(item, str):
+            if labels is None:
+                raise ValueError("If box is a region ID, labels must be provided.")
             if label_names_list is None:
                 raise ValueError("Label names must be provided for string region IDs.")
-            if r not in label_names_list:
-                raise ValueError(f"Region name '{r}' not found in label_names: {label_names_list}.")
-            idx = label_names_list.index(r)
+            if item not in label_names_list:
+                raise ValueError(f"Region name '{item}' not found in label_names: {label_names_list}.")
+            idx = label_names_list.index(item)
             fov = foreground_fov(labels[idx])
             if fov is None:
                 continue
             boxes.append(fov)
-        if not boxes:
-            return None
-        return np.stack(boxes)
+        else:
+            b = item.copy() if isinstance(item, np.ndarray) else np.array(item)
+            if affine is not None:
+                b = to_image_coords(b, affine)
+                b = np.clip(b, 0, np.array(size) - 1)
+            boxes.append(b)
 
-    # Convert single box to batch.
-    if box.ndim == 2:
-        boxes = box[None]
-
-    # Convert to image coords.
-    if affine is not None:
-        for i in range(len(boxes)):
-            boxes[i] = to_image_coords(boxes[i], affine)
-            boxes[i] = np.clip(boxes[i], 0, np.array(size) - 1)
-
-    return boxes
+    if not boxes:
+        return None
+    return np.stack(boxes)
 
 def __resolve_crop(
     crop: Box | Point | str | None,
@@ -1659,7 +1764,9 @@ def __resolve_crop(
 
     if affine is not None:
         spacing = affine_spacing(affine)
-        margin_vox = np.full(dim, crop_margin, dtype=np.float32) / spacing
+        # Use absolute spacing - a negative value (e.g. for a flipped anatomical
+        # axis) would otherwise invert the margin direction and shrink the box.
+        margin_vox = np.full(dim, crop_margin, dtype=np.float32) / np.abs(spacing)
     else:
         margin_vox = np.full(dim, crop_margin, dtype=np.float32)
 
@@ -1712,6 +1819,9 @@ def __resolve_crop(
         # Box3D - crop directly, no margin applied.
         if affine is not None:
             box_vox = to_image_coords(crop, affine, truncate=False)
+            # A flipped anatomical axis (negative affine spacing) can swap the
+            # min/max corners per-axis after conversion - sort to restore order.
+            box_vox = np.sort(box_vox, axis=0)
         else:
             box_vox = crop
         apply_margin = False
@@ -1741,6 +1851,7 @@ def __resolve_crosshairs(
     size: Size,
     affine: AffineMatrix | None = None,
     centre_method: Literal['com', 'fov'] = 'com',
+    data: Image | None = None,
     labels: BatchLabelImage | None = None,
     label_names: List[RegionID] | None = None,
     points: List[np.ndarray] | None = None,
@@ -1748,18 +1859,20 @@ def __resolve_crosshairs(
     ) -> Voxel | None:
     if crosshairs is None:
         return None
-    return __resolve_point(crosshairs, size, affine=affine, centre_method=centre_method, label_names=label_names, labels=labels, point_names=point_names, points=points)
+    return __resolve_point(crosshairs, size, affine=affine, centre_method=centre_method, data=data, label_names=label_names, labels=labels, point_names=point_names, points=points)
 
 def __resolve_grid_planes(
-    grid_affine: AffineMatrix3D,
+    grid_affine: AffineMatrix,
     size: Size,
-    affine: AffineMatrix3D | None = None,
+    affine: AffineMatrix | None = None,
     ) -> np.ndarray:
+    dim = len(size)
+
     # Grid origin/spacing/directions, as defined by 'grid_affine' - directions may be
     # rotated relative to the image axes.
     origin = affine_origin(grid_affine)
     spacing = affine_spacing(grid_affine)
-    directions = grid_affine[:3, :3] / spacing
+    directions = grid_affine[:dim, :dim] / spacing
 
     # Get image FOV corners in world coords, so the grid can be extended to cover them.
     corners_vox = np.array(list(itertools.product(*[(0, s - 1) for s in size])), dtype=np.float32)
@@ -1767,7 +1880,7 @@ def __resolve_grid_planes(
 
     # Build parallel planes along each grid axis, spanning the image FOV.
     planes = []
-    for i in range(3):
+    for i in range(dim):
         direction = directions[:, i]
         offsets = (corners_world - origin) @ direction
         n_min = int(np.floor(offsets.min() / spacing[i]))
@@ -1779,11 +1892,14 @@ def __resolve_grid_planes(
     return __resolve_planes(planes, affine=affine)
 
 def __resolve_labels(
-    labels: LabelImage | BatchLabelImage | None,
+    labels: LabelImage | BatchLabelImage | List[LabelImage] | None,
     dim: int,
     ) -> BatchLabelImage | None:
     if labels is None:
         return None
+    # Stack a list of individual labels (e.g. one per region) into batch form.
+    if isinstance(labels, list):
+        labels = np.stack([to_numpy(l) for l in labels])
     # Normalise to batch form (B, ...).
     if labels.ndim == dim:
         labels = labels[np.newaxis]
@@ -1830,9 +1946,10 @@ def __resolve_planes(planes, affine=None):
         planes = planes[None]
 
     if affine is not None:
-        A = affine[:3, :3]
+        dim = affine.shape[0] - 1
+        A = affine[:dim, :dim]
         A_inv = np.linalg.inv(A)
-        o = affine[:3, -1]
+        o = affine[:dim, -1]
         for i, (p, n) in enumerate(planes):
             p_vox = A_inv @ (p - o)
             n_vox = A.T @ n          # <-- was A_inv.T @ n
@@ -1846,6 +1963,7 @@ def __resolve_point(
     size: Size,
     affine: AffineMatrix | None = None,
     centre_method: Literal['com', 'fov'] = 'com',
+    data: Image | None = None,
     labels: BatchLabelImage | None = None,
     label_names: List[RegionID] | None = None,
     points: List[np.ndarray] | None = None,
@@ -1867,7 +1985,7 @@ def __resolve_point(
     if not isinstance(idx, str):
         raise ValueError(f"Invalid idx: {idx}. Expected Point3D, str, or None.")
 
-    source, value = idx.split(':', 1)
+    source, value = idx.split(':', 1) if ':' in idx else (idx, '')
 
     # Proportion of field-of-view - applied equally to all axes.
     if source == 'f':
@@ -1894,6 +2012,21 @@ def __resolve_point(
         else:
             raise ValueError(f"Unknown centre_method '{centre_method}'. Expected 'com' or 'fov'.")
 
+        # centre_of_mass/foreground_fov_centre return world coords.
+        if affine is not None:
+            point = to_image_coords(point, affine)
+
+    # Centre of mass of the data.
+    elif source == 'com':
+        if data is None:
+            raise ValueError(f"idx='{idx}' but no data was provided.")
+        point = centre_of_mass(data, affine=affine, dim=data.ndim)
+        if point is None:
+            raise ValueError(f"idx='{idx}' but the data has no centre of mass (sum is zero).")
+        # centre_of_mass returns world coords.
+        if affine is not None:
+            point = to_image_coords(point, affine)
+
     # Points.
     elif source in ('p', 'point', 'points'):
         if points is None:
@@ -1913,14 +2046,11 @@ def __resolve_point(
             if point_ref not in batch_names:
                 raise ValueError(f"Point name '{point_ref}' not found in point_names: {batch_names}.")
             point = batch[batch_names.index(point_ref)]
+        # points are already in voxel coords (converted in __resolve_points), no further conversion needed.
 
     else:
-        raise ValueError(f"Unknown idx prefix '{source}'. Expected 'f', 'labels', or 'points'.")
+        raise ValueError(f"Unknown idx prefix '{source}'. Expected 'f', 'com', 'labels', or 'points'.")
 
-    # Convert to image coords.
-    if affine is not None:
-        point = to_image_coords(point, affine)
-    
     # Truncate to image bounds.
     point = np.clip(point, 0, size - 1)
 
@@ -1985,46 +2115,6 @@ def __resolve_points(
 
     return batches, batch_names_list
 
-def __resolve_rotation(
-    data: Image3D,
-    affine: AffineMatrix3D,
-    dose: Image3D | None = None,
-    labels: BatchLabelImage3D | None = None,
-    ) -> Tuple[Image3D, AffineMatrix3D, Image3D | None, BatchLabelImage3D | None]:
-    # Resamples onto an axis-aligned (LPS) grid, extended to cover the full rotated field
-    # of view, so downstream slicing/plotting can assume an unrotated affine.
-    import SimpleITK as sitk
-
-    dim = affine.shape[0] - 1
-    size = np.array(data.shape)
-    corners_vox = np.array(list(itertools.product(*[(0, s - 1) for s in size])), dtype=np.float32)
-    corners_world = to_world_coords(corners_vox, affine)
-    bbox_min = corners_world.min(axis=0)
-    bbox_max = corners_world.max(axis=0)
-
-    # Project the unit cube along each axis to determine the spacing required to 
-    # resample the rotated image without data loss.
-    spacing = np.abs(affine[:dim, :dim]).sum(axis=1)
-    out_size = tuple(int(s) for s in np.ceil((bbox_max - bbox_min) / spacing).astype(int) + 1)
-    out_affine = create_affine(dim=dim, origin=bbox_min, spacing=spacing)
-
-    # 'transform' maps output world points to input voxel indices (SITK resamples by
-    # querying the input at 'transform(output_point)'); the input image is treated as having
-    # an identity affine (voxel index == physical point) since 'to_sitk_image' can't encode
-    # rotated direction cosines.
-    affine_inv = np.linalg.inv(affine)
-    transform = sitk.AffineTransform(dim)
-    transform.SetMatrix(affine_inv[:dim, :dim].flatten())
-    transform.SetTranslation(affine_inv[:dim, dim])
-
-    data = resample(data=data, dim=dim, fill='min', output_affine=out_affine, output_size=out_size, transform=transform)
-    if dose is not None:
-        dose = resample(data=dose, dim=dim, fill=0.0, output_affine=out_affine, output_size=out_size, transform=transform)
-    if labels is not None:
-        labels = resample(data=labels, dim=dim, fill=0, output_affine=out_affine, output_size=out_size, transform=transform)
-
-    return data, out_affine, dose, labels
-
 def __resolve_window(
     window: Window | None,
     affine: AffineMatrix | None = None,
@@ -2040,6 +2130,14 @@ def __resolve_window(
         assert vmax is None, "vmax must be None if window is specified."
     if window is None:
         return vmin, vmax
+    # A box (2 x dim) - window to the min/max intensity within it.
+    if not isinstance(window, str) and np.ndim(window[0]) > 0:
+        if data is None:
+            raise ValueError("window is a box but no data was provided.")
+        region = crop(data, to_numpy(window), affine=affine, dim=data.ndim)
+        if region.size == 0:
+            raise ValueError(f"window box '{to_numpy(window).tolist()}' doesn't overlap with the data.")
+        return float(region.min()), float(region.max())
     if isinstance(window, str):
         if window in WINDOW_PRESETS:
             width, level = WINDOW_PRESETS[window]

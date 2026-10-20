@@ -4,6 +4,16 @@ from typing import List
 
 from ..typing import Orientation, Orientation2D, Orientation3D, SpatialDim
 
+def assert_image(
+    data: np.ndarray | torch.Tensor,
+    method: str | None = None,
+    ) -> None:
+    if not isinstance(data, (np.ndarray, torch.Tensor)):
+        msg = f"Expected 'data' to be a numpy array or torch tensor. Got {type(data)}."
+        if method is not None:
+            msg = f"[{method}] {msg}"
+        raise TypeError(msg)
+
 def assert_orientation(
     orientation: Orientation,
     dim: SpatialDim,

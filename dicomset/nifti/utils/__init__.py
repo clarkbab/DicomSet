@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 LAZY_IMPORTS = {
     'create': [
         'append_landmarks', 'create_ct', 'create_dataset', 'create_index', 'create_landmarks', 'create_region',
-        'create_registered_image', 'create_registered_landmarks', 'create_registered_regions', 'create_registration_moved_image',
+        'create_registration_moved_image', 'create_registration_moved_regions', 'create_registration_moved_landmarks',
         'create_registration_transform',
         'landmarks_exist',
     ],
@@ -16,6 +16,7 @@ LAZY_IMPORTS = {
         'load_registered_regions', 'load_registration', 'load_registration_transform',
     ],
     'rename': ['rename_patients'],
+    'reports': ['create_regions_report'],
 }
 
 __all__ = [attr for attrs in LAZY_IMPORTS.values() for attr in attrs]
